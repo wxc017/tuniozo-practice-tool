@@ -3,19 +3,17 @@ import KonnakolBasicPanel from "./KonnakolBasicPanel";
 import type { KonnakolExportData, KonnakolLogData } from "./KonnakolBasicPanel";
 import KonnakolCyclesPanel from "./KonnakolCyclesPanel";
 import type { CyclesExportData } from "./KonnakolCyclesPanel";
-import KonnakolMixedPanel from "./KonnakolMixedPanel";
 import ExportDialog from "./ExportDialog";
 import type { ExportSection } from "./ExportDialog";
 import PracticeLogSaveBar from "./PracticeLogSaveBar";
 import { generateKonnakolXML } from "@/lib/konnakolMusicXml";
 import type { KonnakolGroup } from "@/lib/konnakolData";
 
-type SubMode = "basic" | "cycles" | "mixed";
+type SubMode = "basic" | "cycles";
 
 const SUB_MODE_LABELS: Record<SubMode, string> = {
   basic:  "Subdivisions",
   cycles: "Cycles",
-  mixed:  "Mixed Groups",
 };
 
 export default function Konnakol() {
@@ -25,16 +23,13 @@ export default function Konnakol() {
   // Export data from sub-panels
   const [basicData, setBasicData] = useState<{ groups: KonnakolGroup[]; getElement: () => HTMLElement | null }>({ groups: [], getElement: () => null });
   const [cyclesData, setCyclesData] = useState<{ groups: KonnakolGroup[]; getElement: () => HTMLElement | null }>({ groups: [], getElement: () => null });
-  const [mixedData, setMixedData] = useState<{ groups: KonnakolGroup[]; getElement: () => HTMLElement | null }>({ groups: [], getElement: () => null });
 
   const handleBasicExport = useCallback((data: KonnakolExportData) => setBasicData(data), []);
   const handleCyclesExport = useCallback((data: CyclesExportData) => setCyclesData(data), []);
-  const handleMixedExport = useCallback((data: KonnakolExportData) => setMixedData(data), []);
 
   // Log data from sub-panels
   const basicLogRef = useRef<{ subdivisions: KonnakolLogData | null }>({ subdivisions: null });
   const cyclesLogRef = useRef<KonnakolLogData | null>(null);
-  const mixedLogRef = useRef<KonnakolLogData | null>(null);
   const [logSource, setLogSource] = useState("konnakol-basic");
 
   const handleBasicLog = useCallback((key: "subdivisions" | "mixed", data: KonnakolLogData | null) => {
@@ -42,9 +37,6 @@ export default function Konnakol() {
   }, []);
   const handleCyclesLog = useCallback((data: KonnakolLogData | null) => {
     cyclesLogRef.current = data;
-  }, []);
-  const handleMixedLog = useCallback((data: KonnakolLogData | null) => {
-    mixedLogRef.current = data;
   }, []);
 
   const exportSections: ExportSection[] = [
@@ -62,20 +54,13 @@ export default function Konnakol() {
       getElement: () => cyclesData.getElement(),
       generateMusicXml: () => generateKonnakolXML("Solkattu — Cycles", cyclesData.groups),
     },
-    {
-      id: "mixed",
-      label: "Mixed Groups",
-      defaultTitle: "Solkattu — Mixed Groups",
-      getElement: () => mixedData.getElement(),
-      generateMusicXml: () => generateKonnakolXML("Solkattu — Mixed Groups", mixedData.groups),
-    },
   ];
 
   return (
     <div style={{ maxWidth: 1152, margin: "0 auto", padding: "16px 0", width: "100%" }}>
       {/* Sub-mode tabs + export */}
       <div style={{ display: "flex", gap: 4, marginBottom: 20, alignItems: "center" }}>
-        {(["basic", "cycles", "mixed"] as SubMode[]).map(m => (
+        {(["basic", "cycles"] as SubMode[]).map(m => (
           <button key={m}
             onClick={() => setSubMode(m)}
             style={{
@@ -103,7 +88,6 @@ export default function Konnakol() {
             sourceOptions={[
               { value: "konnakol-basic", label: "Subdivisions" },
               { value: "konnakol-cycles", label: "Cycles" },
-              { value: "konnakol-mixed", label: "Mixed Groups" },
             ]}
             onSourceChange={setLogSource}
             getSnapshot={() => {
@@ -112,9 +96,6 @@ export default function Konnakol() {
               }
               if (logSource === "konnakol-cycles" && cyclesLogRef.current) {
                 return cyclesLogRef.current.getSnapshot();
-              }
-              if (logSource === "konnakol-mixed" && mixedLogRef.current) {
-                return mixedLogRef.current.getSnapshot();
               }
               return { preview: "No pattern generated yet", snapshot: {}, canRestore: false };
             }}
@@ -129,7 +110,6 @@ export default function Konnakol() {
       }}>
         {subMode === "basic"  && <KonnakolBasicPanel onExportData={handleBasicExport} onLogData={handleBasicLog} />}
         {subMode === "cycles" && <KonnakolCyclesPanel onExportData={handleCyclesExport} onLogData={handleCyclesLog} />}
-        {subMode === "mixed"  && <KonnakolMixedPanel onExportData={handleMixedExport} onLogData={handleMixedLog} />}
       </div>
 
       <ExportDialog

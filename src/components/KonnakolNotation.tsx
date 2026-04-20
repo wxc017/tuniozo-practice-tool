@@ -54,7 +54,9 @@ function flattenGroups(groups: KonnakolGroup[]): {
       flat.push({
         keys: note.noteType === "rest" ? ["b/4"] : ["c/5"],
         slots,
-        syllable: (note.noteType === "rest" || note.noteType === "tie") ? "" : (note.syllable ?? ""),
+        // Keep the syllable on tie continuations too — every notated note
+        // should have a solkattu label, not just the first of a tied pair.
+        syllable: note.noteType === "rest" ? "" : (note.syllable ?? ""),
         accent: isFirst && note.accent,
         isRest: note.noteType === "rest",
       });
@@ -213,7 +215,7 @@ export default function KonnakolNotation({
     <div
       ref={containerRef}
       onClick={handleClick}
-      style={{ width, height: outerHeight, overflow: "hidden", display: "block", flexShrink: 0, cursor: onNoteClick ? "pointer" : "default" }}
+      style={{ width, height: outerHeight, overflow: "visible", display: "block", flexShrink: 0, cursor: onNoteClick ? "pointer" : "default" }}
     />
   );
 }
@@ -228,6 +230,7 @@ function renderGroupedSixteenths(
   noteKey: string = SNARE_KEY,
 ): number[] {
   const allNotes: StaveNote[] = [];
+  const allLabels: string[] = [];
   const groupBoundaries: number[] = [];
   let totalSlots = 0; // counted in 32nd-note units for accurate timing
 
@@ -238,9 +241,11 @@ function renderGroupedSixteenths(
       const groupNote = groups[gi];
       const srcNote = groupNote?.notes[si] ?? groupNote?.notes[0];
       const isRest = srcNote?.noteType === "rest";
-      const isTie = srcNote?.noteType === "tie";
       const formulaSyl = syllables[si] ?? "ta";
-      const syllable = (!isRest && !isTie) ? formulaSyl : "";
+      // Label every non-rest slot (including tie continuations) so every
+      // notated note gets a solkattu syllable underneath.
+      const syllable = !isRest ? formulaSyl : "";
+      allLabels.push(syllable);
       const isFirst = si === 0;
 
       // Respect per-note duration: "32" → 32nd note, otherwise 16th
@@ -260,8 +265,9 @@ function renderGroupedSixteenths(
       if (!isRest && syllable) {
         try {
           const ann = new Annotation(syllable);
-          ann.setFont("Arial", 8, "normal");
+          ann.setFont("Arial", 10, "normal");
           ann.setVerticalJustification(Annotation.VerticalJustify.BOTTOM);
+          try { ann.setStyle({ fillStyle: "#000000", strokeStyle: "#000000" }); } catch { /* ignore */ }
           sn.addModifier(ann);
         } catch { /* ignore */ }
       }
@@ -345,6 +351,9 @@ function renderGroupedSixteenths(
     tieNoteIdx += n;
   }
 
+  // Solkattu labels drawn as raw SVG text (labels parallel to allNotes).
+  drawSyllableLabels(ctx, stave, allNotes, allLabels);
+
   // Return note X positions for button alignment
   try {
     return allNotes.map(n => n.getAbsoluteX());
@@ -388,8 +397,9 @@ function renderTiedSixteenths(
     if (!fn.isRest && fn.syllable) {
       try {
         const ann = new Annotation(fn.syllable);
-        ann.setFont("Arial", 8, "normal");
+        ann.setFont("Arial", 10, "normal");
         ann.setVerticalJustification(Annotation.VerticalJustify.BOTTOM);
+        try { ann.setStyle({ fillStyle: "#000000", strokeStyle: "#000000" }); } catch { /* ignore */ }
         sn.addModifier(ann);
       } catch { /* ignore */ }
     }
@@ -417,6 +427,9 @@ function renderTiedSixteenths(
 
   voice.draw(ctx, stave);
   beamsToRender.forEach(b => b.setContext(ctx).draw());
+
+  // Solkattu labels (parallel to `flat`, which is parallel to `allNotes`).
+  drawSyllableLabels(ctx, stave, allNotes, flat.map(f => f.isRest ? "" : f.syllable));
 
   try {
     return allNotes.map(n => n.getAbsoluteX());
@@ -493,16 +506,19 @@ function buildLegacyNotes(
         } catch { /* ignore */ }
       }
 
-      if (!note.hidden && note.noteType !== "rest" && note.noteType !== "tie" && note.syllable) {
+      // Show syllable under every notated note (including tie continuations)
+      // so solkattu practice has a label for every sound position. Rests are
+      // still skipped. Empty-string syllables naturally fall through.
+      // Explicit black fill ensures the outer SVG invert(1) filter flips it
+      // to white — without setStyle, VexFlow's default state flows through
+      // the invert unchanged and the text reads as black on black.
+      if (!note.hidden && note.noteType !== "rest" && note.syllable) {
         try {
           const ann = new Annotation(note.syllable);
-          ann.setFont("Arial", 8, "normal");
+          ann.setFont("Arial", 10, "normal");
           ann.setVerticalJustification(Annotation.VerticalJustify.BOTTOM);
-          if (note.syllableColor) {
-            try {
-              ann.setStyle({ fillStyle: note.syllableColor, strokeStyle: note.syllableColor });
-            } catch { /* ignore */ }
-          }
+          const color = note.syllableColor ?? "#000000";
+          try { ann.setStyle({ fillStyle: color, strokeStyle: color }); } catch { /* ignore */ }
           sn.addModifier(ann);
         } catch { /* ignore */ }
       }
@@ -654,9 +670,56 @@ function renderLegacy(
   voice.draw(ctx, stave);
   drawLegacyBeamsAndTies(ctx, groups, notes, tupletGroups);
 
+  // Solkattu labels, drawn directly as SVG text for reliability.
+  const labels = groups.flatMap(g => g.notes).map(n =>
+    (n && n.noteType !== "rest" && !n.hidden && n.syllable) ? n.syllable : "",
+  );
+  drawSyllableLabels(ctx, stave, notes, labels);
+
   try {
     return notes.map(n => n.getAbsoluteX());
   } catch {
     return [];
+  }
+}
+
+// Append raw <text> elements directly to the VexFlow SVG element. Going
+// through the DOM is more reliable than ctx.fillText / VexFlow Annotation,
+// both of which mispositioned text on setNumLines(1) staves.
+//
+// Color is explicit black; the container applies filter: invert(1), so it
+// renders as white on the dark background. Caller supplies `labels`
+// parallel to `notes` so each render path can compute syllables in its
+// own mapping scheme.
+function drawSyllableLabels(
+  ctx: ReturnType<InstanceType<typeof Renderer>["getContext"]>,
+  stave: Stave,
+  notes: StaveNote[],
+  labels: string[],
+) {
+  const svg = (ctx as unknown as { svg?: SVGSVGElement }).svg;
+  if (!svg) return;
+  // Place text just below the stave bottom line. On a single-line stave
+  // getYForLine(0) ≈ stave-line Y; +18 drops it a safe gap under any
+  // noteheads/beams. On a 5-line stave getYForLine(4) + 18 works the same
+  // way — use bottom line for a consistent look.
+  const numLines = (stave as unknown as { getNumLines?: () => number }).getNumLines?.() ?? 5;
+  const bottomLineIdx = numLines <= 1 ? 0 : 4;
+  const y = stave.getYForLine(bottomLineIdx) + 22;
+  const NS = "http://www.w3.org/2000/svg";
+  for (let i = 0; i < notes.length && i < labels.length; i++) {
+    const label = labels[i];
+    if (!label) continue;
+    let x: number;
+    try { x = notes[i].getAbsoluteX(); } catch { continue; }
+    const text = document.createElementNS(NS, "text");
+    text.setAttribute("x", String(x));
+    text.setAttribute("y", String(y));
+    text.setAttribute("font-family", "Arial, sans-serif");
+    text.setAttribute("font-size", "11");
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("fill", "#000000");
+    text.textContent = label;
+    svg.appendChild(text);
   }
 }

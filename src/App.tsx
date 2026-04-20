@@ -20,6 +20,7 @@ import DrumPatterns from "@/components/DrumPatterns";
 import ChordChart from "@/components/ChordChart";
 import Konnakol from "@/components/Konnakol";
 import VocalPercussion from "@/components/VocalPercussion";
+import MixedGroups from "@/components/MixedGroups";
 import NoteEntryMode from "@/components/NoteEntryMode";
 import PhraseDecomposition from "@/components/PhraseDecomposition";
 // Academic mode components — gitignored, only present in local dev
@@ -523,15 +524,16 @@ export default function App() {
                   <option value="note-writing">Note Writing</option>
                   <option value="simple-doc">Document</option>
                 </>) : (<>
-                  <optgroup label="Practice">
+                  <optgroup label="Useful">
                     <option value="ear-trainer">Spatial Audiation</option>
                     <option value="drum-patterns">Drum Patterns</option>
                     <option value="vocal-percussion">Vocal Percussion</option>
-                    <option value="chord-chart">Chord Chart</option>
+                    <option value="mixed-groups">Mixed Groups</option>
                     <option value="melodic-patterns">Melodic Patterns</option>
                     <option value="harmony-workshop">Harmony Workshop</option>
                   </optgroup>
-                  <optgroup label="Exploration">
+                  <optgroup label="Experimental">
+                    <option value="chord-chart">Chord Chart</option>
                     <option value="drill-response">Drill & Response</option>
                     <option value="uncommon-meters">Uncommon Meters</option>
                     <option value="konnakol">Solkattu</option>
@@ -567,8 +569,9 @@ export default function App() {
             </div>
           </div>
 
-          {/* Metronome + Timer strip — hidden in academic mode */}
-          {!academicMode && <div className="flex flex-wrap items-center gap-3">
+          {/* Metronome + Timer strip — hidden in academic mode and in
+              Mixed Groups (which has its own per-pulse metronome). */}
+          {!academicMode && section !== "mixed-groups" && <div className="flex flex-wrap items-center gap-3">
             <MetronomeStrip
               bpm={metronome.bpm}
               setBpm={metronome.setBpm}
@@ -817,6 +820,13 @@ export default function App() {
       {section === "vocal-percussion" && (
         <div className="px-4 pb-8">
           <VocalPercussion />
+        </div>
+      )}
+
+      {/* ── Mixed Groups ── */}
+      {section === "mixed-groups" && (
+        <div className="px-4 pb-8">
+          <MixedGroups />
         </div>
       )}
 

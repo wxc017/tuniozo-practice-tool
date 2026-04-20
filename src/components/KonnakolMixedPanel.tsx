@@ -420,6 +420,7 @@ export default function KonnakolMixedPanel() {
                   height={140}
                   onNoteClick={handleSameNoteClick}
                   groupedSixteenths={sameFormula}
+                  singleLine
                 />
               </div>
 
@@ -572,6 +573,7 @@ export default function KonnakolMixedPanel() {
                   baseDuration="16"
                   noTuplets
                   onNoteClick={handleChangingNoteClick}
+                  singleLine
                 />
               </div>
 

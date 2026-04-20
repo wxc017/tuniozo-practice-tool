@@ -217,7 +217,7 @@ export default function KonnakolCyclesPanel({ onExportData, onLogData }: { onExp
             </span>
           </div>
 
-          <div ref={notationRef} style={{ overflowX: "auto", background: "#0a0a0a", borderRadius: 8, border: "1px solid #1a1a1a", padding: 8 }}>
+          <div ref={notationRef} style={{ background: "#0a0a0a", borderRadius: 8, border: "1px solid #1a1a1a", padding: 8 }}>
             <KonnakolNotation
               groups={groups}
               width={PREVIEW_W}

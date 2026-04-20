@@ -1,5 +1,4 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
-import { audioEngine } from "@/lib/audioEngine";
 import { FOLK_SONG_LIBRARY, FOLK_SONG_GROUPS } from "@/lib/folkSongData";
 import {
   Renderer, Stave, StaveNote, StaveNoteStruct, Voice, Formatter, Beam, Barline, Dot, Fraction, StaveTie,
@@ -478,6 +477,22 @@ function applyWhite(el: HTMLElement) {
   if (svg) (svg as SVGSVGElement).style.filter = "invert(1)";
 }
 
+// Chord label renderer: splits on the "^" marker so everything after it
+// renders as a <sup> superscript. generateProgression emits "^Qua" on
+// quartal chords so "iii^Qua" shows as "iii" with a small "Qua" suffix.
+function renderChordRoman(label: string) {
+  const caret = label.indexOf("^");
+  if (caret < 0) return label;
+  const base = label.slice(0, caret);
+  const sup = label.slice(caret + 1);
+  return (
+    <>
+      {base}
+      <sup style={{ fontSize: "0.65em", fontWeight: 700, marginLeft: 1 }}>{sup}</sup>
+    </>
+  );
+}
+
 // ── Snare line row: renders up to BARS_PER_LINE bars on one stave ────
 const BARS_PER_LINE = 4;
 const MIN_BAR_WIDTH = 200;    // floor — below this, notes get cramped
@@ -488,8 +503,8 @@ const STAVE_Y = 48;           // vertical offset within each line (room for chor
 function SnareLineLine({
   bars,
   adaptedBars,
-  chordLabels,
-  chordColors,
+  chordLabelsPerBar,
+  chordColorsPerBar,
   timeSig,
   showTimeSig,
   lineIndex,
@@ -497,8 +512,10 @@ function SnareLineLine({
 }: {
   bars: SongBar[];
   adaptedBars?: MelodyBeat[][];
-  chordLabels: string[];
-  chordColors: string[];
+  /** 1 or 2 chord labels per bar. 1 → left-aligned to beat 1.
+   *  2 → left/center split (beat 1 + half-bar midpoint). */
+  chordLabelsPerBar: string[][];
+  chordColorsPerBar: string[][];
   timeSig: string;
   showTimeSig: boolean;
   lineIndex: number;
@@ -637,17 +654,42 @@ function SnareLineLine({
     } catch (err) {
       console.warn("SnareLineLine render error:", err);
     }
-  }, [bars, adaptedBars, chordLabels, chordColors, timeSig, showTimeSig, totalWidth, barWidth]);
+  }, [bars, adaptedBars, chordLabelsPerBar, chordColorsPerBar, timeSig, showTimeSig, totalWidth, barWidth]);
 
   return (
     <div className="overflow-x-auto">
-      {/* Chord labels as HTML row — centered over each bar */}
+      {/* Chord labels as HTML row. 1 chord per bar → left-aligned under
+          beat 1. 2 chords per bar → first under beat 1, second under the
+          half-bar midpoint (beat 3 in 4/4) so secondary dominants read
+          against the correct notes. */}
       <div className="flex" style={{ width: totalWidth, paddingLeft: showTimeSig ? TIME_SIG_W + 8 : 8 }}>
-        {bars.map((_, bi) => (
-          <div key={bi} className="text-center font-bold text-sm" style={{ width: barWidth, color: chordColors[bi] }}>
-            {chordLabels[bi]}
-          </div>
-        ))}
+        {bars.map((_, bi) => {
+          const labels = chordLabelsPerBar[bi] ?? [];
+          const colors = chordColorsPerBar[bi] ?? [];
+          return (
+            <div key={bi} className="relative" style={{ width: barWidth, height: 20 }}>
+              {labels.map((lbl, li) => {
+                const leftPct = labels.length === 1 ? 0 : (li === 0 ? 0 : 50);
+                const widthPct = labels.length === 1 ? 100 : 50;
+                return (
+                  <div
+                    key={li}
+                    className="absolute text-center font-bold text-sm"
+                    style={{
+                      left: `${leftPct}%`,
+                      width: `${widthPct}%`,
+                      color: colors[li] ?? "#7173e6",
+                      textAlign: labels.length === 1 ? "left" : "center",
+                      paddingLeft: labels.length === 1 ? 4 : 0,
+                    }}
+                  >
+                    {renderChordRoman(lbl)}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
       </div>
       <div
         ref={containerRef}
@@ -661,14 +703,14 @@ function SnareLineLine({
 function SnareLineStave({
   bars,
   adaptedBars,
-  chordLabels,
-  chordColors,
+  chordLabelsPerBar,
+  chordColorsPerBar,
   timeSig,
 }: {
   bars: SongBar[];
   adaptedBars?: MelodyBeat[][];
-  chordLabels: string[];
-  chordColors: string[];
+  chordLabelsPerBar: string[][];
+  chordColorsPerBar: string[][];
   timeSig: string;
 }) {
   const outerRef = useRef<HTMLDivElement>(null);
@@ -704,8 +746,8 @@ function SnareLineStave({
           key={li}
           bars={lineIndices.map(i => bars[i])}
           adaptedBars={adaptedBars ? lineIndices.map(i => adaptedBars[i]) : undefined}
-          chordLabels={lineIndices.map(i => chordLabels[i])}
-          chordColors={lineIndices.map(i => chordColors[i])}
+          chordLabelsPerBar={lineIndices.map(i => chordLabelsPerBar[i] ?? [])}
+          chordColorsPerBar={lineIndices.map(i => chordColorsPerBar[i] ?? [])}
           timeSig={timeSig}
           showTimeSig={li === 0}
           lineIndex={li}
@@ -725,7 +767,11 @@ const SUPPORTED_EDOS = [12, 31, 41] as const;
 type SupportedEdo = (typeof SUPPORTED_EDOS)[number];
 
 interface ReharmonizationResult {
+  /** Flat chord stream — each bar consumes slotsPerBar[i] entries. Bars
+   *  with a mid-bar split use 2 entries (beat 1 + half-bar midpoint);
+   *  other bars use 1 (aligned to beat 1). */
   chords: ProgChord[];
+  slotsPerBar: (1 | 2)[];
   adaptedMelody: MelodyBeat[][];
 }
 
@@ -735,6 +781,12 @@ export default function HarmonyWorkshop() {
   const [tonality, setTonality] = useState<Tonality>("major");
   const [progMode, setProgMode] = useState<ProgressionMode>("functional");
   const [adaptMelody, setAdaptMelody] = useState(true);
+  // When true, the reharmonizer MAY split a bar into two chords at the
+  // half-bar mark (beat 3 in 4/4) — but only for bars where the melody is
+  // busy enough to support a chord change and where a secondary-dominant
+  // approach to the next bar's chord makes sense. Most bars still get one
+  // chord aligned to beat 1.
+  const [allowMidBarChord, setAllowMidBarChord] = useState(false);
 
   // ── Mode selection ──────────────────────────────────────────────
   const [scaleFamily, setScaleFamily] = useState<string>("Major Family");
@@ -836,74 +888,108 @@ export default function HarmonyWorkshop() {
   // ── Reharmonize ─────────────────────────────────────────────────
   const handleReharmonize = useCallback(() => {
     const barCount = song.bars.length;
-    const chords = generateProgression(
+    const sigTop = parseInt(song.timeSignature.split("/")[0], 10) || 4;
+    const halfBar = sigTop / 2;
+
+    // Main progression: one chord per bar.
+    const mainChords = generateProgression(
       edo, barCount, harmonyCats, progMode, 3,
       effectiveTonality, tonicRoot,
       checkedSeventhQualities, checkedThirdQualities, false,
     );
 
-    const adaptedMelody = song.bars.map((bar, i) => {
-      const chord = chords[i];
-      if (!chord || !adaptMelody) return bar.melody;
-      return bar.melody.map((beat) =>
-        adaptMelodyNote(beat, chord.chordPcs, modePcs, edo, tonicRoot)
+    // Per-bar decision: does this bar get a mid-bar chord?
+    //   - Requires the feature toggle on.
+    //   - Bar must have enough melody activity in the second half (≥2 notes)
+    //     to support a harmonic change; otherwise a mid-bar chord would float
+    //     under a long note and add nothing.
+    //   - Next bar must exist and have a different chord — the mid-bar slot
+    //     is meant for a *secondary dominant* (V7 of the next chord) or a
+    //     passing functional chord, not a repeat.
+    //   - ~60 % acceptance when all conditions are met, so the feature stays
+    //     stylistic rather than robotic.
+    const busyInSecondHalf = (bar: SongBar): boolean => {
+      let pos = 0;
+      let count = 0;
+      for (const b of bar.melody) {
+        if (pos >= halfBar && b.degree !== 0) count++;
+        pos += b.duration;
+        if (count >= 2) return true;
+      }
+      return false;
+    };
+
+    // Build a mid-bar chord for bar i — prefer V7 of the *next* bar's chord
+    // (secondary-dominant pull into the downbeat), with a fall-through to a
+    // random chord from the configured pool if dom7 isn't available.
+    const chordPool = generateProgression(
+      edo, 0, harmonyCats, "pool", 3,
+      effectiveTonality, tonicRoot,
+      checkedSeventhQualities, checkedThirdQualities, false,
+    );
+    const dm = getDegreeMap(edo);
+    const P5 = dm["5"] ?? 7;
+    const buildMidBarChord = (nextChord: ProgChord | undefined): ProgChord | null => {
+      if (!nextChord) return null;
+      // Secondary dominant: root a P5 below the next chord's root, type = dom7.
+      const secDomRoot = ((nextChord.root - P5) % edo + edo) % edo;
+      const secDom = chordPool.find(c => c.root === secDomRoot && c.chordTypeId === "dom7");
+      if (secDom) return secDom;
+      // Fallback: anything from the pool that shares at least one common tone
+      // with the next chord (smooth voice-leading into the downbeat).
+      const nextPcs = new Set(nextChord.chordPcs);
+      const candidates = chordPool.filter(c =>
+        c.chordPcs.some(p => nextPcs.has(p)) && c.roman !== nextChord.roman,
       );
+      if (candidates.length === 0) return null;
+      return candidates[Math.floor(Math.random() * candidates.length)];
+    };
+
+    // Assemble flat chord stream + per-bar slot count so the display can
+    // render 1 or 2 labels per bar independently.
+    const chords: ProgChord[] = [];
+    const slotsPerBar: (1 | 2)[] = [];
+    for (let i = 0; i < barCount; i++) {
+      chords.push(mainChords[i]);
+      const wantsSplit =
+        allowMidBarChord &&
+        busyInSecondHalf(song.bars[i]) &&
+        i + 1 < barCount &&
+        mainChords[i + 1] &&
+        mainChords[i + 1].roman !== mainChords[i].roman &&
+        Math.random() < 0.6;
+      if (wantsSplit) {
+        const mid = buildMidBarChord(mainChords[i + 1]);
+        if (mid) {
+          chords.push(mid);
+          slotsPerBar.push(2);
+          continue;
+        }
+      }
+      slotsPerBar.push(1);
+    }
+
+    // Melody adaptation: walk each bar's beats, find the chord active at
+    // that beat (first-half chord or second-half chord when a split exists),
+    // and adapt the note to its pitch-class set.
+    const adaptedMelody = song.bars.map((bar, i) => {
+      if (!adaptMelody) return bar.melody;
+      const flatIdx = slotsPerBar.slice(0, i).reduce((s, n) => s + n, 0);
+      const chordA = chords[flatIdx];
+      const chordB = slotsPerBar[i] === 2 ? chords[flatIdx + 1] : chordA;
+      if (!chordA) return bar.melody;
+      let beatPos = 0;
+      return bar.melody.map((beat) => {
+        const activeChord = (slotsPerBar[i] === 2 && beatPos >= halfBar) ? chordB : chordA;
+        beatPos += beat.duration;
+        return adaptMelodyNote(beat, activeChord?.chordPcs ?? chordA.chordPcs, modePcs, edo, tonicRoot);
+      });
     });
 
-    const r: ReharmonizationResult = { chords, adaptedMelody };
+    const r: ReharmonizationResult = { chords, slotsPerBar, adaptedMelody };
     setResult(r);
     setHistory((prev) => [...prev, r]);
-  }, [edo, song, harmonyCats, progMode, effectiveTonality, tonicRoot, checkedSeventhQualities, checkedThirdQualities, adaptMelody, modePcs]);
-
-  // ── Playback ────────────────────────────────────────────────────
-  const [isPlaying, setIsPlaying] = useState(false);
-  const playEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const stopPlayback = useCallback(() => {
-    if (playEndTimer.current) { clearTimeout(playEndTimer.current); playEndTimer.current = null; }
-    audioEngine.silencePlay();
-    setIsPlaying(false);
-  }, []);
-
-  const playResult = useCallback(
-    (r: ReharmonizationResult) => {
-      stopPlayback();
-      audioEngine.init(edo);
-      setIsPlaying(true);
-
-      const gapMs = 700;
-      const chordOct = 3;  // chords in a comfortable mid range
-      const melOct = 4;    // melody one octave above chords
-      const barCount = r.chords.length;
-
-      // Build chord frames — one frame per bar, each containing absolute pitches
-      const chordFrames: number[][] = r.chords.map((chord) =>
-        chord.chordPcs.map((pc) => chordOct * edo + ((pc + tonicRoot) % edo))
-      );
-
-      // Build melody frames — subdivide each bar's melody beats evenly within the bar slot
-      const melodyFrames: number[][] = r.adaptedMelody.flatMap((barBeats) => {
-        if (!barBeats || barBeats.length === 0) return [[]];
-        return barBeats.map((beat) => {
-          if (beat.degree === 0) return []; // rest = empty frame
-          const pc = degreeToPcModal(beat.degree, modePcs, edo);
-          return [melOct * edo + ((pc + tonicRoot) % edo)];
-        });
-      });
-
-      const voiceList: { frames: number[][]; noteDuration: number; gain: number }[] = [
-        { frames: chordFrames, noteDuration: 0.6, gain: 0.5 },
-        { frames: melodyFrames, noteDuration: 0.45, gain: 0.4 },
-      ];
-
-      audioEngine.playMultiVoice(voiceList, edo, gapMs, barCount);
-
-      // Clear playing state after full duration
-      const totalMs = barCount * gapMs + 200;
-      playEndTimer.current = setTimeout(() => setIsPlaying(false), totalMs);
-    },
-    [edo, tonicRoot, modePcs, stopPlayback]
-  );
+  }, [edo, song, harmonyCats, progMode, effectiveTonality, tonicRoot, checkedSeventhQualities, checkedThirdQualities, adaptMelody, modePcs, allowMidBarChord]);
 
   const timeSig = song.timeSignature;
 
@@ -1101,7 +1187,7 @@ export default function HarmonyWorkshop() {
         </span>
       </div>
 
-      {/* ── Action row: Reharmonize / Original / Play / Stop ── */}
+      {/* ── Action row: Reharmonize / Original / Chords-per-bar ── */}
       <div className="flex items-center gap-2">
         <button onClick={handleReharmonize}
           className="px-3 py-1.5 bg-[#7173e6] hover:bg-[#8183f6] text-white text-xs font-medium rounded transition-colors">
@@ -1114,18 +1200,16 @@ export default function HarmonyWorkshop() {
             Original
           </button>
         )}
-        {result && (
-          <button onClick={() => playResult(result)} disabled={isPlaying}
-            className="px-2 py-1.5 bg-[#1a1a1a] border border-[#2a2a2a] text-[#aaa] hover:text-white text-xs rounded transition-colors disabled:opacity-50">
-            {isPlaying ? "Playing..." : "Play"}
-          </button>
-        )}
-        {isPlaying && (
-          <button onClick={stopPlayback}
-            className="px-2 py-1.5 bg-[#2a1a1a] border border-[#5a2a2a] text-[#cc6666] hover:text-[#ff7777] text-xs rounded transition-colors">
-            Stop
-          </button>
-        )}
+        <button
+          onClick={() => setAllowMidBarChord(v => !v)}
+          className={`ml-2 px-2 py-1 border text-xs rounded transition-colors ${
+            allowMidBarChord
+              ? "bg-[#2a2a4a] border-[#7173e6] text-[#9a9cf8]"
+              : "bg-[#1a1a1a] border-[#2a2a2a] text-[#666] hover:text-[#aaa]"
+          }`}
+          title="Allow the reharmonizer to drop a second chord at the half-bar mark on busy bars (secondary-dominant pulls into the next downbeat).">
+          Mid-bar chords {allowMidBarChord ? "✓" : ""}
+        </button>
       </div>
 
       {/* ── Single view: reharmonized when result is set, else original ── */}
@@ -1137,11 +1221,48 @@ export default function HarmonyWorkshop() {
           key={result ? `reharm-${selectedSongId}-${history.length}` : `orig-${selectedSongId}`}
           bars={song.bars}
           adaptedBars={result ? result.adaptedMelody : undefined}
-          chordLabels={result ? result.chords.map(c => c.roman) : song.bars.map(b => b.chordRoman)}
-          chordColors={
+          chordLabelsPerBar={
             result
-              ? result.chords.map((c, i) => (c.roman !== song.bars[i]?.chordRoman ? "#6adf6a" : "#7173e6"))
-              : song.bars.map(() => "#7173e6")
+              ? (() => {
+                  const labels: string[][] = [];
+                  let flatIdx = 0;
+                  for (let bi = 0; bi < song.bars.length; bi++) {
+                    const slots = result.slotsPerBar[bi] ?? 1;
+                    const row: string[] = [];
+                    for (let s = 0; s < slots; s++) {
+                      const c = result.chords[flatIdx + s];
+                      if (c?.roman) row.push(c.roman);
+                    }
+                    labels.push(row);
+                    flatIdx += slots;
+                  }
+                  return labels;
+                })()
+              : song.bars.map(b => [b.chordRoman])
+          }
+          chordColorsPerBar={
+            result
+              ? (() => {
+                  const colors: string[][] = [];
+                  let flatIdx = 0;
+                  for (let bi = 0; bi < song.bars.length; bi++) {
+                    const slots = result.slotsPerBar[bi] ?? 1;
+                    const bar = song.bars[bi];
+                    const row: string[] = [];
+                    for (let s = 0; s < slots; s++) {
+                      const c = result.chords[flatIdx + s];
+                      if (!c?.roman) continue;
+                      // Main chord: green if changed from original; indigo if same.
+                      // Mid-bar chord: always green (it's inherently new).
+                      if (s === 0) row.push(c.roman !== bar.chordRoman ? "#6adf6a" : "#7173e6");
+                      else row.push("#6adf6a");
+                    }
+                    colors.push(row);
+                    flatIdx += slots;
+                  }
+                  return colors;
+                })()
+              : song.bars.map(() => ["#7173e6"])
           }
           timeSig={timeSig}
         />

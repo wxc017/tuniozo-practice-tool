@@ -3762,11 +3762,13 @@ export function generateProgression(
   // The Markov chain should select the next HARMONIC FUNCTION (root),
   // then pick a chord type at that root.  This prevents fragmented
   // transitions when the same root has multiple types (I vs Imaj7).
-  const rootToEntries = new Map<number, { root: number; type: string }[]>();
+  // Preserve the full PoolEntry (including `layer`) so pickTypeAtRoot can
+  // weight chord types by their harmonic category.
+  const rootToEntries = new Map<number, PoolEntry[]>();
   for (const u of unique) {
     const r = ((u.root % edo) + edo) % edo;
     if (!rootToEntries.has(r)) rootToEntries.set(r, []);
-    rootToEntries.get(r)!.push(u);
+    rootToEntries.get(r)!.push(u as PoolEntry);
   }
 
   // Merge all transitions from entries at the same root into a root→root map.
@@ -3797,11 +3799,32 @@ export function generateProgression(
     if (entry) appliedRoots.add(((entry.root % edo) + edo) % edo);
   }
 
-  // Pick a random chord type at a given root
+  // Pick a chord type at a given root, weighted by layer so selected
+  // non-functional categories actually surface when their root is shared with
+  // a diatonic chord. Without this, "root=0" would pick "maj" vs "sus4" 50/50
+  // even with only Quartal selected — the Markov's W bias only steers the
+  // root choice, not the chord-type choice at that root. Layer weights:
+  //   - selected non-functional layer: ×8 (mirrors W() bias strength)
+  //   - selected functional layer:     ×2 (or ×3 if no non-functional picks)
+  //   - unselected layer:              ×1 (still possible when the selected
+  //                                        category has no chord at this root)
+  const nonFunctionalCatCount = [...cats].filter(c => c !== "functional").length;
   const pickTypeAtRoot = (root: number): { root: number; type: string } => {
     const entries = rootToEntries.get(root);
     if (!entries || entries.length === 0) return unique[Math.floor(Math.random() * unique.length)];
-    return entries[Math.floor(Math.random() * entries.length)];
+    const weights = entries.map(e => {
+      const layer = (e as PoolEntry).layer;
+      if (!cats.has(layer)) return 1;
+      if (layer === "functional") return nonFunctionalCatCount > 0 ? 2 : 3;
+      return 8;
+    });
+    const total = weights.reduce((s, w) => s + w, 0);
+    let r = Math.random() * total;
+    for (let i = 0; i < entries.length; i++) {
+      r -= weights[i];
+      if (r <= 0) return entries[i];
+    }
+    return entries[entries.length - 1];
   };
 
   // Weighted random pick from root transitions
@@ -3985,6 +4008,23 @@ export function generateProgression(
           }
         }
         break;
+      }
+    }
+  }
+
+  // Mark quartal-pool chords with a "^Qua" suffix so the display can render
+  // "Qua" as a superscript next to the roman numeral. Recognising quartal
+  // entries by membership in the quartal pool avoids mis-labelling a diatonic
+  // chord that happens to share (root, type) with a quartal voicing.
+  if (cats.has("quartal") && quartalPool.length > 0) {
+    const quartalKeys = new Set(quartalPool.map(entryKey));
+    for (let i = 0; i < result.length; i++) {
+      const c = result[i];
+      if (!c) continue;
+      const relRoot = ((c.root - tonicRoot) % edo + edo) % edo;
+      const key = `${relRoot}:${c.chordTypeId}`;
+      if (quartalKeys.has(key) && !c.roman.includes("^Qua")) {
+        result[i] = { ...c, roman: c.roman + "^Qua" };
       }
     }
   }

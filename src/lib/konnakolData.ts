@@ -217,18 +217,27 @@ export const CYCLE_RATIOS: CycleRatio[] = [
 
 // ── Syllable Selection Per Group Size ─────────────────────────────────────────
 
+// Slot-indexed syllables for each gati (per-beat subdivision count).
+// `size` is the number of equal slots in one beat — e.g. 4 = chaturasra
+// (four 16ths), 3 = tisra (triplet), 5 = khanda (quintuplet), etc.
+// Each array entry is the syllable for a note whose START slot equals its
+// index. A composition like [2,1,1] (1 eighth + 2 sixteenths) picks slots
+// 0, 2, 3 and reads ["ta","ta","ke"] — which is the correct konnakol
+// spoken form. Picking by slot position (instead of by sequential note
+// index) is what makes compound rhythms come out right.
 export function getSyllablesForSize(size: number): string[] {
   switch (size) {
     case 1: return ["ta"];
-    case 2: return ["ta", "ke"];
-    case 3: return ["ta", "ki", "te"];
-    case 4: return ["ta", "ke", "di", "mi"];
-    case 5: return ["ta", "di", "ghi", "na", "ton"];
-    case 6: return ["ta", "ke", "di", "mi", "ta", "ke"];
-    case 7: return ["ta", "ke", "ta", "di", "ghi", "na", "ton"];
-    case 8: return ["ta", "ke", "di", "mi", "ta", "ke", "ja", "nu"];
+    case 2: return ["ta", "ka"];
+    case 3: return ["ta", "ki", "ta"];                        // tisra
+    case 4: return ["ta", "dim", "ta", "ke"];                 // chaturasra
+    case 5: return ["ta", "ka", "ta", "ki", "ta"];            // khanda
+    case 6: return ["ta", "ki", "ta", "ta", "ki", "ta"];      // two tisras
+    case 7: return ["ta", "ki", "ta", "ta", "ka", "di", "mi"]; // misra
+    case 8: return ["ta", "dim", "ta", "ke", "ta", "dim", "ta", "ke"]; // two chaturasras
     default: {
-      const base = ["ta", "ke", "di", "mi", "ta", "ki", "te", "dim", "ke", "ta", "di", "ghi", "na", "ton"];
+      // For uncommon sizes, tile the chaturasra pattern with a "ta" anchor.
+      const base = ["ta", "dim", "ta", "ke"];
       return Array.from({ length: size }, (_, i) => base[i % base.length]);
     }
   }
@@ -548,17 +557,23 @@ function partToNoteEntries(slots: number, syl: string): PermNoteEntry[] {
   }
 }
 
-// Converts one ordered composition to a single-group Permutation.
-// Each note gets ONE syllable: the syllable at its start position in the
-// subdivision sequence. The cursor advances by the note's slot-count so
-// longer notes skip over positions that would have fallen inside them.
+// Converts one ordered composition to a single-group Permutation. The first
+// note of each part gets the syllable at its start slot; any tie-continuation
+// emitted by partToNoteEntries (5-slot → q+16th, 7-slot → q.+8th) gets the
+// syllable at the slot where the continuation begins — so every notated
+// note ends up with a label instead of the tied 16th/8th rendering blank.
 function compositionToSingleGroupPerm(comp: number[], x: number): Permutation {
   const baseSyls = getSyllablesForSize(x);
   const allNotes: PermNoteEntry[] = [];
   let cursor = 0;
   for (const part of comp) {
     const syl = baseSyls[cursor] ?? "";
-    allNotes.push(...partToNoteEntries(part, syl));
+    const entries = partToNoteEntries(part, syl);
+    // partToNoteEntries emits a tie continuation at slot offset 4 (for part 5)
+    // or 6 (for part 7). Give that continuation the syllable at its own slot.
+    if (part === 5 && entries[1]) entries[1].syl = baseSyls[cursor + 4] ?? "";
+    else if (part === 7 && entries[1]) entries[1].syl = baseSyls[cursor + 6] ?? "";
+    allNotes.push(...entries);
     cursor += part;
   }
   return [{ notes: allNotes }];

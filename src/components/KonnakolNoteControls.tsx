@@ -231,7 +231,8 @@ export default function KonnakolNoteControls({ groups, previewW, notePositions, 
                   }}>
                   SB
                 </button>
-                {/* Popover with notation previews */}
+                {/* Popover with notation previews — lays out cards in a wrapping
+                    grid so every subdivision is visible without scroll. */}
                 {isOpen && (
                   <div
                     ref={popoverRef}
@@ -244,16 +245,14 @@ export default function KonnakolNoteControls({ groups, previewW, notePositions, 
                       background: "#1a1a1a",
                       border: "1.5px solid #e8a0ff50",
                       borderRadius: 8,
-                      padding: 8,
-                      minWidth: SB_CARD_W + 60,
-                      maxHeight: 360,
-                      overflowY: "auto",
+                      padding: 10,
+                      width: Math.min(previewW, (SB_CARD_W + 6) * 4 + 20),
                       boxShadow: "0 4px 20px rgba(0,0,0,0.7)",
                     }}>
                     <div style={{ fontSize: 9, color: "#e8a0ff", fontWeight: 700, marginBottom: 6, letterSpacing: 0.5 }}>
                       SUBDIVISIONS IN {size}
                     </div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                    <div style={{ display: "flex", flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
                       {perms.map((perm, pi) => (
                         <PermPreviewBtn
                           key={pi}

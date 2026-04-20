@@ -625,7 +625,7 @@ export default function KonnakolBasicPanel({ onExportData, onLogData }: { onExpo
       {preview && preview.length > 0 && subdivGroups.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <span style={{ fontSize: 11, color: "#666", fontWeight: 700, letterSpacing: 1 }}>PREVIEW</span>
-          <div ref={previewStaveRef} style={{ overflowX: "auto", background: "#0a0a0a", borderRadius: 8, border: "1px solid #1a1a1a", padding: 8 }}>
+          <div ref={previewStaveRef} style={{ background: "#0a0a0a", borderRadius: 8, border: "1px solid #1a1a1a", padding: 8 }}>
             <KonnakolNotation
               groups={subdivGroups}
               width={SUBDIV_PREVIEW_W}
