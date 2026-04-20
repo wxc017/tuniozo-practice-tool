@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import type { ComponentType } from "react";
 import LumatoneKeyboard from "@/components/LumatoneKeyboard";
 import PianoKeyboard from "@/components/PianoKeyboard";
 import GuitarFretboard from "@/components/GuitarFretboard";
@@ -23,9 +24,9 @@ import NoteEntryMode from "@/components/NoteEntryMode";
 import PhraseDecomposition from "@/components/PhraseDecomposition";
 // Academic mode components — gitignored, only present in local dev
 const academicModules = import.meta.glob([
-  "@/components/ReadingWorkflow.tsx",
-  "@/components/NoteWriting.tsx",
-  "@/components/SimpleDoc.tsx",
+  "@/components/ReadingWorkflo*.tsx",
+  "@/components/NoteWritin*.tsx",
+  "@/components/SimpleDo*.tsx",
 ]);
 import LatticeView from "@/components/LatticeView";
 import IntervalBrowser from "@/components/IntervalBrowser";
@@ -163,16 +164,16 @@ export default function App() {
   const [academicMode, setAcademicMode] = useLS<boolean>("lt_academic_mode", false);
   // Dynamically load academic components (only present in local dev)
   const [academicComps, setAcademicComps] = useState<{
-    ReadingWorkflow?: React.ComponentType;
-    NoteWriting?: React.ComponentType;
-    SimpleDoc?: React.ComponentType;
+    ReadingWorkflow?: ComponentType;
+    NoteWriting?: ComponentType;
+    SimpleDoc?: ComponentType;
   }>({});
   useEffect(() => {
     const entries = Object.entries(academicModules);
     Promise.all(entries.map(([path, loader]) =>
       loader().then((m: any) => [path, m.default] as const).catch(() => [path, null] as const)
     )).then(results => {
-      const next: { ReadingWorkflow?: React.ComponentType; NoteWriting?: React.ComponentType; SimpleDoc?: React.ComponentType } = {};
+      const next: { ReadingWorkflow?: ComponentType; NoteWriting?: ComponentType; SimpleDoc?: ComponentType } = {};
       for (const [path, comp] of results) {
         if (!comp) continue;
         if (path.includes("ReadingWorkflow")) next.ReadingWorkflow = comp;

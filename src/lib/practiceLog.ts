@@ -1,4 +1,4 @@
-import { lsGet, lsSet, localToday, jsonReplacer } from "./storage";
+import { lsGet, lsSet, localToday } from "./storage";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -40,8 +40,7 @@ export function addPracticeEntry(
   };
   if (!log[date]) log[date] = [];
   log[date] = [entry, ...log[date]];
-  // Use direct setItem so callers can catch quota errors
-  localStorage.setItem(LOG_KEY, JSON.stringify(log, jsonReplacer));
+  lsSet(LOG_KEY, log);
   return entry;
 }
 

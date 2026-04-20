@@ -313,8 +313,8 @@ export default function SettingsModal({ onClose, onDataImported, betaPlayRotatio
             </div>
           </div>
 
-          {/* Academic Data section */}
-          <div>
+          {/* Academic Data section — only if academic components are present locally */}
+          {academicAvailable && (<div>
             <h3 className="text-xs font-semibold text-[#8b5cf6] uppercase tracking-widest mb-3">Academic Data</h3>
             <div className="space-y-2">
               <div className="px-3 py-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg">
@@ -351,7 +351,7 @@ export default function SettingsModal({ onClose, onDataImported, betaPlayRotatio
               </button>
               <input ref={academicImportRef} type="file" accept=".json" onChange={handleAcademicImportFile} className="hidden" />
             </div>
-          </div>
+          </div>)}
 
           {/* Data section */}
           <div>

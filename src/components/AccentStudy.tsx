@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useMemo, useRef, lazy, Suspense } from "react";
+import type { ComponentType } from "react";
 import {
   AccentSubdivision,
   AccentBeatCount,
@@ -961,11 +962,11 @@ export default function AccentStudy({
 }) {
   // Lazy-load ComposedStudyBrowser — private file, gitignored.
   // Only appears in local dev; absent on public GitHub builds.
-  const [ComposedBrowser, setComposedBrowser] = useState<React.ComponentType<{
+  const [ComposedBrowser, setComposedBrowser] = useState<ComponentType<{
     onImportMeasures: (measures: AccentMeasureData[], mode: "phrase" | "line", grid: AccentSubdivision) => void;
   }> | null>(null);
   useEffect(() => {
-    const loaders = import.meta.glob("./ComposedStudyBrowser.tsx");
+    const loaders = import.meta.glob("./ComposedStudyBrows*.tsx");
     const loader = loaders["./ComposedStudyBrowser.tsx"];
     if (loader) {
       loader().then((m: any) => setComposedBrowser(() => m.default)).catch(() => {});
