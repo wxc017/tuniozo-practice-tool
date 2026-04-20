@@ -37,65 +37,7 @@ export interface FolkSong {
   bars: SongBar[];
 }
 
-const FOLK_SONGS_LEGACY: FolkSong[] = [
-  {
-    id: "twinkle-legacy",
-    title: "Twinkle Twinkle Little Star",
-    key: "C major",
-    timeSignature: "4/4",
-    bars: [
-      { melody: [{ degree: 1, duration: 1 }, { degree: 1, duration: 1 }, { degree: 5, duration: 1 }, { degree: 5, duration: 1 }], chordRoman: "I" },
-      { melody: [{ degree: 6, duration: 1 }, { degree: 6, duration: 1 }, { degree: 5, duration: 2 }], chordRoman: "IV" },
-      { melody: [{ degree: 4, duration: 1 }, { degree: 4, duration: 1 }, { degree: 3, duration: 1 }, { degree: 3, duration: 1 }], chordRoman: "V" },
-      { melody: [{ degree: 2, duration: 1 }, { degree: 2, duration: 1 }, { degree: 1, duration: 2 }], chordRoman: "I" },
-    ],
-  },
-  {
-    id: "mary",
-    title: "Mary Had a Little Lamb",
-    key: "C major",
-    timeSignature: "4/4",
-    bars: [
-      { melody: [{ degree: 3, duration: 1 }, { degree: 2, duration: 1 }, { degree: 1, duration: 1 }, { degree: 2, duration: 1 }], chordRoman: "I" },
-      { melody: [{ degree: 3, duration: 1 }, { degree: 3, duration: 1 }, { degree: 3, duration: 2 }], chordRoman: "I" },
-      { melody: [{ degree: 2, duration: 1 }, { degree: 2, duration: 1 }, { degree: 2, duration: 2 }], chordRoman: "V" },
-      { melody: [{ degree: 3, duration: 1 }, { degree: 5, duration: 1 }, { degree: 5, duration: 2 }], chordRoman: "I" },
-    ],
-  },
-  {
-    id: "ode-to-joy",
-    title: "Ode to Joy",
-    key: "C major",
-    timeSignature: "4/4",
-    bars: [
-      { melody: [{ degree: 3, duration: 1 }, { degree: 3, duration: 1 }, { degree: 4, duration: 1 }, { degree: 5, duration: 1 }], chordRoman: "I" },
-      { melody: [{ degree: 5, duration: 1 }, { degree: 4, duration: 1 }, { degree: 3, duration: 1 }, { degree: 2, duration: 1 }], chordRoman: "V" },
-      { melody: [{ degree: 1, duration: 1 }, { degree: 1, duration: 1 }, { degree: 2, duration: 1 }, { degree: 3, duration: 1 }], chordRoman: "IV" },
-      { melody: [{ degree: 3, duration: 1.5 }, { degree: 2, duration: 0.5 }, { degree: 2, duration: 2 }], chordRoman: "V" },
-    ],
-  },
-  {
-    id: "amazing-grace",
-    title: "Amazing Grace",
-    key: "G major",
-    timeSignature: "3/4",
-    bars: [
-      { melody: [{ degree: 1, duration: 1 }, { degree: 3, duration: 1.5 }, { degree: 1, duration: 0.5 }], chordRoman: "I" },
-      { melody: [{ degree: 3, duration: 2 }, { degree: 2, duration: 1 }], chordRoman: "I" },
-      { melody: [{ degree: 1, duration: 2 }, { degree: 6, duration: 1 }], chordRoman: "IV" },
-      { melody: [{ degree: 1, duration: 3 }], chordRoman: "I" },
-    ],
-  },
-];
-
-// Combine library + legacy songs (library first, deduplicated by id)
-const FOLK_SONGS: FolkSong[] = (() => {
-  const seen = new Set<string>();
-  const result: FolkSong[] = [];
-  for (const s of FOLK_SONG_LIBRARY) { seen.add(s.id); result.push(s); }
-  for (const s of FOLK_SONGS_LEGACY) { if (!seen.has(s.id)) result.push(s); }
-  return result;
-})();
+const FOLK_SONGS: FolkSong[] = [...FOLK_SONG_LIBRARY];
 
 // ── Scale / mode helpers ────────────────────────────────────────────
 const SCALE_FAMILIES = ["Major Family", "Harmonic Minor Family", "Melodic Minor Family"] as const;
