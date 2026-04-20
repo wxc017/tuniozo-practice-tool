@@ -17,10 +17,11 @@ interface Props {
   betaMathLab: boolean;
   onBetaMathLabChange: (v: boolean) => void;
   academicMode: boolean;
+  academicAvailable?: boolean;
   onAcademicModeChange: (v: boolean) => void;
 }
 
-export default function SettingsModal({ onClose, onDataImported, betaPlayRotation, onBetaPlayRotationChange, betaIntervalChain, onBetaIntervalChainChange, betaComma, onBetaCommaChange, betaTransform, onBetaTransformChange, betaMathLab, onBetaMathLabChange, academicMode, onAcademicModeChange }: Props) {
+export default function SettingsModal({ onClose, onDataImported, betaPlayRotation, onBetaPlayRotationChange, betaIntervalChain, onBetaIntervalChainChange, betaComma, onBetaCommaChange, betaTransform, onBetaTransformChange, betaMathLab, onBetaMathLabChange, academicMode, academicAvailable = false, onAcademicModeChange }: Props) {
   const importRef = useRef<HTMLInputElement>(null);
   const musicImportRef = useRef<HTMLInputElement>(null);
   const academicImportRef = useRef<HTMLInputElement>(null);
@@ -196,91 +197,26 @@ export default function SettingsModal({ onClose, onDataImported, betaPlayRotatio
         {/* Content */}
         <div className="px-5 py-5 space-y-6 overflow-y-auto">
 
-          {/* Mode section */}
-          <div>
-            <h3 className="text-xs font-semibold text-[#8b5cf6] uppercase tracking-widest mb-3">Mode</h3>
-            <div className="space-y-2">
-              <label className="flex items-center gap-3 px-3 py-2.5 bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#3a3a3a] rounded-lg cursor-pointer transition-colors">
-                <input
-                  type="checkbox"
-                  checked={academicMode}
-                  onChange={e => onAcademicModeChange(e.target.checked)}
-                  className="accent-[#8b5cf6] w-4 h-4 cursor-pointer"
-                />
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-[#ccc]">Academic Toggle</div>
-                  <div className="text-xs text-[#555]">Hide music modes and show academic tools (Reading Workflow)</div>
-                </div>
-              </label>
+          {/* Mode section (only if academic components are present locally) */}
+          {academicAvailable && (
+            <div>
+              <h3 className="text-xs font-semibold text-[#8b5cf6] uppercase tracking-widest mb-3">Mode</h3>
+              <div className="space-y-2">
+                <label className="flex items-center gap-3 px-3 py-2.5 bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#3a3a3a] rounded-lg cursor-pointer transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={academicMode}
+                    onChange={e => onAcademicModeChange(e.target.checked)}
+                    className="accent-[#8b5cf6] w-4 h-4 cursor-pointer"
+                  />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-[#ccc]">Academic Toggle</div>
+                    <div className="text-xs text-[#555]">Hide music modes and show academic tools (Reading Workflow)</div>
+                  </div>
+                </label>
+              </div>
             </div>
-          </div>
-
-          {/* Beta Features section */}
-          <div>
-            <h3 className="text-xs font-semibold text-[#c8aa50] uppercase tracking-widest mb-3">Beta Features</h3>
-            <div className="space-y-2">
-              <label className="flex items-center gap-3 px-3 py-2.5 bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#3a3a3a] rounded-lg cursor-pointer transition-colors">
-                <input
-                  type="checkbox"
-                  checked={betaPlayRotation}
-                  onChange={e => onBetaPlayRotationChange(e.target.checked)}
-                  className="accent-[#c8aa50] w-4 h-4 cursor-pointer"
-                />
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-[#ccc]">Play Rotation</div>
-                  <div className="text-xs text-[#555]">Enable playback with rotation through permutations in Drum Patterns</div>
-                </div>
-              </label>
-              <label className="flex items-center gap-3 px-3 py-2.5 bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#3a3a3a] rounded-lg cursor-pointer transition-colors">
-                <input
-                  type="checkbox"
-                  checked={betaIntervalChain}
-                  onChange={e => onBetaIntervalChainChange(e.target.checked)}
-                  className="accent-[#c8aa50] w-4 h-4 cursor-pointer"
-                />
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-[#ccc]">Interval Chain</div>
-                  <div className="text-xs text-[#555]">Show Interval Chain mode in the Harmonic lattice view</div>
-                </div>
-              </label>
-              <label className="flex items-center gap-3 px-3 py-2.5 bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#3a3a3a] rounded-lg cursor-pointer transition-colors">
-                <input
-                  type="checkbox"
-                  checked={betaComma}
-                  onChange={e => onBetaCommaChange(e.target.checked)}
-                  className="accent-[#c8aa50] w-4 h-4 cursor-pointer"
-                />
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-[#ccc]">Comma</div>
-                  <div className="text-xs text-[#555]">Show Comma mode in the Harmonic lattice view</div>
-                </div>
-              </label>
-              <label className="flex items-center gap-3 px-3 py-2.5 bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#3a3a3a] rounded-lg cursor-pointer transition-colors">
-                <input
-                  type="checkbox"
-                  checked={betaMathLab}
-                  onChange={e => onBetaMathLabChange(e.target.checked)}
-                  className="accent-[#c8aa50] w-4 h-4 cursor-pointer"
-                />
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-[#ccc]">Math Lab</div>
-                  <div className="text-xs text-[#555]">Show Math Lab section (Orbifold, Consonance, CPS, Circle Map, MOS Generator)</div>
-                </div>
-              </label>
-              <label className="flex items-center gap-3 px-3 py-2.5 bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#3a3a3a] rounded-lg cursor-pointer transition-colors">
-                <input
-                  type="checkbox"
-                  checked={betaTransform}
-                  onChange={e => onBetaTransformChange(e.target.checked)}
-                  className="accent-[#c8aa50] w-4 h-4 cursor-pointer"
-                />
-                <div className="flex-1">
-                  <div className="text-sm font-medium text-[#ccc]">Transform</div>
-                  <div className="text-xs text-[#555]">Show Transform tab in Drum Patterns (pattern transformations)</div>
-                </div>
-              </label>
-            </div>
-          </div>
+          )}
 
           {/* Google Drive Sync section */}
           {isGoogleDriveAvailable() && (

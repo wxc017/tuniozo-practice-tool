@@ -21,9 +21,12 @@ import Konnakol from "@/components/Konnakol";
 import VocalPercussion from "@/components/VocalPercussion";
 import NoteEntryMode from "@/components/NoteEntryMode";
 import PhraseDecomposition from "@/components/PhraseDecomposition";
-import ReadingWorkflow from "@/components/ReadingWorkflow";
-import NoteWriting from "@/components/NoteWriting";
-import SimpleDoc from "@/components/SimpleDoc";
+// Academic mode components — gitignored, only present in local dev
+const academicModules = import.meta.glob([
+  "@/components/ReadingWorkflow.tsx",
+  "@/components/NoteWriting.tsx",
+  "@/components/SimpleDoc.tsx",
+]);
 import LatticeView from "@/components/LatticeView";
 import IntervalBrowser from "@/components/IntervalBrowser";
 import MicrowaveMode from "@/components/MicrowaveMode";
@@ -158,6 +161,30 @@ export default function App() {
   const [betaMathLab, setBetaMathLab] = useLS<boolean>("lt_beta_math_lab", false);
   const [betaTransform, setBetaTransform] = useLS<boolean>("lt_beta_transform", false);
   const [academicMode, setAcademicMode] = useLS<boolean>("lt_academic_mode", false);
+  // Dynamically load academic components (only present in local dev)
+  const [academicComps, setAcademicComps] = useState<{
+    ReadingWorkflow?: React.ComponentType;
+    NoteWriting?: React.ComponentType;
+    SimpleDoc?: React.ComponentType;
+  }>({});
+  useEffect(() => {
+    const entries = Object.entries(academicModules);
+    Promise.all(entries.map(([path, loader]) =>
+      loader().then((m: any) => [path, m.default] as const).catch(() => [path, null] as const)
+    )).then(results => {
+      const next: { ReadingWorkflow?: React.ComponentType; NoteWriting?: React.ComponentType; SimpleDoc?: React.ComponentType } = {};
+      for (const [path, comp] of results) {
+        if (!comp) continue;
+        if (path.includes("ReadingWorkflow")) next.ReadingWorkflow = comp;
+        else if (path.includes("NoteWriting")) next.NoteWriting = comp;
+        else if (path.includes("SimpleDoc")) next.SimpleDoc = comp;
+      }
+      setAcademicComps(next);
+    });
+  }, []);
+  const academicAvailable = Boolean(academicComps.ReadingWorkflow || academicComps.NoteWriting || academicComps.SimpleDoc);
+  // If academic mode was enabled but no components are present, flip it off
+  useEffect(() => { if (academicMode && !academicAvailable) setAcademicMode(false); }, [academicMode, academicAvailable, setAcademicMode]);
   const pulseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pulsePhase = useRef<"on" | "off">("on");
 
@@ -856,23 +883,23 @@ export default function App() {
       )}
 
       {/* ── Reading Workflow (Academic) ── */}
-      {section === "reading-workflow" && (
+      {section === "reading-workflow" && academicComps.ReadingWorkflow && (
         <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-          <ReadingWorkflow />
+          <academicComps.ReadingWorkflow />
         </div>
       )}
 
       {/* ── Note Writing (Academic) ── */}
-      {section === "note-writing" && (
+      {section === "note-writing" && academicComps.NoteWriting && (
         <div className="flex-1 flex flex-col overflow-hidden">
-          <NoteWriting />
+          <academicComps.NoteWriting />
         </div>
       )}
 
       {/* ── Simple Doc (Academic) ── */}
-      {section === "simple-doc" && (
+      {section === "simple-doc" && academicComps.SimpleDoc && (
         <div className="flex-1 flex flex-col overflow-hidden">
-          <SimpleDoc />
+          <academicComps.SimpleDoc />
         </div>
       )}
 
@@ -1312,6 +1339,7 @@ export default function App() {
             if (!v && section === "math-lab") setSection("ear-trainer");
           }}
           academicMode={academicMode}
+          academicAvailable={academicAvailable}
           onAcademicModeChange={(v) => {
             setAcademicMode(v);
             setSection(v ? "reading-workflow" : "ear-trainer");

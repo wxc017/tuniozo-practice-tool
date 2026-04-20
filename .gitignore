@@ -10,3 +10,11 @@ Thumbs.db
 # Private / copyrighted content — local dev only, never push
 src/components/ComposedStudyBrowser.tsx
 src/lib/composedStudies.ts
+
+# Academic mode — local dev only, never push
+src/components/ReadingWorkflow.tsx
+src/components/NoteWriting.tsx
+src/components/SimpleDoc.tsx
+src/components/reading/
+src/lib/readingWorkflowData.ts
+src/lib/fileStorage.ts

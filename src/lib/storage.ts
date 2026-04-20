@@ -258,8 +258,8 @@ export async function exportAcademicData(): Promise<void> {
   const meta = localStorage.getItem("lt_reading_files");
   const files: { id: string }[] = meta ? JSON.parse(meta) : [];
 
-  // Read all file blobs from IndexedDB
-  const { getFileBlob } = await import("./fileStorage");
+  // Read all file blobs from IndexedDB (academic feature — only present locally)
+  const { getFileBlob } = await import(/* @vite-ignore */ "./fileStorage");
   const blobs: Record<string, string> = {};
   for (const f of files) {
     const buf = await getFileBlob(f.id);
@@ -300,7 +300,7 @@ export async function importAcademicData(json: string): Promise<{ ok: boolean; e
 
     // Restore file blobs to IndexedDB
     if (parsed.fileBlobs && typeof parsed.fileBlobs === "object") {
-      const { storeFileBlob } = await import("./fileStorage");
+      const { storeFileBlob } = await import(/* @vite-ignore */ "./fileStorage");
       for (const [id, b64] of Object.entries(parsed.fileBlobs)) {
         const binary = atob(b64 as string);
         const bytes = new Uint8Array(binary.length);
