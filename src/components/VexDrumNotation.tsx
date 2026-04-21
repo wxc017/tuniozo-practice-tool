@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import {
   Renderer, Stave, StaveNote, StaveNoteStruct, Voice, Formatter, Beam, Barline,
   Articulation, Annotation, GraceNote, GraceNoteGroup, Parenthesis, Tremolo, ModifierPosition,
-  Tuplet, StaveTie,
+  Tuplet, StaveTie, Dot,
 } from "vexflow";
 import { GridType, GRID_SUBDIVS } from "@/lib/drumData";
 
@@ -182,15 +182,19 @@ function slotsToVfDur(slots: number, beatSize: number, tripletGroup3 = false): [
 // sequentially by beatSize so every group shares one beam.
 // The standard 8th/16th grids (beatSize 2 or 4) fall through to VexFlow's auto-beamer.
 function buildBeams(notes: StaveNote[], beatSize: number): Beam[] {
-  const nonRests = notes.filter(n => !n.isRest());
+  // Pass the full note list (rests included): VexFlow's generateBeams uses
+  // cumulative ticks to align beam groups to beat boundaries, and with
+  // beamRests:false (the default) rests also break beams at their actual
+  // positions. Stripping rests desyncs the tick math so non-adjacent hits
+  // (e.g. bass on slots 0 and 3 of a 4-slot bar) end up beamed across the
+  // gap instead of each showing their own flag.
   if (beatSize === 2 || beatSize === 4) {
-    return Beam.generateBeams(nonRests, { maintainStemDirections: true, flatBeams: true });
+    return Beam.generateBeams(notes, { maintainStemDirections: true, flatBeams: true });
   }
   const BEAMABLE = new Set(["8", "16", "32"]);
-  const beamable = nonRests.filter(n => BEAMABLE.has(n.getDuration()));
   const beams: Beam[] = [];
-  for (let i = 0; i < beamable.length; i += beatSize) {
-    const group = beamable.slice(i, i + beatSize);
+  let group: StaveNote[] = [];
+  const flush = () => {
     if (group.length >= 2) {
       try {
         const beam = new Beam(group, false);
@@ -198,7 +202,17 @@ function buildBeams(notes: StaveNote[], beatSize: number): Beam[] {
         beams.push(beam);
       } catch { /* ignore */ }
     }
+    group = [];
+  };
+  for (const n of notes) {
+    if (n.isRest() || !BEAMABLE.has(n.getDuration())) {
+      flush();
+      continue;
+    }
+    group.push(n);
+    if (group.length >= beatSize) flush();
   }
+  flush();
   return beams;
 }
 
@@ -333,6 +347,7 @@ function splitSlots(slots: number, beatSize: number, tripletGroup3 = false): str
 
 function makeRest(dur: string, stemDir: number, visible = false): StaveNote {
   const n = new StaveNote({ keys: [REST_KEY], duration: dur + "r", stemDirection: stemDir });
+  if (dur.includes("d")) { try { Dot.buildAndAttach([n], { all: true }); } catch { /* ignore */ } }
   if (!visible) n.setStyle({ fillStyle: "transparent", strokeStyle: "transparent" });
   return n;
 }
@@ -364,6 +379,12 @@ function buildMergedVoice(
   hideGhostParens:  boolean  = false,
   doubleIndices:    number[] = [],
   tripletGroup3:    boolean  = false,
+  // When true, every hit is 1 slot long and the gap to the next hit is
+  // filled with rests instead of extending the current note. Drum attacks
+  // (kick/snare/bass) are short events, not sustained pitches — without
+  // this cap, sparse hits render as dotted 8ths/8ths and the formatter
+  // allocates uneven widths that make adjacent notes overlap visually.
+  shortHits:        boolean  = false,
 ): { notes: StaveNote[]; xPatches: XPatch[]; tieChains: number[][] } {
   const allHits = new Set<number>();
   hitArrays.forEach(arr => arr.filter(s => s < slotCount).forEach(s => allHits.add(s)));
@@ -374,18 +395,28 @@ function buildMergedVoice(
   const tieChains: number[][] = [];
   let cursor = 0;
 
+  const fillRests = (gap: number) => {
+    for (const rd of splitSlots(gap, beatSize, tripletGroup3)) notes.push(makeRest(rd, stemDir, showRests));
+  };
+
   for (let hi = 0; hi < sortedHits.length; hi++) {
     const pos     = sortedHits[hi];
     const nextPos = hi + 1 < sortedHits.length ? sortedHits[hi + 1] : slotCount;
-    const noteDur = nextPos - pos;
 
     if (cursor < pos) {
-      for (const rd of splitSlots(pos - cursor, beatSize, tripletGroup3)) notes.push(makeRest(rd, stemDir, showRests));
+      fillRests(pos - cursor);
     }
 
     const activeVIs = hitArrays
       .map((arr, vi) => (arr.filter(s => s < slotCount).includes(pos) ? vi : -1))
       .filter(vi => vi >= 0);
+
+    // Hits hold to the next hit by default — that's the traditional drum
+    // notation where, say, a bass on slot 0 and another on slot 3 renders
+    // as a dotted 8th + 16th beamed together. shortHits forces every hit
+    // short (single 16th + trailing rest), which K/S tile galleries and
+    // ostinato patterns flagged for visible rests request explicitly.
+    const noteDur = shortHits ? 1 : nextPos - pos;
 
     // Check if any ghost voice at this position has double-stroke
     const doubleGhostVI = activeVIs
@@ -410,6 +441,7 @@ function buildMergedVoice(
       const note = new StaveNote({
         keys: noteKeys, duration: vfDur, stemDirection: stemDir,
       } as StaveNoteStruct);
+      if (vfDur.includes("d")) { try { Dot.buildAndAttach([note], { all: true }); } catch { /* ignore */ } }
 
       const hasGhost    = activeVIs.some(vi =>  ghostIndices.includes(vi));
       const hasNonGhost = activeVIs.some(vi => !ghostIndices.includes(vi));
@@ -458,6 +490,7 @@ function buildMergedVoice(
             const cont = new StaveNote({
               keys: noteKeys, duration: rd, stemDirection: stemDir,
             } as StaveNoteStruct);
+            if (rd.includes("d")) { try { Dot.buildAndAttach([cont], { all: true }); } catch { /* ignore */ } }
             // Preserve x-head glyphs on continuation noteheads
             activeVIs.forEach((vi, ki) => {
               if (xFlags[vi]) {
@@ -479,11 +512,11 @@ function buildMergedVoice(
         }
       }
     }
-    cursor = nextPos;
+    cursor = pos + noteDur;
   }
 
   if (cursor < slotCount) {
-    for (const rd of splitSlots(slotCount - cursor, beatSize, tripletGroup3)) notes.push(makeRest(rd, stemDir, showRests));
+    fillRests(slotCount - cursor);
   }
   return { notes, xPatches, tieChains };
 }
@@ -830,6 +863,10 @@ export interface StripMeasureData {
    *  beamGroupingOffset: 1 so its first beam closes the still-open group
    *  from before the barline. */
   beamGroupingOffset?: number;
+  /** Cap every drum hit at 1 slot (single attack, gap filled with rests)
+   *  instead of holding through to the next hit. Useful for bare K/S pattern
+   *  tiles where the sustained-note rendering makes sparse hits overlap. */
+  shortHits?: boolean;
 }
 
 interface VexDrumStripProps {
@@ -956,10 +993,11 @@ export function VexDrumStrip({ measures, measureWidth, measureWidths, height, fu
         // so the group-of-three structure stays visible (instead of collapsing
         // into a dotted 8th).
         const tripletGroup3 = m.beamGrouping === 3 && grid === "16th";
+        const mShortHits = m.shortHits ?? false;
         const { notes: upNotes,   xPatches: upPatches, tieChains: upTieChains } = buildMergedVoice(
           mUpKeys, 1, mUpXFlags, mUpHits, mUpOpens,
           slotCount, beatSize, [3], mShowRests ?? false, mHideGhostParens ?? false, mUpDoubleI,
-          tripletGroup3,
+          tripletGroup3, mShortHits,
         );
         const mDownBassHits = mBassStemUp ? [] : bassHits;
         const mDownBassDoubles = mBassStemUp ? [] : bassDoubles;
@@ -969,6 +1007,7 @@ export function VexDrumStrip({ measures, measureWidth, measureWidths, height, fu
           [mDownBassHits, hhFootHits],
           [mDownBassDoubles, hhFootOpen],
           slotCount, beatSize, [], mShowRests ?? false, false, [0],
+          false, mShortHits,
         );
 
         const upSnareGroup = [...snareHits, ...tomHits, ...crashHits, ...(mBassStemUp ? bassHits : [])];
@@ -1219,6 +1258,7 @@ export function VexOstinatoLine({
         const isOpen = openSlots.includes(pos);
         const [vfDur, extra] = slotsToVfDur(dur, beatSize);
         const note = new StaveNote({ keys: [OSTINATO_KEY], duration: vfDur, stemDirection: 1 } as StaveNoteStruct);
+        if (vfDur.includes("d")) { try { Dot.buildAndAttach([note], { all: true }); } catch { /* ignore */ } }
         applyXHead(note.noteHeads[0], isOpen);
         notes.push(note);
 

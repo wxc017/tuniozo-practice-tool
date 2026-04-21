@@ -3,6 +3,7 @@ import type { ComponentType } from "react";
 import LumatoneKeyboard from "@/components/LumatoneKeyboard";
 import PianoKeyboard from "@/components/PianoKeyboard";
 import GuitarFretboard from "@/components/GuitarFretboard";
+import BassFretboard from "@/components/BassFretboard";
 import { computeLayout, LayoutResult, ComputedKey } from "@/lib/lumatoneLayout";
 import { audioEngine } from "@/lib/audioEngine";
 import IntervalsTab from "@/components/tabs/IntervalsTab";
@@ -61,11 +62,12 @@ import {
 
 const EDO_OPTIONS = [12, 17, 19, 31, 41, 53];
 
-type VisualizerType = "lumatone" | "piano" | "guitar";
+type VisualizerType = "lumatone" | "piano" | "guitar" | "bass";
 const VIZ_LABELS: Record<VisualizerType, string> = {
   lumatone: "Lumatone",
   piano: "Piano",
   guitar: "Guitar",
+  bass: "Bass",
 };
 
 type Tab = "intervals"|"chords"|"melody"|"jazz"|"patterns"|"drone"|"modeid";
@@ -699,21 +701,10 @@ export default function App() {
             </div>
           </div>
 
-          {/* Keyboard — always visible inline */}
-          {edo === 12 && vizType === "piano" ? (
-            <PianoKeyboard highlightedPitches={highlighted}
-              onKeyClick={async (k) => { await ensureAudio(); handleKeyClick(k as ComputedKey); }} />
-          ) : edo === 12 && vizType === "guitar" ? (
-            <GuitarFretboard highlightedPitches={highlighted}
-              onKeyClick={async (k) => { await ensureAudio(); handleKeyClick(k as ComputedKey); }} />
-          ) : layout ? (
-            <LumatoneKeyboard layout={layout} highlightedPitches={highlighted}
-              onKeyClick={async (k) => { await ensureAudio(); handleKeyClick(k); }} />
-          ) : (
-            <div className="bg-[#111] rounded-xl border border-[#222] h-36 flex items-center justify-center text-[#444] text-xs">
-              Loading keyboard…
-            </div>
-          )}
+          {/* Keyboard intentionally rendered OUTSIDE the header (after it,
+               as a direct child of root) so its `sticky top-0` works across
+               the full scroll range instead of detaching at the header's
+               bottom edge. See the sticky wrapper after the header block. */}
 
           {/* Answer row */}
           <div className="flex items-center gap-3 min-h-6">
@@ -769,6 +760,31 @@ export default function App() {
           </>)}
         </div>
       </div>
+
+      {/* Sticky keyboard — sits as a direct child of the scrolling root
+          (not nested in the header) so its `sticky top-0` containing block
+          spans the full scroll range. Only shown in spatial audiation. */}
+      {section === "ear-trainer" && (
+        <div className="sticky top-0 z-30 bg-[#0d0d0d] border-b border-[#1e1e1e] px-4 pt-2 pb-2 flex-shrink-0">
+          {edo === 12 && vizType === "piano" ? (
+            <PianoKeyboard highlightedPitches={highlighted}
+              onKeyClick={async (k) => { await ensureAudio(); handleKeyClick(k as ComputedKey); }} />
+          ) : edo === 12 && vizType === "guitar" ? (
+            <GuitarFretboard highlightedPitches={highlighted}
+              onKeyClick={async (k) => { await ensureAudio(); handleKeyClick(k as ComputedKey); }} />
+          ) : edo === 12 && vizType === "bass" ? (
+            <BassFretboard highlightedPitches={highlighted}
+              onKeyClick={async (k) => { await ensureAudio(); handleKeyClick(k as ComputedKey); }} />
+          ) : layout ? (
+            <LumatoneKeyboard layout={layout} highlightedPitches={highlighted}
+              onKeyClick={async (k) => { await ensureAudio(); handleKeyClick(k); }} />
+          ) : (
+            <div className="bg-[#111] rounded-xl border border-[#222] h-36 flex items-center justify-center text-[#444] text-xs">
+              Loading keyboard…
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Drill & Response ── */}
       {section === "drill-response" && (

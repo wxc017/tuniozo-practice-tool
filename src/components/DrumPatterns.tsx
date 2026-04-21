@@ -1243,12 +1243,13 @@ function MeasureStrip({
 // ── K/S pattern group (one per phrase-length bin) ─────────────────────────
 //
 // Pulled out of the parent so the group's tile grid can own a ResizeObserver
-// and size every tile to exactly (rowW − gaps) / KS_TILES_PER_ROW.  That
-// keeps the gallery at a consistent 5 tiles per row regardless of viewport
-// width and pattern length.
-const KS_TILES_PER_ROW = 5;
+// and size every tile to fill available width.  Auto-fit columns let tiles
+// expand when a length has few patterns (len=4 has 2, so two wide tiles
+// beats five narrow ones).  Dimensions mirror the Beat Preview renderer so
+// the notation comes out with matching stem/beam proportions.
+const KS_TILE_MIN_W    = 260;
 const KS_TILE_GAP      = 14;
-const KS_TILE_H        = 130;
+const KS_TILE_H        = 180;
 
 function KSPatternGroup({
   idx, len, pool, pick, onPick, isCustom, onRemoveCustom,
@@ -1262,19 +1263,24 @@ function KSPatternGroup({
   onRemoveCustom:  (p: KSPattern) => void;
 }) {
   const gridRef = useRef<HTMLDivElement | null>(null);
-  const [rowW, setRowW] = useState(0);
+  const [tileW, setTileW] = useState(KS_TILE_MIN_W);
   useEffect(() => {
     const el = gridRef.current;
     if (!el) return;
-    const measure = () => setRowW(el.clientWidth);
+    const measure = () => {
+      // Match the auto-fit column width so VexDrumStrip gets the exact
+      // px width the browser will render the tile at. Without this the
+      // formatter cramps notes into a best-guess width and spacing drifts.
+      const rowW = el.clientWidth;
+      if (rowW <= 0) return;
+      const cols = Math.max(1, Math.floor((rowW + KS_TILE_GAP) / (KS_TILE_MIN_W + KS_TILE_GAP)));
+      setTileW(Math.floor((rowW - KS_TILE_GAP * (cols - 1)) / cols));
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const tileW = rowW > 0
-    ? Math.max(120, Math.floor((rowW - KS_TILE_GAP * (KS_TILES_PER_ROW - 1)) / KS_TILES_PER_ROW))
-    : 220;
 
   return (
     <div style={{
@@ -1288,7 +1294,7 @@ function KSPatternGroup({
         ref={gridRef}
         style={{
           display: "grid",
-          gridTemplateColumns: `repeat(${KS_TILES_PER_ROW}, 1fr)`,
+          gridTemplateColumns: `repeat(auto-fit, minmax(${KS_TILE_MIN_W}px, 1fr))`,
           gap: KS_TILE_GAP,
         }}>
         {pool.map(p => {
@@ -1342,11 +1348,8 @@ function KSPatternGroup({
                   // final-preview strip below.
                   slotOverride: p.notes.length,
                 }]}
-                measureWidth={tileW - 20}
+                measureWidth={tileW - 12}
                 height={KS_TILE_H}
-                // Tight staveY — no empty headroom at the top of the tile.
-                // Stave sits right under a small margin for the stem-tops.
-                staveY={20}
                 showClef={false}
               />
             </div>
@@ -3502,6 +3505,10 @@ export default function DrumPatterns({
                     width: TILE_W, height: TILE_H, fontSize: 13, fontWeight: 700,
                   }}>off</button>
               );
+              // 2-hit patterns where rests mark the measure boundaries —
+              // render them with visible eighth/sixteenth rests instead of
+              // implicit gaps so the boundary reads clearly.
+              const REST_VISIBLE_IDS = new Set(["h4", "h7", "h8", "h10"]);
               const tiles = HIHAT_PATTERNS.map(h => {
                 const isSel = interplayOstinatoId === h.id;
                 // Preview shows the full pattern unit.  For triplet patterns the
@@ -3532,6 +3539,11 @@ export default function DrumPatterns({
                         crashHits: previewCrash,
                         ghostHits: [], ghostDoubleHits: [],
                         slotOverride: previewLen,
+                        showRests: REST_VISIBLE_IDS.has(h.id),
+                        // Patterns flagged to show rests also want short hits
+                        // so the trailing rest glyph renders; other ostinatos
+                        // keep the held-note notation (dotted 8ths, 8ths).
+                        shortHits: REST_VISIBLE_IDS.has(h.id),
                         // Triplet patterns get a "3" tuplet bracket above each beat.
                         tupletNum: h.triplet ? 3 : undefined,
                       }]}

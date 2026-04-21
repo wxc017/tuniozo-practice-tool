@@ -115,7 +115,7 @@ export function randomPattern(length: number): KSPattern | null {
 // takes the prefix (hits < totalSlots).
 
 export interface HihatPattern {
-  id:     string;         // "h1" .. "t9"
+  id:     string;         // "h1" .. "h14"
   name:   string;         // Garstka's number / description
   length: number;         // repeating unit length in slots
   hits:   number[];       // hat-closed hit positions (includes `+` and `o`)
@@ -159,40 +159,24 @@ const mk = (id: string, name: string, spec: string, opts: { triplet?: boolean } 
 };
 
 export const HIHAT_PATTERNS: HihatPattern[] = [
-  // ── 16TH-NOTE PATTERNS (count: 1 e & a) ─────────────────────────────────
-  // Unit = 4 sixteenths (one beat).  Tiled across each bar's totalSlots.
+  // One-measure patterns, 4 beats per measure.
   // Legend: `+` closed hat, `o` open hat, `-` rest.
-  mk("h1",  "1 – Beat & (eighths)",         "+ - + -"),
-  mk("h2",  "2 – Quarter notes",            "+ - - -"),
-  mk("h3",  "3 – Constant 16ths",           "+ + + +"),
-  mk("h4",  "4 – Offbeats (e + a)",         "- + - +"),
-  mk("h5",  "5 – Beat & a (no e)",          "+ - + +"),
-  mk("h6",  "6 – 1 e & (no a)",             "+ + + -"),
-  mk("h7",  "7 – 1 e, rest",                "+ + - -"),
-  mk("h8",  "8 – & a, rest",                "- - + +"),
-  mk("h9",  "9 – Beat + a",                 "+ - - +"),
-  mk("h10", "10 – e &",                     "- + + -"),
-  mk("h11", "11 – Close, open, close",      "+ o + -"),
-  mk("h12", "12 – Close, close, open",      "+ - + o"),
-  mk("h13", "13 – Open, close, close",      "o - + +"),
-  mk("h14", "14 – Close, close, open",      "+ + o -"),
-
-  // ── TRIPLET PATTERNS (triplet-tuplet assumption) ────────────────────────
-  // Unit length is the length of one phrase in the spec.  Phrases are
-  // comma-delimited in the authoring text: single triplets are 3 slots;
-  // composite phrases are 6 or 9 slots (so 2 or 3 triplets share one pattern
-  // repetition, carrying the contour across a longer span).
-  //   + = closed hat, o = open hat, p = hh foot-pedal, c = crash, - = rest.
-  mk("t1",  "T1 – 2-triplet: + - - + - +",   "+ - - + - +",  { triplet: true }),
-  mk("t2",  "T2 – Close, rest, close",       "+ - +",        { triplet: true }),
-  mk("t3",  "T3 – Close, close, rest",       "+ + -",        { triplet: true }),
-  mk("t4",  "T4 – Rest, close, close",       "- + +",        { triplet: true }),
-  mk("t5",  "T5 – Close, open, pedal",       "+ o p",        { triplet: true }),
-  mk("t6",  "T6 – Crash, pedal, close",      "c p +",        { triplet: true }),
-  mk("t7",  "T7 – Pedal, close, open",       "p + o",        { triplet: true }),
-  mk("t8",  "T8 – Crash, rest, pedal",       "c - p",        { triplet: true }),
-  mk("t9",  "T9 – 3-triplet: + - - + - + + - -",
-            "+ - - + - + + - -", { triplet: true }),
+  // Rests at the measure edges are intentional boundary markers for 2-hit
+  // groups like ++--, --++, -++- — they dictate where the measure ends/begins.
+  mk("h1",  "1 – +-+-",   "+ - + -"),
+  mk("h2",  "2 – +---",   "+ - - -"),
+  mk("h3",  "3 – ++++",   "+ + + +"),
+  mk("h4",  "4 – --+-",   "- - + -"),
+  mk("h5",  "5 – +-++",   "+ - + +"),
+  mk("h6",  "6 – +++-",   "+ + + -"),
+  mk("h7",  "7 – ++--",   "+ + - -"),
+  mk("h8",  "8 – --++",   "- - + +"),
+  mk("h9",  "9 – +--+",   "+ - - +"),
+  mk("h10", "10 – -++-",  "- + + -"),
+  mk("h11", "11 – +o+-",  "+ o + -"),
+  mk("h12", "12 – +-+o",  "+ - + o"),
+  mk("h13", "13 – o-++",  "o - + +"),
+  mk("h14", "14 – ++o-",  "+ + o -"),
 ];
 
 /** Find the hi-hat pattern for the given id (or "off" → null). */
