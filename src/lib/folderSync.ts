@@ -7,6 +7,7 @@
 // this as a two-step flow (connect-once → reconnect-each-session).
 
 import { buildSyncPayload, restoreFromSyncPayload } from "./syncData";
+import { isExportKey } from "./storage";
 
 const DB_NAME = "lt_folder_sync";
 const STORE = "handles";
@@ -92,6 +93,10 @@ let cachedHandle: FSDirHandle | null = null;
 let lastSavedAt: number | null = null;
 let lastErrorMsg: string | null = null;
 let connected = false;
+// True while we're writing a folder-sourced payload INTO localStorage.
+// scheduleSave early-returns in that window so the restore doesn't trigger
+// a redundant round-trip back to the folder.
+let suppressSave = false;
 
 async function getHandle(): Promise<FSDirHandle | null> {
   if (cachedHandle) return cachedHandle;
@@ -137,9 +142,16 @@ export async function connectFolder(): Promise<{ ok: boolean; error?: string }> 
     // (the user is pointing at an existing backup). Otherwise seed it.
     const existing = await tryRead(handle);
     if (existing) {
-      const res = restoreFromSyncPayload(existing);
-      if (!res.ok) {
-        lastErrorMsg = `Found file but failed to load: ${res.error}`;
+      suppressSave = true;
+      try {
+        const res = restoreFromSyncPayload(existing);
+        if (!res.ok) {
+          lastErrorMsg = `Found file but failed to load: ${res.error}`;
+        } else {
+          emitLoaded();
+        }
+      } finally {
+        suppressSave = false;
       }
     } else {
       const res = await tryWrite(handle, buildSyncPayload());
@@ -170,8 +182,14 @@ export async function reconnectFolder(opts: { loadFromFolder: boolean } = { load
     if (opts.loadFromFolder) {
       const payload = await tryRead(handle);
       if (payload) {
-        const res = restoreFromSyncPayload(payload);
-        if (!res.ok) lastErrorMsg = `Load failed: ${res.error}`;
+        suppressSave = true;
+        try {
+          const res = restoreFromSyncPayload(payload);
+          if (!res.ok) lastErrorMsg = `Load failed: ${res.error}`;
+          else emitLoaded();
+        } finally {
+          suppressSave = false;
+        }
       }
     }
     emitStatus();
@@ -240,7 +258,7 @@ let saveTimer: number | null = null;
 const DEBOUNCE_MS = 1500;
 
 function scheduleSave(): void {
-  if (!connected) return;
+  if (!connected || suppressSave) return;
   if (saveTimer !== null) window.clearTimeout(saveTimer);
   saveTimer = window.setTimeout(async () => {
     saveTimer = null;
@@ -257,8 +275,44 @@ function scheduleSave(): void {
   }, DEBOUNCE_MS);
 }
 
+// Install a localStorage.setItem interceptor once so EVERY write to an
+// export key fires `lt-data-changed`. Without this, modules that bypass
+// storage.ts's lsSet helper (e.g. DrumPatterns writing lt_interplay_*
+// directly) wouldn't trigger the debounced folder save.
+let patched = false;
+function patchLocalStorage(): void {
+  if (patched) return;
+  patched = true;
+  const proto = Storage.prototype;
+  const orig = proto.setItem;
+  proto.setItem = function patchedSetItem(key: string, value: string) {
+    orig.call(this, key, value);
+    if (this === window.localStorage && isExportKey(key)) {
+      try {
+        window.dispatchEvent(new CustomEvent("lt-data-changed", { detail: { key } }));
+      } catch { /* jsdom / non-browser */ }
+    }
+  };
+  const origRemove = proto.removeItem;
+  proto.removeItem = function patchedRemoveItem(key: string) {
+    origRemove.call(this, key);
+    if (this === window.localStorage && isExportKey(key)) {
+      try {
+        window.dispatchEvent(new CustomEvent("lt-data-changed", { detail: { key } }));
+      } catch { /* jsdom / non-browser */ }
+    }
+  };
+}
+
+function emitLoaded(): void {
+  try {
+    window.dispatchEvent(new CustomEvent("lt-folder-sync-loaded"));
+  } catch { /* jsdom */ }
+}
+
 export function initFolderSync(): void {
   if (typeof window === "undefined") return;
+  patchLocalStorage();
   // Flush any pending write before unload so the last-moment entry isn't lost.
   window.addEventListener("beforeunload", () => {
     if (saveTimer !== null) {
@@ -271,14 +325,27 @@ export function initFolderSync(): void {
     }
   });
   window.addEventListener("lt-data-changed", scheduleSave);
-  // Initial status probe — sets `connected` flag if permission is still granted
-  // from a prior session (rare, but possible for installed PWAs).
+  // Initial status probe — if permission is still granted from a prior session
+  // (installed PWAs, or the rare case where Chrome remembers the grant),
+  // auto-load the folder's snapshot into localStorage so the UI starts in
+  // sync with whatever was last written from any device.
   void (async () => {
     const handle = await getHandle();
     if (!handle) return;
     const perm = await handle.queryPermission({ mode: "readwrite" });
     if (perm === "granted") {
       connected = true;
+      const payload = await tryRead(handle);
+      if (payload) {
+        suppressSave = true;
+        try {
+          const res = restoreFromSyncPayload(payload);
+          if (!res.ok) lastErrorMsg = `Load failed: ${res.error}`;
+          else emitLoaded();
+        } finally {
+          suppressSave = false;
+        }
+      }
       emitStatus();
     } else {
       emitStatus(); // notify listeners that handle exists but needs permission

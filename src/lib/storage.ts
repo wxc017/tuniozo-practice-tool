@@ -136,21 +136,11 @@ function writePracticeLog(data: Record<string, unknown[]>): void {
   localStorage.setItem(PRACTICE_LOG_KEY, JSON.stringify(encoded));
 }
 
-// Keys whose writes should trigger external syncers (folder sync, etc.)
-const SYNCABLE_KEYS = new Set([
-  "lt_practice_log",
-  "lt_note_entry_projects",
-  "lt_chord_charts",
-  "lt_drum_log",
-  "lt_accent_log",
-]);
-
-function notifyDataChanged(key: string): void {
-  if (!SYNCABLE_KEYS.has(key)) return;
-  try {
-    window.dispatchEvent(new CustomEvent("lt-data-changed", { detail: { key } }));
-  } catch { /* jsdom */ }
-}
+// Data-change notification is handled by folderSync's localStorage.setItem
+// interceptor — any write to an export key (lt_* or an entry in
+// EXTRA_EXPORT_KEYS) fires `lt-data-changed` automatically, so lsSet itself
+// doesn't need to dispatch. That keeps modules that call localStorage.setItem
+// directly (e.g. DrumPatterns' lt_interplay_*) in sync too.
 
 export function lsGet<T>(key: string, fallback: T): T {
   if (key === PRACTICE_LOG_KEY) {
@@ -171,7 +161,6 @@ export function lsSet(key: string, value: unknown): void {
   if (key === PRACTICE_LOG_KEY) {
     try {
       writePracticeLog(value as Record<string, unknown[]>);
-      notifyDataChanged(key);
     } catch (err) {
       reportStorageError(key, "write", err);
     }
@@ -179,7 +168,6 @@ export function lsSet(key: string, value: unknown): void {
   }
   try {
     localStorage.setItem(key, JSON.stringify(value, replacer));
-    notifyDataChanged(key);
   } catch (err) {
     reportStorageError(key, "write", err);
   }

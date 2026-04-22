@@ -212,9 +212,17 @@ export default function App() {
         }
       });
     };
+    // Fires when the folder's snapshot was auto-loaded at startup (permission
+    // was still granted from a prior session). Remount tabs so their state
+    // re-hydrates from the freshly-restored localStorage.
+    const onLoaded = () => setTabKey(k => k + 1);
     refresh();
     window.addEventListener("lt-folder-sync-status", refresh);
-    return () => window.removeEventListener("lt-folder-sync-status", refresh);
+    window.addEventListener("lt-folder-sync-loaded", onLoaded);
+    return () => {
+      window.removeEventListener("lt-folder-sync-status", refresh);
+      window.removeEventListener("lt-folder-sync-loaded", onLoaded);
+    };
   }, []);
   const handleFolderReconnect = async () => {
     setFolderReconnecting(true);
@@ -222,7 +230,7 @@ export default function App() {
     setFolderReconnecting(false);
     if (res.ok) {
       setFolderPromptOpen(false);
-      setTabKey(k => k + 1); // re-mount tabs so UI picks up restored data
+      // Tab remount is handled by the `lt-folder-sync-loaded` listener below.
     }
   };
 

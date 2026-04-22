@@ -267,7 +267,7 @@ function renderGroupedSixteenths(
           const ann = new Annotation(syllable);
           ann.setFont("Arial", 10, "normal");
           ann.setVerticalJustification(Annotation.VerticalJustify.BOTTOM);
-          try { ann.setStyle({ fillStyle: "#000000", strokeStyle: "#000000" }); } catch { /* ignore */ }
+          try { ann.setStyle({ fillStyle: "#000000", strokeStyle: "transparent" }); } catch { /* ignore */ }
           sn.addModifier(ann);
         } catch { /* ignore */ }
       }
@@ -399,7 +399,7 @@ function renderTiedSixteenths(
         const ann = new Annotation(fn.syllable);
         ann.setFont("Arial", 10, "normal");
         ann.setVerticalJustification(Annotation.VerticalJustify.BOTTOM);
-        try { ann.setStyle({ fillStyle: "#000000", strokeStyle: "#000000" }); } catch { /* ignore */ }
+        try { ann.setStyle({ fillStyle: "#000000", strokeStyle: "transparent" }); } catch { /* ignore */ }
         sn.addModifier(ann);
       } catch { /* ignore */ }
     }
@@ -518,7 +518,7 @@ function buildLegacyNotes(
           ann.setFont("Arial", 10, "normal");
           ann.setVerticalJustification(Annotation.VerticalJustify.BOTTOM);
           const color = note.syllableColor ?? "#000000";
-          try { ann.setStyle({ fillStyle: color, strokeStyle: color }); } catch { /* ignore */ }
+          try { ann.setStyle({ fillStyle: color, strokeStyle: "transparent" }); } catch { /* ignore */ }
           sn.addModifier(ann);
         } catch { /* ignore */ }
       }

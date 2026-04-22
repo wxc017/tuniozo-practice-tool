@@ -1061,9 +1061,24 @@ export default function AccentStudy({
     [patternMode, useSingle, allowOdd, allowEven, accentGrid, beats, seenGroupings],
   );
 
+  // Track the previous "sticking-is-Single" state so we can detect the
+  // Single → (Odd/Even/Paradiddle) transition and preserve the user's
+  // existing pattern instead of regenerating.
+  const prevIsSingleRef = useRef(useSingle && !useParadiddle && !allowOdd && !allowEven);
+
   useEffect(() => {
+    const isSingle = useSingle && !useParadiddle && !allowOdd && !allowEven;
+    const wasSingle = prevIsSingleRef.current;
+    prevIsSingleRef.current = isSingle;
+
+    // Single → (Odd/Even/Paradiddle): keep the current grouping.  Any
+    // grouping is a valid single-stroke grouping, and the sticking
+    // interpretation handles fall-back when it doesn't fit the new
+    // constraint (see activeSticking + stickingWarning below).
+    if (wasSingle && !isSingle) return;
+
     setGrouping(pickGrouping(grouping));
-  }, [accentGrid, beats, allowOdd, allowEven, useSingle]);
+  }, [accentGrid, beats, allowOdd, allowEven, useSingle, useParadiddle]);
 
   // Regenerate when pattern mode changes
   useEffect(() => {
@@ -1105,8 +1120,27 @@ export default function AccentStudy({
   const renderGrid = toRenderGrid(accentGrid);
   const beatSlots = slotsPerBeat(accentGrid);
 
+  // Check whether the CURRENT grouping is compatible with the selected
+  // sticking constraint.  Odd-only wants every group to be odd-sized;
+  // Even-only wants every group to be even-sized.  If the current grouping
+  // mixes sizes, keep the single-stroke interpretation until the user also
+  // enables the complementary constraint — the user's pattern stays intact.
+  const onlyOddSelected  = allowOdd  && !allowEven;
+  const onlyEvenSelected = allowEven && !allowOdd;
+  const groupingHasEven = grouping.some(g => g % 2 === 0);
+  const groupingHasOdd  = grouping.some(g => g % 2 === 1);
+  const oddIncompatible  = onlyOddSelected  && groupingHasEven;
+  const evenIncompatible = onlyEvenSelected && groupingHasOdd;
+  const stickingWarning: string | null =
+    oddIncompatible
+      ? "Pattern has even-sized groups — enable Even too to play odd/even sticking. Falling back to single strokes."
+      : evenIncompatible
+      ? "Pattern has odd-sized groups — enable Odd too to play odd/even sticking. Falling back to single strokes."
+      : null;
+
   const activeSticking: Sticking = useParadiddle ? "paradiddle"
     : useSingle ? "single"
+    : (oddIncompatible || evenIncompatible) ? "single"
     : allowOdd && !allowEven ? "odd"
     : allowEven && !allowOdd ? "even"
     : "odd";
@@ -1974,6 +2008,22 @@ export default function AccentStudy({
                   color={accentColor}
                 />
               </div>
+              {stickingWarning && (
+                <div
+                  style={{
+                    marginTop: 4,
+                    padding: "3px 6px",
+                    fontSize: 9,
+                    color: "#e0a040",
+                    background: "#e0a04015",
+                    border: "1px solid #e0a04040",
+                    borderRadius: 3,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  ⚠ {stickingWarning}
+                </div>
+              )}
               <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
                 <OptionPill
                   value="R Lead"

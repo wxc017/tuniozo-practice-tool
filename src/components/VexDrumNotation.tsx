@@ -263,6 +263,12 @@ function buildBeamsByGrouping(
   beatSize: number,
   groupSize: number,
   startOffset: number,
+  // When true, rests inside a group don't break the beam — they're skipped
+  // silently. Used by ostinato previews where hits are shown as 1-slot
+  // attacks with (hidden) rests filling the gaps: the visual beam spans
+  // all attacks in the beat, which is what the user expects for a
+  // quintuplet/septuplet etc.
+  beamAcrossRests: boolean = false,
 ): Beam[] {
   const BEAMABLE = new Set(["8", "16", "32"]);
   const beams: Beam[] = [];
@@ -290,6 +296,10 @@ function buildBeamsByGrouping(
     }
     if (!n.isRest() && BEAMABLE.has(n.getDuration())) {
       group.push(n);
+    } else if (n.isRest() && beamAcrossRests) {
+      // Skip the rest silently — keep the group open so the beam spans
+      // across the rest's slots.
+      continue;
     } else {
       flushGroup();
     }
@@ -562,6 +572,11 @@ function addAccentsAndStickings(
   accentInterp?: string,
   tapInterp?: string,
   tripletGroup3: boolean = false,
+  // Must mirror buildMergedVoice's shortHits flag: when true the voice
+  // uses a 1-slot hit + rest-filled gap instead of a held note, so the
+  // note-index walk has to advance over those rest notes when hopping
+  // between hits. Without this the accent lands on the wrong StaveNote.
+  shortHits: boolean = false,
 ) {
   const hasWork = accentSet.size > 0 || stickingMap.size > 0 || !!accentInterp || !!tapInterp;
   if (!hasWork) return;
@@ -640,8 +655,14 @@ function addAccentsAndStickings(
     const nextPos = hi + 1 < sortedUp.length ? sortedUp[hi + 1] : slotCount;
     const noteDur = nextPos - pos;
     noteIdx += 1;
-    const [, extra] = slotsToVfDur(noteDur, beatSize, tripletGroup3);
-    if (extra > 0) noteIdx += splitSlots(extra, beatSize, tripletGroup3).length;
+    if (shortHits) {
+      // Hit is a fixed 1-slot attack; remaining slots are rest notes.
+      const gap = noteDur - 1;
+      if (gap > 0) noteIdx += splitSlots(gap, beatSize, tripletGroup3).length;
+    } else {
+      const [, extra] = slotsToVfDur(noteDur, beatSize, tripletGroup3);
+      if (extra > 0) noteIdx += splitSlots(extra, beatSize, tripletGroup3).length;
+    }
     cursor = nextPos;
   }
 }
@@ -867,6 +888,11 @@ export interface StripMeasureData {
    *  instead of holding through to the next hit. Useful for bare K/S pattern
    *  tiles where the sustained-note rendering makes sparse hits overlap. */
   shortHits?: boolean;
+  /** When true, beam groups span across rests instead of breaking at each
+   *  rest. Combined with shortHits + showRests:false this yields the
+   *  "4/5/6/7 attacks all beamed as one group, with empty slots still
+   *  occupying width" look used by the ostinato previews. */
+  beamAcrossRests?: boolean;
 }
 
 interface VexDrumStripProps {
@@ -1011,7 +1037,7 @@ export function VexDrumStrip({ measures, measureWidth, measureWidths, height, fu
         );
 
         const upSnareGroup = [...snareHits, ...tomHits, ...crashHits, ...(mBassStemUp ? bassHits : [])];
-        addAccentsAndStickings(upNotes, ostinatoHits, upSnareGroup, ghostHits, slotCount, beatSize, accentSet, stickingMap, mAccentInterp, mTapInterp, tripletGroup3);
+        addAccentsAndStickings(upNotes, ostinatoHits, upSnareGroup, ghostHits, slotCount, beatSize, accentSet, stickingMap, mAccentInterp, mTapInterp, tripletGroup3, mShortHits);
         addBassStickings(downNotes, mDownBassHits, slotCount, beatSize, stickingMap);
 
         const hasUp   = upNotes.some(n => !n.isRest());
@@ -1034,7 +1060,7 @@ export function VexDrumStrip({ measures, measureWidth, measureWidths, height, fu
         // phrase rendered as straight 16ths), beam by slot position and respect
         // the per-measure start offset so groupings carry across bar lines.
         const allBeams = m.beamGrouping && m.beamGrouping > 0
-          ? beamSrcs.flatMap(arr => buildBeamsByGrouping(arr, beatSize, m.beamGrouping!, m.beamGroupingOffset ?? 0))
+          ? beamSrcs.flatMap(arr => buildBeamsByGrouping(arr, beatSize, m.beamGrouping!, m.beamGroupingOffset ?? 0, m.beamAcrossRests ?? false))
           : beamSrcs.flatMap(arr => buildBeams(arr, beamSize));
         // Use the stave's own note area (already compensates for clef,
         // time signature, and end barline) so notes never overflow the
@@ -1150,12 +1176,26 @@ export function VexDrumStrip({ measures, measureWidth, measureWidths, height, fu
               if (n.isRest()) continue;
               if (continuationIdx.has(ni)) continue;
               if (hitI >= upSortedHits.length) break;
+              // Use the first notehead's own bbox rather than the whole note's
+              // bbox: for a beamed note, the note-level bbox extends to include
+              // the beam segment reaching the next note, which pulls the
+              // reported center off the notehead. In a chord all noteheads
+              // share the stem x, so the first notehead is a safe representative.
               let cx: number | null = null;
               try {
-                const bb = n.getBoundingBox();
-                cx = bb.x + bb.w / 2;
-              } catch {
-                try { cx = n.getAbsoluteX(); } catch { /* ignore */ }
+                const heads = (n as unknown as { noteHeads?: Array<{ getBoundingBox(): { x: number; w: number } }> }).noteHeads;
+                if (heads && heads.length > 0) {
+                  const hbb = heads[0].getBoundingBox();
+                  cx = hbb.x + hbb.w / 2;
+                }
+              } catch { /* fall through */ }
+              if (cx === null) {
+                try {
+                  const bb = n.getBoundingBox();
+                  cx = bb.x + bb.w / 2;
+                } catch {
+                  try { cx = n.getAbsoluteX(); } catch { /* ignore */ }
+                }
               }
               if (cx !== null) {
                 collectedSlotPositions.push({ measureIdx: idx, slot: upSortedHits[hitI], x: cx });

@@ -4015,10 +4015,12 @@ export function generateProgression(
     }
   }
 
-  // Mark quartal-pool chords with a "^Qua" suffix so the display can render
-  // "Qua" as a superscript next to the roman numeral. Recognising quartal
-  // entries by membership in the quartal pool avoids mis-labelling a diatonic
-  // chord that happens to share (root, type) with a quartal voicing.
+  // Mark quartal-pool chords with a "^qua" / "^quin" superscript. Quartal-
+  // family voicings have no third, so the m7 / maj7 / sus qualities don't
+  // describe them — strip the chord-quality suffix down to the accidental
+  // + roman numeral (uppercased; these voicings are neutral).
+  //   sus2 ([0, M2, P5]) — voiced 1-5-9 is a stacked-P5 structure → "^quin"
+  //   everything else in the pool (sus4, 7sus4, min7, maj7) → "^qua"
   if (cats.has("quartal") && quartalPool.length > 0) {
     const quartalKeys = new Set(quartalPool.map(entryKey));
     for (let i = 0; i < result.length; i++) {
@@ -4026,8 +4028,11 @@ export function generateProgression(
       if (!c) continue;
       const relRoot = ((c.root - tonicRoot) % edo + edo) % edo;
       const key = `${relRoot}:${c.chordTypeId}`;
-      if (quartalKeys.has(key) && !c.roman.includes("^Qua")) {
-        result[i] = { ...c, roman: c.roman + "^Qua" };
+      if (quartalKeys.has(key) && !c.roman.includes("^qua") && !c.roman.includes("^quin")) {
+        const m = c.roman.match(/^([b#]*)([ivxIVX]+)/);
+        const base = m ? m[1] + m[2].toUpperCase() : c.roman;
+        const suffix = c.chordTypeId === "sus2" ? "^quin" : "^qua";
+        result[i] = { ...c, roman: base + suffix };
       }
     }
   }

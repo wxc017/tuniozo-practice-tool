@@ -3,7 +3,7 @@ import { FOLK_SONG_LIBRARY, FOLK_SONG_GROUPS } from "@/lib/folkSongData";
 import {
   Renderer, Stave, StaveNote, StaveNoteStruct, Voice, Formatter, Beam, Barline, Dot, Fraction, StaveTie,
 } from "vexflow";
-import { getAvailableThirdQualities, getAvailableSeventhQualities, getDegreeMap, getPatternScaleMaps, getModeDegreeMap } from "@/lib/edoData";
+import { getAvailableThirdQualities, getAvailableSeventhQualities, getDegreeMap, getPatternScaleMaps, getModeDegreeMap, pcToNoteNameWithEnharmonic, formatHalfAccidentals } from "@/lib/edoData";
 import { generateRhythm, melodyPositionStrengths, isTripletStyle, STYLE_INFO, type RhythmStyle, type DensityBias } from "@/lib/rhythmGen";
 import {
   type HarmonyCategory,
@@ -83,11 +83,15 @@ const IONIAN_PCS_12 = [0, 2, 4, 5, 7, 9, 11];
  *  Melody degrees are stored relative to IONIAN (the original key).  When the
  *  user changes the target mode, we compute each note's Ionian-relative pc,
  *  then:
- *    - Keep as-is if the pc is in the target mode (diatonic → passing/chord tone)
- *    - Shift by a semitone (b/#) if the pc is not in the target mode, landing
- *      on the nearest mode tone.
- *  This ensures a Major melody switched to Phrygian shows b3, b2, b6, b7
- *  on the altered scale degrees. */
+ *    - For a non-diatonic (borrowed / secondary / tritone) chord, shift any
+ *      mode-tone that sits a half-step from a chord tone down/up onto that
+ *      chord tone (labeled b/# so the reader sees the fit).
+ *    - Keep as-is if the pc is in the chord or in the target mode
+ *    - Shift by a semitone (b/#) if the pc is chromatic to the mode, landing
+ *      on the nearest mode/chord tone.
+ *  This ensures a Major melody switched to Phrygian shows b3, b2, b6, b7 on
+ *  the altered scale degrees, and a reharm with a bII chord over a "2" in
+ *  the melody shows "b2" (the melody adjusted to fit the chord). */
 function adaptMelodyNote(
   beat: MelodyBeat,
   chordPcs: number[],
@@ -106,11 +110,29 @@ function adaptMelodyNote(
 
   const modeSet = new Set(modePcs.map(p => ((p % edo) + edo) % edo));
   const chordSet = new Set(chordPcs.map(p => ((p % edo) + edo) % edo));
+  const chordIsDiatonic = chordPcs.every(p => modeSet.has(((p % edo) + edo) % edo));
 
-  // Chord tone or diatonic → keep as-is
-  if (chordSet.has(pc) || modeSet.has(pc)) return beat;
+  // Already a chord tone → perfect fit, nothing to do.
+  if (chordSet.has(pc)) return beat;
 
-  // Chromatic to the target mode — shift minimally to the nearest mode tone.
+  // Non-functional chord + mode-tone melody → try a half-step nudge onto a
+  // chord tone.  This is what makes a bII chord over a "2" become "b2".
+  if (!chordIsDiatonic && modeSet.has(pc)) {
+    const flatPc = ((pc - 1) % edo + edo) % edo;
+    const sharpPc = (pc + 1) % edo;
+    const flatFits = chordSet.has(flatPc);
+    const sharpFits = chordSet.has(sharpPc);
+    if (flatFits && !sharpFits) return { ...beat, accidental: "b" };
+    if (sharpFits && !flatFits) return { ...beat, accidental: "#" };
+    if (flatFits) return { ...beat, accidental: "b" }; // both sides fit → prefer flat
+    // Neither direction reaches a chord tone — leave as a mode-tone tension.
+    return beat;
+  }
+
+  // Mode tone under a diatonic chord → keep (passing/chord tension).
+  if (modeSet.has(pc)) return beat;
+
+  // Chromatic to the target mode — shift minimally to the nearest mode/chord tone.
   for (let shift = 1; shift <= 2; shift++) {
     const flatPc = ((pc - shift) % edo + edo) % edo;
     if (chordSet.has(flatPc) || modeSet.has(flatPc)) {
@@ -134,82 +156,70 @@ function beatsPerBar(timeSig: string): number {
   return top * (4 / bot);
 }
 
-/** Musical re-metering: use the rhythm engine to place the same degrees into
- *  bars of the new meter. Generates a "straight" rhythm in the target meter,
- *  uses metric strengths to pair important degrees with strong beats, and
- *  allows repeats to fill extra slots without changing the phrase contour. */
+/** Musical re-metering: re-bars the same phrase under a new time signature.
+ *
+ *  Theory: "re-barring" (as opposed to "re-composing") preserves every note's
+ *  original duration and pitch — only the bar groupings change. Notes that
+ *  would overflow a new bar are split at the bar line (the continuation is
+ *  the same degree on the downbeat of the next bar, which `splitAtBeats`
+ *  later draws with a tie when the durations within a bar call for it).
+ *
+ *  This is the standard approach taught in notation practice (Gould,
+ *  *Behind Bars*, ch. 1–2): the phrase contour and rhythmic character
+ *  stay intact; the listener hears the same melody grouped into different
+ *  metric units.  Chord symbols follow the notes: each new bar takes the
+ *  chord of whichever original bar supplied its first note.
+ *
+ *  This replaces an earlier implementation that regenerated rhythms via the
+ *  straight-style engine — that path would freeze the browser on 6/8 and
+ *  7/8 because the grouping enumerator would try to list ~8M compositions
+ *  for 24-slot bars. */
 function remeterBars(bars: SongBar[], newTimeSig: string, origTimeSig: string): SongBar[] {
   const newBeats = beatsPerBar(newTimeSig);
   const oldBeats = beatsPerBar(origTimeSig);
-  if (newBeats === oldBeats) return bars;
+  if (Math.abs(newBeats - oldBeats) < 1e-9) return bars;
+  if (bars.length === 0) return [];
 
-  const [newTop, newBot] = newTimeSig.split("/").map(Number);
-  const beatSize = 4; // 16th grid for re-metering
-
-  // Flatten all degrees in order (the phrase)
-  const phrase: MelodyBeat[] = [];
+  type FlatNote = { beat: MelodyBeat; chord: string };
+  const flat: FlatNote[] = [];
   for (const bar of bars) {
-    for (const b of bar.melody) phrase.push(b);
+    for (const b of bar.melody) {
+      if (b.duration > 1e-6) flat.push({ beat: b, chord: bar.chordRoman });
+    }
+  }
+  if (flat.length === 0) {
+    return [{ melody: [{ degree: 1, duration: newBeats }], chordRoman: bars[0].chordRoman }];
   }
 
-  // Generate straight rhythm for each new bar, distribute phrase degrees
+  const EPS = 1e-6;
   const result: SongBar[] = [];
-  let phraseIdx = 0;
+  let curMelody: MelodyBeat[] = [];
+  let curChord = flat[0].chord;
+  let rem = newBeats;
 
-  // How many new bars do we need? Total original duration scaled
-  const totalOrigBeats = bars.reduce((s, bar) => s + bar.melody.reduce((ss, b) => ss + b.duration, 0), 0);
-  const numNewBars = Math.max(1, Math.ceil(totalOrigBeats / newBeats));
-  if (phrase.length === 0) return [{ melody: [{ degree: 1, duration: newBeats }], chordRoman: "I" }];
-
-  // Distribute degrees evenly across new bars
-  const degreesPerBar = Math.max(1, Math.round(phrase.length / numNewBars));
-
-  for (let bi = 0; bi < numNewBars; bi++) {
-    // Slice of the phrase for this bar
-    const barDegrees = phrase.slice(phraseIdx, phraseIdx + degreesPerBar);
-    if (barDegrees.length === 0) break;
-    phraseIdx += barDegrees.length;
-
-    // Generate rhythm to place these degrees
-    const rhythm = generateRhythm(newTop, beatSize, "straight", barDegrees.length, bi * 7919, newBot);
-    const hits = rhythm.melodyHits;
-    const strengths = melodyPositionStrengths(newTop, beatSize, "straight", hits, newBot);
-
-    const barMelody: MelodyBeat[] = [];
-    const degCount = barDegrees.length;
-
-    for (let hi = 0; hi < hits.length; hi++) {
-      const slot = hits[hi];
-      const nextSlot = hi + 1 < hits.length ? hits[hi + 1] : rhythm.totalSlots;
-      const dur = (nextSlot - slot) / beatSize;
-
-      if (hi < degCount) {
-        // Place original degree
-        barMelody.push({ degree: barDegrees[hi].degree, duration: dur, accidental: barDegrees[hi].accidental });
-      } else {
-        // Extra slot: repeat previous degree (rhythmic fill, not a new pitch)
-        const prev = barMelody[barMelody.length - 1];
-        barMelody.push({ degree: prev.degree, duration: dur, accidental: prev.accidental });
+  for (const { beat, chord } of flat) {
+    if (curMelody.length === 0) curChord = chord;
+    let dur = beat.duration;
+    while (dur > EPS) {
+      const fit = Math.min(dur, rem);
+      curMelody.push({ degree: beat.degree, duration: fit, accidental: beat.accidental });
+      rem -= fit;
+      dur -= fit;
+      if (rem <= EPS) {
+        result.push({ melody: curMelody, chordRoman: curChord });
+        curMelody = [];
+        rem = newBeats;
+        // A note still in flight carries its original bar's chord into the
+        // new downbeat it just crossed into.
+        curChord = chord;
       }
     }
-
-    // Pick chord: use the chord of the original bar this phrase segment came from
-    const origBarIdx = Math.min(Math.floor((phraseIdx - 1) / (phrase.length / bars.length)), bars.length - 1);
-    result.push({ melody: barMelody, chordRoman: bars[Math.max(0, origBarIdx)].chordRoman });
   }
 
-  // If there are leftover degrees, append one more bar
-  if (phraseIdx < phrase.length) {
-    const leftover = phrase.slice(phraseIdx);
-    const rhythm = generateRhythm(newTop, beatSize, "straight", leftover.length, numNewBars * 7919, newBot);
-    const hits = rhythm.melodyHits;
-    const barMelody: MelodyBeat[] = [];
-    for (let hi = 0; hi < hits.length && hi < leftover.length; hi++) {
-      const nextSlot = hi + 1 < hits.length ? hits[hi + 1] : rhythm.totalSlots;
-      const dur = (nextSlot - hits[hi]) / beatSize;
-      barMelody.push({ degree: leftover[hi].degree, duration: dur, accidental: leftover[hi].accidental });
-    }
-    result.push({ melody: barMelody, chordRoman: bars[bars.length - 1].chordRoman });
+  if (curMelody.length > 0) {
+    // Pad the final partial bar with a rest so the stave renders a complete bar.
+    if (rem > EPS) curMelody.push({ degree: 0, duration: rem });
+    result.push({ melody: curMelody, chordRoman: curChord });
   }
 
   return result;
@@ -598,7 +608,13 @@ function SnareLineLine({
 
         if (notes.length === 0) continue;
 
-        const barBeats = Math.max(sigTop, Math.round(melody.reduce((s, m) => s + m.duration, 0)));
+        // MelodyBeat.duration is in quarter-note units, so the voice's
+        // numBeats/beatValue=4 must also be expressed in quarter-notes.
+        // `beatsPerBar("6/8") = 3` (not 6) — using the raw numerator here
+        // would double the allotted voice capacity for compound meters.
+        const barQuarters = beatsPerBar(timeSig);
+        const melodySum = melody.reduce((s, m) => s + m.duration, 0);
+        const barBeats = Math.max(barQuarters, Math.ceil(melodySum - 1e-6));
         const voice = new Voice({ numBeats: barBeats, beatValue: 4 });
         (voice as unknown as { setMode(m: number): void }).setMode(2);
         voice.addTickables(notes);
@@ -669,18 +685,19 @@ function SnareLineLine({
           return (
             <div key={bi} className="relative" style={{ width: barWidth, height: 20 }}>
               {labels.map((lbl, li) => {
-                const leftPct = labels.length === 1 ? 0 : (li === 0 ? 0 : 50);
-                const widthPct = labels.length === 1 ? 100 : 50;
+                // Beat 1 chord sits at the bar's left edge; mid-bar chord
+                // sits at 50% (above beat 3 in 4/4, since VexFlow formats
+                // notes with symmetric left/right padding inside the bar).
+                const leftPct = li === 0 ? 0 : 50;
                 return (
                   <div
                     key={li}
-                    className="absolute text-center font-bold text-sm"
+                    className="absolute font-bold text-sm"
                     style={{
                       left: `${leftPct}%`,
-                      width: `${widthPct}%`,
                       color: colors[li] ?? "#7173e6",
-                      textAlign: labels.length === 1 ? "left" : "center",
-                      paddingLeft: labels.length === 1 ? 4 : 0,
+                      paddingLeft: 4,
+                      whiteSpace: "nowrap",
                     }}
                   >
                     {renderChordRoman(lbl)}
@@ -847,15 +864,20 @@ export default function HarmonyWorkshop() {
   const [rhythmSeed, setRhythmSeed] = useState(0); // bump to regenerate
 
   const song: FolkSong = useMemo(() => {
-    let s = rawSong;
-    if (targetTimeSig && targetTimeSig !== rawSong.timeSignature) {
-      s = { ...s, timeSignature: targetTimeSig, bars: remeterBars(s.bars, targetTimeSig, rawSong.timeSignature) };
+    try {
+      let s = rawSong;
+      if (targetTimeSig && targetTimeSig !== rawSong.timeSignature) {
+        s = { ...s, timeSignature: targetTimeSig, bars: remeterBars(s.bars, targetTimeSig, rawSong.timeSignature) };
+      }
+      if (rhythmStyle && rhythmApplied) {
+        const fn = crossBars ? reshuffleBars : rerhythmBarsInPlace;
+        s = { ...s, bars: fn(s.bars, rhythmStyle, s.timeSignature, rhythmSeed || undefined, densityBias) };
+      }
+      return s;
+    } catch (err) {
+      console.warn("HarmonyWorkshop song transform error — falling back to raw song:", err);
+      return rawSong;
     }
-    if (rhythmStyle && rhythmApplied) {
-      const fn = crossBars ? reshuffleBars : rerhythmBarsInPlace;
-      s = { ...s, bars: fn(s.bars, rhythmStyle, s.timeSignature, rhythmSeed || undefined, densityBias) };
-    }
-    return s;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rawSong, targetTimeSig, rhythmStyle, rhythmApplied, crossBars, densityBias, rhythmSeed]);
 
@@ -1009,9 +1031,12 @@ export default function HarmonyWorkshop() {
           </div>
           <div className="flex items-center gap-1.5">
             <label className="text-[10px] text-[#666] uppercase tracking-wider">Tonic</label>
-            <input type="number" min={0} max={edo - 1} value={tonicRoot}
-              onChange={(e) => setTonicRoot(Math.max(0, Math.min(edo - 1, Number(e.target.value))))}
-              className="w-12 bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-white text-center focus:outline-none" />
+            <select value={tonicRoot} onChange={(e) => setTonicRoot(Number(e.target.value))}
+              className="bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-white focus:outline-none">
+              {Array.from({ length: edo }, (_, i) => (
+                <option key={i} value={i}>{formatHalfAccidentals(pcToNoteNameWithEnharmonic(i, edo))}</option>
+              ))}
+            </select>
           </div>
           <div className="w-px h-4 bg-[#2a2a2a]" />
           <div className="flex items-center gap-1.5">

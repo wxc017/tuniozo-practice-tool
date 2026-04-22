@@ -162,11 +162,18 @@ function getGrouping(beatsPerBar: number, beatSize: number, bottom: number): num
     // Isochronous meter: equal groups (GTTM MWFR 3 — beat regularity)
     return Array(beatsPerBar).fill(beatSize);
   }
-  // NI meter: use the grouping engine, then validate London's constraint
+  // NI meter: use the grouping engine, then validate London's constraint.
+  // allCompositions(n, 8) grows ~2^n — at n=20 it's ~500k, at n=24 it's ~8M
+  // and hangs the browser. For large slot counts go straight to the
+  // elementary 2-and-3 decomposition, which is London-well-formed by
+  // construction and matches conventional notation for 6/8, 9/8, 12/8, 7/8
+  // (all built from 2- and 3-pulse groups).
   const totalSlots = beatsPerBar * beatSize;
-  const maxPart = Math.min(totalSlots, 8);
-  const result = generateAndSelectGrouping(totalSlots, "musical", maxPart);
-  if (result && londonWellFormed(result)) return result;
+  if (totalSlots <= 14) {
+    const maxPart = Math.min(totalSlots, 8);
+    const result = generateAndSelectGrouping(totalSlots, "musical", maxPart);
+    if (result && londonWellFormed(result)) return result;
+  }
   // Fallback: build from 2s and 3s (London's elementary NI groups)
   const groups: number[] = [];
   let rem = totalSlots;

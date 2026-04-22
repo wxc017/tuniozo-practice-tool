@@ -1332,21 +1332,25 @@ function KSPatternGroup({
               )}
               <VexDrumStrip
                 measures={[{
-                  // Always a 16th grid for K/S tiles — the ostinato's
-                  // subdivision (including triplet ostinatos) does NOT
-                  // reshape the K/S beaming.  A triplet hi-hat pattern
-                  // tiles across 16th slots; the tile just shows the plain
-                  // kick/snare rhythm in its native 16th grouping.
+                  // Render the whole group as a single beat. 3/5/6/7/9-note
+                  // groups get a tuplet bracket so the beam collects all
+                  // notes evenly; 4-note groups stay plain 16ths.
+                  // shortHits forces every note to a single-slot duration
+                  // (rests fill the gaps) instead of held dotted-8ths, so
+                  // all slots occupy the same horizontal width and the
+                  // 3rd/4th don't visually collapse into each other.
                   grid: "16th",
                   ostinatoHits: [], ostinatoOpen: [],
                   snareHits: localSnare,
                   bassHits:  localBass,
                   hhFootHits: [], hhFootOpen: [],
                   ghostHits: [], ghostDoubleHits: [],
-                  // No accentFlags on the selection preview — accents are
-                  // added by the user after the phrase is committed to the
-                  // final-preview strip below.
                   slotOverride: p.notes.length,
+                  beamGrouping: p.notes.length,
+                  tupletNum: [3, 5, 6, 7, 9].includes(p.notes.length) ? p.notes.length : undefined,
+                  shortHits: true,
+                  showRests: false,
+                  beamAcrossRests: true,
                 }]}
                 measureWidth={tileW - 12}
                 height={KS_TILE_H}
@@ -1485,25 +1489,34 @@ function InterplayFinalRow({
     [],
   );
 
-  const stripMeasures: StripMeasureData[] = rowMeasures.map(m => ({
-    // Always a 16th grid for the committed phrase — a triplet ostinato
-    // does NOT reshape the beaming.  The hi-hat pattern tiles continuously
-    // across bars (handled when measures are built/re-tiled), but the
-    // rendered 16ths keep their standard 4-slot beam groups so the notation
-    // stays readable in any bar length.
-    grid: "16th" as GridType,
-    ostinatoHits: m.hatHits,
-    ostinatoOpen: m.hatOpenHits,
-    snareHits:    m.snareHits,
-    bassHits:     m.bassHits,
-    hhFootHits:   m.hhFootHits ?? [],
-    hhFootOpen:   [],
-    crashHits:    m.crashHits ?? [],
-    ghostHits:    m.ghostHits,
-    ghostDoubleHits: [],
-    accentFlags:  m.accentFlags,
-    slotOverride: m.totalSlots,
-  }));
+  const stripMeasures: StripMeasureData[] = rowMeasures.map(m => {
+    // Render each measure as a single beat containing ALL of the group's
+    // notes — matching the K/S selection tiles.  3/5/6/7/9-slot groups get
+    // a tuplet bracket (triplet, quintuplet, …); 4-slot groups stay plain
+    // 16ths.  shortHits keeps every note at a single-slot width (rests
+    // fill the gaps) so all slots occupy uniform horizontal space and
+    // adjacent notes don't visually collapse.
+    const n = m.totalSlots;
+    return {
+      grid: "16th" as GridType,
+      ostinatoHits: m.hatHits,
+      ostinatoOpen: m.hatOpenHits,
+      snareHits:    m.snareHits,
+      bassHits:     m.bassHits,
+      hhFootHits:   m.hhFootHits ?? [],
+      hhFootOpen:   [],
+      crashHits:    m.crashHits ?? [],
+      ghostHits:    m.ghostHits,
+      ghostDoubleHits: [],
+      accentFlags:  m.accentFlags,
+      slotOverride: n,
+      beamGrouping: n,
+      tupletNum: [3, 5, 6, 7, 9].includes(n) ? n : undefined,
+      shortHits: true,
+      showRests: false,
+      beamAcrossRests: true,
+    };
+  });
 
   return (
     <div style={{ position: "relative" }}>

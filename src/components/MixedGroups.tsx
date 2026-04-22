@@ -475,10 +475,6 @@ export default function MixedGroups() {
   const effectiveMixedGroupsMode = mixedGroupsMode && canUseMixedGroupsMode && !groupingsMode;
 
   const [pattern, setPattern] = useState<VocalPattern | null>(null);
-  // Whether the current pattern should render with flat-16th notation.
-  // Set to false when Groups mode picks triplet so triplets show as real
-  // tuplet brackets rather than 3 consecutive 16ths.
-  const [renderAsSixteenth, setRenderAsSixteenth] = useState(false);
   const [history, setHistory] = useState<VocalPattern[]>([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
 
@@ -588,7 +584,6 @@ export default function MixedGroups() {
 
   const generate = useCallback(() => {
     let pat: VocalPattern;
-    let flatSixteenth = false;
     // If true, the accent-from-grouping step below should compute an accent
     // partition from Musical/Awkward/Both instead of falling back to the
     // pattern's natural group starts. Used by Groupings mode.
@@ -626,7 +621,6 @@ export default function MixedGroups() {
       pat = generateFromGrouping(g, SINGLE_VOICE, 0);
       prevGroupingsRef.current.push(g);
       if (prevGroupingsRef.current.length > 20) prevGroupingsRef.current.shift();
-      flatSixteenth = chosen === 4;
     } else {
       const g = generatePulseGrouping(numPulses, allowedSubdivisions, groupingMode, prevGroupingsRef.current);
       pat = generateFromGrouping(g, SINGLE_VOICE, 0);
@@ -663,7 +657,6 @@ export default function MixedGroups() {
     if (splitSizes.size > 0) pat = applySplits(pat, splitSizes);
 
     setPattern(pat);
-    setRenderAsSixteenth(flatSixteenth);
     setHistory(prev => [...prev, pat]);
     setHistoryIdx(prev => prev + 1);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -923,7 +916,7 @@ export default function MixedGroups() {
               <PatternDisplay
                 pattern={pattern}
                 numPulses={null}
-                sixteenthMode={renderAsSixteenth}
+                sixteenthMode={true}
               />
             </div>
           ) : (

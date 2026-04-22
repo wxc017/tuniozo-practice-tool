@@ -337,6 +337,20 @@ export default function StickingsStudy({
   const remaining = pulseCount - filled;
   const isFull = remaining === 0;
 
+  // Auto-sync beam grouping to the chosen pattern sizes so phrase boundaries
+  // show up in the beaming (e.g. picking BSSS + KRR + RKL + RLRKL renders as
+  // beams of 4 + 3 + 3 + 5 instead of uniform 4+4+4+4). Any trailing unfilled
+  // slots collapse into one final group. Skipped when no patterns are chosen
+  // so manually-typed groupings (which reset `chosen` to []) are preserved.
+  useEffect(() => {
+    if (chosen.length === 0) return;
+    const groups = chosen.map(p => p.group);
+    const sum = groups.reduce((a, b) => a + b, 0);
+    if (sum < pulseCount) groups.push(pulseCount - sum);
+    setBeamGroups(groups);
+    setBeamInput(groups.join("+"));
+  }, [chosen, pulseCount]);
+
   // Filter state: which groups, kick-counts, and rudiment families are visible
   const [enabledGroups, setEnabledGroups] = useState<Set<number>>(() => new Set([1, 2, 3, 4, 5, 6, 7]));
   const [enabledKicks, setEnabledKicks] = useState<Set<number>>(() => new Set([0, 1, 2, 3]));
@@ -420,7 +434,6 @@ export default function StickingsStudy({
 
   // Preview strip data
   const previewRanges = useMemo(() => beamRanges(beamGroups, pulseCount), [beamGroups, pulseCount]);
-  const previewBeats = previewRanges.length;
   const previewStripData: StripMeasureData[] = useMemo(() => {
     return previewRanges.map(({ lo, hi }) => {
       const snareHits: number[] = [];
@@ -454,9 +467,22 @@ export default function StickingsStudy({
         showRests: true,
         hideGhostParens: true,
         bassStemUp: true,
+        // Each range renders as its own stave; without slotOverride a 3- or
+        // 5-slot phrase would be clipped to the grid's natural 4-slot beat.
+        slotOverride: hi - lo,
       };
     });
-  }, [currentStickings, previewRanges, pulseCount]);
+  }, [currentStickings, previewRanges]);
+
+  // Proportional per-group width so a 5-slot phrase gets more room than a
+  // 3-slot one. Uniform grouping still renders evenly because every group has
+  // the same slot count.
+  const previewMeasureWidths = useMemo(() => {
+    const budget = 600;
+    const slotW = pulseCount > 0 ? Math.max(10, budget / pulseCount) : 37.5;
+    return previewRanges.map(({ lo, hi }) => Math.max(40, Math.round((hi - lo) * slotW)));
+  }, [previewRanges, pulseCount]);
+  const previewMeasureWidth = previewMeasureWidths[0] ?? 150;
 
   const buildMeasure = useCallback((): StickingMeasureData => {
     return buildStickingMeasure(chosen, pulseCount, beamGroups);
@@ -579,7 +605,7 @@ export default function StickingsStudy({
           <div style={{ fontSize: 9, color: "#333", fontWeight: 700, letterSpacing: 4, textTransform: "uppercase" }}>Preview</div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", overflowX: "auto" }}>
             <div style={{ background: "#0f0f0f", border: "1px solid #1e1e1e", borderRadius: 8, overflow: "hidden", lineHeight: 0, flexShrink: 0, padding: "4px 0" }}>
-              <VexDrumStrip measures={previewStripData} measureWidth={previewBeats <= 4 ? 150 : Math.max(60, Math.floor(600 / previewBeats))} height={200} staveY={50} />
+              <VexDrumStrip measures={previewStripData} measureWidth={previewMeasureWidth} measureWidths={previewMeasureWidths} height={200} staveY={50} />
             </div>
           </div>
 
