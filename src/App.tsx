@@ -46,6 +46,7 @@ import type { AccentImportMode } from "@/components/PracticeLogModal";
 import SettingsModal from "@/components/SettingsModal";
 import { useMetronome } from "@/hooks/useMetronome";
 import { useLS, lsSet, getKnownOptions, localToday } from "@/lib/storage";
+import { initFolderSync, getStatus as getFolderSyncStatus, reconnectFolder, type SyncState } from "@/lib/folderSync";
 import { recordAnswer, getDayTotals, accuracy, setImportBias, getImportBias, clearImportBias, removeSlotAnswers } from "@/lib/stats";
 import { getSavedToken, downloadSync, uploadSync, clearToken } from "@/lib/googleDrive";
 import { buildSyncPayload, restoreFromSyncPayload } from "@/lib/syncData";
@@ -191,6 +192,39 @@ export default function App() {
   useEffect(() => { if (academicMode && !academicAvailable) setAcademicMode(false); }, [academicMode, academicAvailable, setAcademicMode]);
   const pulseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pulsePhase = useRef<"on" | "off">("on");
+
+  // ── Local folder sync ──────────────────────────────────────────────
+  const [folderSyncState, setFolderSyncState] = useState<SyncState>("disconnected");
+  const [folderSyncName, setFolderSyncName] = useState<string | undefined>(undefined);
+  const [folderReconnecting, setFolderReconnecting] = useState(false);
+  const [folderPromptOpen, setFolderPromptOpen] = useState(false);
+  const folderPromptShownOnce = useRef(false);
+  useEffect(() => {
+    initFolderSync();
+    const refresh = () => {
+      void getFolderSyncStatus().then(s => {
+        setFolderSyncState(s.state);
+        setFolderSyncName(s.folderName);
+        // Auto-open the prompt once per session when a stored folder needs re-permission.
+        if (s.state === "needs-permission" && !folderPromptShownOnce.current) {
+          folderPromptShownOnce.current = true;
+          setFolderPromptOpen(true);
+        }
+      });
+    };
+    refresh();
+    window.addEventListener("lt-folder-sync-status", refresh);
+    return () => window.removeEventListener("lt-folder-sync-status", refresh);
+  }, []);
+  const handleFolderReconnect = async () => {
+    setFolderReconnecting(true);
+    const res = await reconnectFolder({ loadFromFolder: true });
+    setFolderReconnecting(false);
+    if (res.ok) {
+      setFolderPromptOpen(false);
+      setTabKey(k => k + 1); // re-mount tabs so UI picks up restored data
+    }
+  };
 
   // ── Google Drive auto-sync ─────────────────────────────────────────
   const gdriveInitDone = useRef(false);
@@ -487,6 +521,21 @@ export default function App() {
     setTimeout(() => setHighlighted(new Set()), 1500);
   }, [ensureAudio, edo]);
 
+  // ── Answer buttons injected into each tab next to its Show Answer ─
+  const answerButtons = (responseMode === "Play Audio" && awaitingAnswer) ? (
+    <div className="flex items-center gap-2 flex-shrink-0">
+      <span className="text-xs text-[#555]">Got it?</span>
+      <button onClick={() => handleAnswer(true)}
+        className="px-3 py-1 bg-[#1a3a1a] border border-[#3a6a3a] text-[#5cca5c] hover:bg-[#1e4a1e] rounded text-sm font-bold transition-colors">
+        ✓
+      </button>
+      <button onClick={() => handleAnswer(false)}
+        className="px-3 py-1 bg-[#3a1a1a] border border-[#6a3a3a] text-[#e06060] hover:bg-[#4a1e1e] rounded text-sm font-bold transition-colors">
+        ✗
+      </button>
+    </div>
+  ) : null;
+
   // ── Shared props for every tab ─────────────────────────────────────
   const sharedTabProps = {
     tonicPc, lowestOct, highestOct, edo: edo,
@@ -498,6 +547,7 @@ export default function App() {
     lastPlayed, ensureAudio, playVol,
     tabSettingsRef,
     layoutPitchRange: layoutPitchRange ?? undefined,
+    answerButtons,
   };
 
   const tabs = (["intervals","chords","melody","jazz","patterns","drone","modeid"] as Tab[]);
@@ -560,6 +610,16 @@ export default function App() {
                 className="px-2 py-1 bg-[#0e1a0e] border border-[#2a4a2a] text-[#5a8a5a] hover:text-[#7aaa7a] rounded text-xs transition-colors">
                 Practice Log
               </button>}
+              {folderSyncState === "needs-permission" && (
+                <button
+                  onClick={handleFolderReconnect}
+                  disabled={folderReconnecting}
+                  className="px-2 py-1 bg-[#2a1a0a] border border-[#5a3a1a] text-[#d89a4a] hover:text-[#ffcf88] hover:border-[#7a5a2a] rounded text-xs transition-colors disabled:opacity-50"
+                  title="Reconnect to your sync folder (browser requires a click after reload)"
+                >
+                  {folderReconnecting ? "Reconnecting…" : "Reconnect folder"}
+                </button>
+              )}
               <button onClick={() => setShowSettings(true)}
                 className="p-1.5 bg-[#1a1a1a] border border-[#2a2a2a] text-[#666] hover:text-[#aaa] rounded transition-colors"
                 title="Settings">
@@ -706,24 +766,8 @@ export default function App() {
                the full scroll range instead of detaching at the header's
                bottom edge. See the sticky wrapper after the header block. */}
 
-          {/* Answer row */}
+          {/* EDO selector row */}
           <div className="flex items-center gap-3 min-h-6">
-            {/* ✓/✗ answer buttons — appear in Play Audio mode after any question is played */}
-            {responseMode === "Play Audio" && awaitingAnswer && (
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <span className="text-xs text-[#555]">Got it?</span>
-                <button onClick={() => handleAnswer(true)}
-                  className="px-3 py-1 bg-[#1a3a1a] border border-[#3a6a3a] text-[#5cca5c] hover:bg-[#1e4a1e] rounded text-sm font-bold transition-colors">
-                  ✓
-                </button>
-                <button onClick={() => handleAnswer(false)}
-                  className="px-3 py-1 bg-[#3a1a1a] border border-[#6a3a3a] text-[#e06060] hover:bg-[#4a1e1e] rounded text-sm font-bold transition-colors">
-                  ✗
-                </button>
-              </div>
-            )}
-
-            {/* EDO selector */}
             <div className="flex items-center gap-2 flex-shrink-0 ml-auto">
               {/* Import bias indicator */}
               {getImportBias() && (
@@ -1347,6 +1391,47 @@ export default function App() {
       </div>
       )}
 
+
+      {folderPromptOpen && folderSyncState === "needs-permission" && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+          onClick={e => { if (e.target === e.currentTarget) setFolderPromptOpen(false); }}
+        >
+          <div className="bg-[#111] border border-[#2a4a2a] rounded-xl w-full max-w-md shadow-2xl">
+            <div className="px-5 py-4 border-b border-[#1e1e1e]">
+              <h2 className="font-semibold text-sm text-[#7aaa7a]">Reconnect your sync folder</h2>
+            </div>
+            <div className="px-5 py-5 space-y-4">
+              <p className="text-sm text-[#ccc]">
+                Your practice log lives in{" "}
+                <span className="text-[#ffcf88] font-medium">{folderSyncName ?? "a local folder"}</span>.
+                Browsers require a single click per session to regrant access.
+              </p>
+              <p className="text-xs text-[#777]">
+                Click <span className="text-[#7aaa7a]">Reconnect</span> to load the latest data and enable auto-save for this session.
+              </p>
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={handleFolderReconnect}
+                  disabled={folderReconnecting}
+                  className="flex-1 px-4 py-2.5 bg-[#1a2a1a] border border-[#5a8a5a] hover:border-[#7aaa7a] rounded-lg text-sm text-[#cce0cc] hover:text-white transition-colors disabled:opacity-50"
+                >
+                  {folderReconnecting ? "Reconnecting…" : "Reconnect"}
+                </button>
+                <button
+                  onClick={() => setFolderPromptOpen(false)}
+                  className="px-4 py-2.5 bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#3a3a3a] rounded-lg text-sm text-[#888] hover:text-[#ccc] transition-colors"
+                >
+                  Later
+                </button>
+              </div>
+              <p className="text-[10px] text-[#555] pt-1">
+                Changes made without reconnecting won't save to the folder until you reconnect. You can also manage this under Settings → Local Folder Sync.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showSettings && (
         <SettingsModal

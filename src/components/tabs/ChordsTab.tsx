@@ -4,17 +4,19 @@ import { useLS, registerKnownOption, unregisterKnownOptionsForPrefix } from "@/l
 import type { TabSettingsSnapshot } from "@/App";
 import { weightedRandomChoice } from "@/lib/stats";
 import {
-  FORMULA_NAMES, EXTENSION_LABELS, LOOP_LENGTHS,
-  buildSequenceFromFormula,
-  placeChordInRegister,
+  LOOP_LENGTHS,
   getAllChordsForEdo, generateFunctionalLoop,
-  triadQuality, describeChord, intervalLabel, randomChoice, shuffle,
+  triadQuality, intervalLabel, randomChoice, shuffle,
   ALL_VOICING_PATTERNS, VOICING_PATTERN_GROUPS, applyVoicingPattern,
   generateBassLine, generateMelodyLine,
   checkLowIntervalLimits, formatLilWarnings,
   type LilWarning,
 } from "@/lib/musicTheory";
-import { getExtLabelToSteps, getChordShapes, getEdoChordTypes, type EdoChordType } from "@/lib/edoData";
+import {
+  getExtLabelToSteps, getChordShapes, getEdoChordTypes, type EdoChordType,
+  getAvailableThirdQualities, getAvailableSeventhQualities, getAvailableFifthQualities,
+  computeFifthQuality,
+} from "@/lib/edoData";
 import { getTonalityBanks, getMagicModeBank, getTonalityNames, type TonalityBank, type ChordEntry } from "@/lib/tonalityBanks";
 import { formatRomanNumeral } from "@/lib/formatRoman";
 
@@ -33,16 +35,12 @@ interface Props {
   playVol?: number;
   layoutPitchRange?: { min: number; max: number };
   tabSettingsRef?: React.MutableRefObject<TabSettingsSnapshot | null>;
+  answerButtons?: React.ReactNode;
 }
 
 const REGISTER_MODES = ["Fixed Register","Random Bass Octave","Random Full Register"];
-type Section = "isolated" | "functional";
-const SECTION_META: { id: Section; label: string; color: string }[] = [
-  { id: "isolated",   label: "Isolated Chords",   color: "#9999ee" },
-  { id: "functional", label: "Functional Harmony", color: "#e0a040" },
-];
 
-// Chord-type tier ordering for the Functional Harmony progression selector.
+// Chord-type tier ordering for the Progressions selector.
 // Classification walks 3rd by 3rd outward from the roman numeral's natural
 // 3rd: exact match → any diatonic (m3/M3/sus) → xenharmonic same side → xen
 // opposite side.  See `classifyChordType` below for the side/diatonic rules.
@@ -55,19 +53,18 @@ const CHORD_TYPE_MODE_LABELS: Record<ChordTypeMode, string> = {
   "chromatic-xen":      "Chromatic Xenharmonic",
 };
 const CHORD_TYPE_MODE_HINTS: Record<ChordTypeMode, string> = {
-  "diatonic":           "Exact match on 3rd (and 7th if present): IV → IV, IV7 → IV7.",
-  "chromatic-diatonic": "Any standard 3rd + 7th (m3/M3/sus, m7/M7/dim7): IV → IV7, iv, sus, …",
-  "diatonic-xen":       "Xenharmonic 3rd or 7th on the same side (IV → IVneutral, IV min_h7-major-side, …).",
-  "chromatic-xen":      "Xenharmonic 3rd or 7th on the opposite side (IV → ivsubminor, harm7 variants, …).",
+  "diatonic":           "Exact match on 3rd, 5th, and 7th for each roman numeral's diatonic chord.",
+  "chromatic-diatonic": "Plays any chord whose 3rd, 5th, and 7th are in your selected qualities, built on each roman numeral's root.",
+  "diatonic-xen":       "Same as Chromatic, but restricted to xenharmonic chord types on the same side (major/minor) as the roman numeral.",
+  "chromatic-xen":      "Same as Chromatic, but restricted to xenharmonic chord types on the opposite side from the roman numeral.",
 };
 
 export default function ChordsTab({
-  tonicPc, lowestOct, highestOct, edo, onHighlight, responseMode, onResult, onPlay, lastPlayed, ensureAudio, playVol = 0.55, layoutPitchRange, tabSettingsRef
+  tonicPc, lowestOct, highestOct, edo, onHighlight, responseMode, onResult, onPlay, lastPlayed, ensureAudio, playVol = 0.55, layoutPitchRange, tabSettingsRef, answerButtons
 }: Props) {
   const frameTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const [section, setSection] = useLS<Section>("lt_crd_section", "isolated");
 
-  // ── Shared chord selection state ────────────────────────────────────
+  // ── Chord selection state ───────────────────────────────────────────
   const [checkedChords, setCheckedChords] = useLS<Set<string>>("lt_crd_chords",
     new Set(["I","IV","V","vi","ii","iii","vii°"])
   );
@@ -79,10 +76,17 @@ export default function ChordsTab({
   const [checkedExts, setCheckedExts] = useLS<Set<string>>("lt_crd_exts", new Set());
   const [checkedExtCounts, setCheckedExtCounts] = useLS<Set<number>>("lt_crd_extCounts", new Set([0, 1]));
   const [checkedPatterns, setCheckedPatterns] = useLS<Set<string>>("lt_crd_vpatterns", new Set(["t-135"]));
-  const [checkedChordTypes, setCheckedChordTypes] = useLS<Set<string>>("lt_crd_chordTypes",
-    new Set(["maj", "min", "dim", "aug", "maj7", "dom7", "min7", "halfdim7"])
-  );
-  // Chord-type progression mode for Functional Harmony.  Four tiers,
+  // Quality filters — which 3rd/5th/7th qualities are allowed in the pool.
+  // Triads always pass the 3rd+5th gate; seventh chords additionally require
+  // their 7th quality to be checked. An empty checkedSevenths means "no
+  // seventh chords" (triads only).
+  const [checkedThirds, setCheckedThirds] = useLS<Set<string>>("lt_crd_thirds",
+    new Set(["min3", "maj3"]));
+  const [checkedFifths, setCheckedFifths] = useLS<Set<string>>("lt_crd_fifths",
+    new Set(["P5", "dim5", "aug5"]));
+  const [checkedSevenths, setCheckedSevenths] = useLS<Set<string>>("lt_crd_sevenths",
+    new Set(["min7", "maj7", "dim7"]));
+  // Chord-type progression mode for Progressions.  Four tiers,
   // classified by the candidate's 3rd relative to the roman numeral's 3rd:
   //   "diatonic"            — exact match (IV → IV only)
   //   "chromatic-diatonic"  — any standard m3/M3/sus type, regardless of
@@ -93,37 +97,25 @@ export default function ChordsTab({
   //                            (IV → iv-subminor, …)
   // Legacy values ("any"/"by-third") are migrated on load.
   const [chordTypeModeRaw, setChordTypeModeRaw] = useLS<string>("lt_crd_chordTypeMode", "chromatic-diatonic");
-  const chordTypeMode: ChordTypeMode =
+  const chordTypeModeResolved: ChordTypeMode =
     chordTypeModeRaw === "any"      ? "chromatic-diatonic" :
     chordTypeModeRaw === "by-third" ? "diatonic" :
     (CHORD_TYPE_MODES as readonly string[]).includes(chordTypeModeRaw)
       ? (chordTypeModeRaw as ChordTypeMode)
       : "chromatic-diatonic";
+  // 12 EDO has no xenharmonic chord types, so the xen tiers collapse to
+  // their non-xen counterparts.
+  const chordTypeMode: ChordTypeMode =
+    edo === 12 && (chordTypeModeResolved === "diatonic-xen" || chordTypeModeResolved === "chromatic-xen")
+      ? "chromatic-diatonic"
+      : chordTypeModeResolved;
   const setChordTypeMode = (m: ChordTypeMode) => setChordTypeModeRaw(m);
 
-  // Isolated section state
-  const [checkedFormulas, setCheckedFormulas] = useLS<Set<string>>("lt_crd_formulas",
-    new Set(["I X I","ii/X V/X X"])
-  );
-  const [showTarget, setShowTarget] = useState<string | null>(null);
-  const [infoText, setInfoText] = useState<string>("");
-  const pendingInfo = useRef<{text: string; isTarget: boolean} | null>(null);
-  const [hasPendingInfo, setHasPendingInfo] = useState(false);
-  const [hasPlayed, setHasPlayed] = useState(false);
-
-  // Tonality state (shared)
+  // Tonality state
   const [tonality, setTonality] = useLS<string>("lt_crd_tonality", "Major");
-  const [tonicBetween, setTonicBetween] = useLS<boolean>("lt_crd_tonicBetween", false);
   const [collapsedLevels, setCollapsedLevels] = useState<Set<string>>(new Set());
 
-  // Store last play params for re-voice
-  const lastPlayParams = useRef<{
-    seq: [string, number[] | null][];
-    formula: string;
-    chordMap: Record<string, number[]>;
-  } | null>(null);
-
-  // ── Functional Harmony state ────────────────────────────────────────
+  // ── Progression state ──────────────────────────────────────────────
   const [loopLength, setLoopLength] = useLS<number>("lt_crd_fh_len", 4);
   const [loopGap, setLoopGap] = useLS<number>("lt_crd_fh_gap", 1.5);
   const [chordDur, setChordDur] = useLS<number>("lt_crd_fh_dur", 0.65);
@@ -154,71 +146,44 @@ export default function ChordsTab({
 
   useEffect(() => {
     unregisterKnownOptionsForPrefix("crd:");
-    if (section === "isolated") {
-      Array.from(checkedFormulas).forEach(f => {
-        registerKnownOption(`crd:${f}`, `Chord Formula: ${f}`);
-      });
-    } else {
-      // Functional Harmony: register selected roman numerals
-      Array.from(checkedChords).forEach(rn => {
-        registerKnownOption(`crd:fh:${rn}`, `Chords: ${rn}`);
-      });
-    }
+    Array.from(checkedChords).forEach(rn => {
+      registerKnownOption(`crd:fh:${rn}`, `Chords: ${rn}`);
+    });
     return () => unregisterKnownOptionsForPrefix("crd:");
-  }, [section, checkedFormulas, checkedChords]);
+  }, [checkedChords]);
 
   // Publish settings snapshot for history panel
   useEffect(() => {
     if (!tabSettingsRef) return;
-    const edoTypes = getEdoChordTypes(edo);
-    const triads = edoTypes.filter(t => t.category === "triad" && checkedChordTypes.has(t.id)).map(t => t.name);
-    const sevenths = edoTypes.filter(t => t.category === "seventh" && checkedChordTypes.has(t.id)).map(t => t.name);
     const voicingLabels = ALL_VOICING_PATTERNS.filter(p => checkedPatterns.has(p.id)).map(p => p.label);
     const extLabels = Array.from(checkedExts);
     const extCountLabels = Array.from(checkedExtCounts).sort().map(String);
     const texLayerLabels = Array.from(textureLayers);
 
-    if (section === "functional") {
-      tabSettingsRef.current = {
-        title: "Chord Progression (Functional Harmony)",
-        groups: [
-          { label: "Roman Numerals", items: Array.from(checkedChords) },
-          { label: "Ext Tendency", items: [extTendency] },
-          { label: "Voicings", items: voicingLabels },
-          { label: "Extensions", items: extLabels.length ? extLabels : ["none"] },
-          { label: "# Extensions", items: extCountLabels },
-          { label: "Chord Types", items: [CHORD_TYPE_MODE_LABELS[chordTypeMode]] },
-          { label: "Triads", items: triads.length ? triads : ["none"] },
-          { label: "7th Chords", items: sevenths.length ? sevenths : ["none"] },
-          { label: "Settings", items: [
-            `Loop: ${loopLength}`,
-            `Spacing: ${loopGap}s`,
-            `Duration: ${chordDur}s`,
-            `Register: ${regMode}`,
-            `Layers: ${texLayerLabels.join(", ") || "Harmony"}`,
-            `Tonality: ${tonality}`,
-          ]},
-        ],
-      };
-    } else {
-      tabSettingsRef.current = {
-        title: "Chord Progression (Isolated)",
-        groups: [
-          { label: "Formulas", items: Array.from(checkedFormulas) },
-          { label: "Roman Numerals", items: Array.from(checkedChords) },
-          { label: "Ext Tendency", items: [extTendency] },
-          { label: "Voicings", items: voicingLabels },
-          { label: "Extensions", items: extLabels.length ? extLabels : ["none"] },
-          { label: "# Extensions", items: extCountLabels },
-          { label: "Chord Types", items: [CHORD_TYPE_MODE_LABELS[chordTypeMode]] },
-          { label: "Triads", items: triads.length ? triads : ["none"] },
-          { label: "7th Chords", items: sevenths.length ? sevenths : ["none"] },
-          { label: "Settings", items: [`Register: ${regMode}`, `Tonality: ${tonality}`] },
-        ],
-      };
-    }
-  }, [section, checkedChords, checkedFormulas, extTendency, checkedPatterns, checkedExts, checkedExtCounts,
-      checkedChordTypes, chordTypeMode, loopLength, loopGap, chordDur, regMode, textureLayers, tonality, edo, tabSettingsRef]);
+    tabSettingsRef.current = {
+      title: "Progressions",
+      groups: [
+        { label: "Roman Numerals", items: Array.from(checkedChords) },
+        { label: "Ext Tendency", items: [extTendency] },
+        { label: "Voicings", items: voicingLabels },
+        { label: "Extensions", items: extLabels.length ? extLabels : ["none"] },
+        { label: "# Extensions", items: extCountLabels },
+        { label: "Tier", items: [CHORD_TYPE_MODE_LABELS[chordTypeMode]] },
+        { label: "3rds", items: Array.from(checkedThirds) },
+        { label: "5ths", items: Array.from(checkedFifths) },
+        { label: "7ths", items: Array.from(checkedSevenths) },
+        { label: "Settings", items: [
+          `Loop: ${loopLength}`,
+          `Spacing: ${loopGap}s`,
+          `Duration: ${chordDur}s`,
+          `Register: ${regMode}`,
+          `Layers: ${texLayerLabels.join(", ") || "Harmony"}`,
+          `Tonality: ${tonality}`,
+        ]},
+      ],
+    };
+  }, [checkedChords, extTendency, checkedPatterns, checkedExts, checkedExtCounts,
+      checkedThirds, checkedFifths, checkedSevenths, chordTypeMode, loopLength, loopGap, chordDur, regMode, textureLayers, tonality, edo, tabSettingsRef]);
 
   // Clamp notes to the keyboard's physical pitch range.
   // Avoids losing voices by deduplicating collapsed octaves.
@@ -321,7 +286,6 @@ export default function ChordsTab({
   // else if its 7th is xen, use the 7th's side; else the 3rd's side (only
   // reached when fully standard, in which case the xen tiers exclude it).
   const getCompatibleTypes = useCallback((shape: number[]): EdoChordType[] => {
-    if (checkedChordTypes.size === 0) return [];
     const root = shape[0];
     const rels = shape.map(s => ((s - root) % edo + edo) % edo).sort((a, b) => a - b);
     const chordThird   = rels.length >= 2 ? rels[1] : -1;
@@ -350,8 +314,24 @@ export default function ChordsTab({
       }
     }
 
+    // Quality-filter gate: 3rd + 5th must be in the user's checked sets,
+    // and either the 7th quality is checked (for seventh chords) or `no7`
+    // is checked (for triads).
+    const qualityAllows = (t: EdoChordType): boolean => {
+      if (t.thirdQuality && !checkedThirds.has(t.thirdQuality)) return false;
+      const fifthStep = t.steps.length >= 3 ? t.steps[2] : null;
+      if (fifthStep !== null) {
+        const fq = computeFifthQuality(fifthStep, edo);
+        if (!checkedFifths.has(fq)) return false;
+      }
+      if (t.category === "seventh") {
+        if (!t.seventhQuality || !checkedSevenths.has(t.seventhQuality)) return false;
+      }
+      return true;
+    };
+
     return edoChordTypes.filter(t => {
-      if (!checkedChordTypes.has(t.id)) return false;
+      if (!qualityAllows(t)) return false;
       const tThird   = t.third;
       const tFifth   = t.steps.length >= 3 ? t.steps[2] : null;
       const tSeventh = t.category === "seventh" ? t.steps[3] : null;
@@ -396,7 +376,7 @@ export default function ChordsTab({
           return !tAllStd && tSide !== numeralIsMajor;
       }
     });
-  }, [edo, edoChordTypes, checkedChordTypes, chordTypeMode, diatonicScaleRoots]);
+  }, [edo, edoChordTypes, checkedThirds, checkedFifths, checkedSevenths, chordTypeMode, diatonicScaleRoots]);
 
   // Build a chord shape by applying a chord type's intervals to a roman numeral's root
   const applyChordType = useCallback((shape: number[], type: EdoChordType): number[] => {
@@ -406,9 +386,46 @@ export default function ChordsTab({
 
   // Check if any chord type is compatible (for filtering the roman numeral pool)
   const chordMatchesType = useCallback((shape: number[]): boolean => {
-    if (checkedChordTypes.size === 0) return true;
     return getCompatibleTypes(shape).length > 0;
-  }, [checkedChordTypes, getCompatibleTypes]);
+  }, [getCompatibleTypes]);
+
+  // Roman numerals that actually have at least one compatible chord type
+  // under the current 3rd/5th/7th + tier selection. Empty → Play is
+  // disabled with a hint telling the user to broaden their filters.
+  const playablePool = useMemo(() => {
+    return Array.from(checkedChords).filter(rn => {
+      const shape = chordMap[rn];
+      return shape ? chordMatchesType(shape) : false;
+    });
+  }, [checkedChords, chordMap, chordMatchesType]);
+
+  // Whether any selected voicing pattern is playable under the current
+  // 7th selection. If the user hasn't checked any 7ths, patterns that
+  // require ≥4 notes (like "1 3 5 7") can't be realized as triads, so
+  // they drop out and the Play button needs to grey out if nothing is
+  // left.
+  const hasPlayableVoicing = useMemo(() => {
+    const counts = Array.from(ALL_VOICING_PATTERNS)
+      .filter(p => checkedPatterns.has(p.id))
+      .flatMap(p => {
+        const lo = p.minNotes;
+        const hi = p.maxNotes ?? 7;
+        const out: number[] = [];
+        for (let n = lo; n <= hi; n++) out.push(n);
+        return out;
+      });
+    if (counts.length === 0) return false;
+    if (checkedSevenths.size === 0) return counts.some(n => n < 4);
+    return true;
+  }, [checkedPatterns, checkedSevenths]);
+
+  const canPlay = playablePool.length > 0 && hasPlayableVoicing;
+  const disabledReason =
+    playablePool.length === 0
+      ? "No suitable chord pool — loosen 3rd/5th/7th or switch tier."
+      : !hasPlayableVoicing
+        ? "No triad voicing selected — pick a 3-note voicing or enable at least one 7th."
+        : null;
 
   // When tonality changes, auto-select its primary chords
   const prevTonality = useRef(tonality);
@@ -445,20 +462,25 @@ export default function ChordsTab({
     let shape = stepsOverride ?? currentChordMap[rn];
     if (!shape) return null;
 
-    // Apply a random compatible chord type if any are checked
+    // Apply a random compatible chord type — if none match the user's
+    // quality filters (3rd/5th/7th + tier), refuse to voice this chord
+    // rather than silently falling back to the raw roman-numeral shape.
     const compatTypes = getCompatibleTypes(shape);
-    if (compatTypes.length > 0) {
-      shape = applyChordType(shape, randomChoice(compatTypes));
-    }
+    if (compatTypes.length === 0) return null;
+    shape = applyChordType(shape, randomChoice(compatTypes));
 
-    // Target note count is drawn from what the selected patterns support
-    const validCounts = Array.from(patternNoteCounts);
+    // Target note count is drawn from what the selected patterns support.
+    // If the user hasn't checked any 7ths, drop any ≥4-note voicings from
+    // the pool so the output stays triadic.
+    let validCounts = Array.from(patternNoteCounts);
+    if (checkedSevenths.size === 0) validCounts = validCounts.filter(n => n < 4);
+    if (validCounts.length === 0) return null;
     const targetNotes = randomChoice(validCounts);
 
     // If the selected voicing pattern expects a 7th (≥4 notes) but the applied
-    // chord type is a triad (only the user's triad-types are checked), auto-
-    // extend with the diatonic 7th so the "1 3 5 7" voicing actually has a 7th
-    // to voice. In non-diatonic modes fall back to a plain minor 7th.
+    // chord type is a triad, auto-extend with the diatonic 7th so the
+    // "1 3 5 7" voicing actually has a 7th to voice. In non-diatonic modes
+    // fall back to a plain minor 7th.
     if (targetNotes >= 4 && shape.length === 3) {
       const rootPc = ((shape[0] % edo) + edo) % edo;
       let seventhInterval: number | null = null;
@@ -521,9 +543,16 @@ export default function ChordsTab({
     let extStepPool = buildExtPool(true);
     if (extStepPool.length === 0 && extTendency !== "Any") extStepPool = buildExtPool(false);
 
-    if (k_ext > 0 && extStepPool.length > 0) {
+    // Split extensions: lower (2/4/6 — within the first octave) fill
+    // voicing-pattern slots like any other chord tone; upper (9/11/13
+    // and their alterations — steps ≥ edo) always sit on top of the
+    // voicing so they read as real compound extensions.
+    const lowerExtSteps = extStepPool.filter(s => s < edo);
+    const upperExtSteps = extStepPool.filter(s => s >= edo);
+
+    if (k_ext > 0 && lowerExtSteps.length > 0) {
       const existing = new Set(chordAbsRef);
-      const candidates = extStepPool.map(s => refRootAbs + s).filter(n => !existing.has(n));
+      const candidates = lowerExtSteps.map(s => refRootAbs + s).filter(n => !existing.has(n));
       shuffle(candidates);
       chordAbsRef = [...chordAbsRef, ...candidates.slice(0, k_ext)].sort((a, b) => a - b);
     }
@@ -531,6 +560,17 @@ export default function ChordsTab({
     if (chordAbsRef.length > targetNotes) {
       chordAbsRef = chordAbsRef.slice(0, targetNotes);
     }
+
+    // Pick the set of upper extensions to stack on top — count comes from
+    // # EXTENSIONS (checkedExtCounts), capped by how many upper qualities
+    // the user checked. If #EXTENSIONS has no value ≥1, no upper ext plays.
+    const extCountOpts = Array.from(checkedExtCounts).filter(n => n > 0);
+    const kUpper = extCountOpts.length > 0
+      ? Math.min(randomChoice(extCountOpts), upperExtSteps.length)
+      : 0;
+    const upperExtStepsPicked = kUpper > 0
+      ? shuffle([...upperExtSteps]).slice(0, kUpper)
+      : [];
 
     // Must match a selected voicing pattern — no fallback
     const nNotes = chordAbsRef.length;
@@ -546,52 +586,62 @@ export default function ChordsTab({
       const rootAbs = tonicPc + (oct - 4) * edo + rootStep;
       const content = relSteps.map(s => rootAbs + s).sort((a, b) => a - b);
       const voiced = applyVoicingPattern(content, edo, pattern);
+      // Stack upper extensions above the voicing's current top, each one
+      // octave-shifted up as needed so 9/11/13 always sit higher than the
+      // chord's 1/3/5/7 — regardless of the pattern (including inversions).
+      if (upperExtStepsPicked.length > 0) {
+        const sortedExts = [...upperExtStepsPicked].sort((a, b) => a - b);
+        for (const extStep of sortedExts) {
+          let note = rootAbs + extStep;
+          const top = voiced.length > 0 ? Math.max(...voiced) : rootAbs;
+          while (note <= top) note += edo;
+          voiced.push(note);
+        }
+      }
       return clampToLayout(voiced);
     };
 
-    // Absolute pitch range the chord's ROOT must sit within. Other voices
-    // (e.g. the 5 in a "5 7 1 3" inversion) may fall below or above this
-    // range — only the root is gated. Range is measured from the *tonic's*
-    // octaves (lowestOct..highestOct) so "Exercise Range 3–4" means the
-    // tonic spans C3–C4 and every chord's root must fall inside that same
-    // absolute window (e.g. V's root must be G3, not G4 which would be
-    // above C4).
-    const rootTargetPc = ((tonicPc + rootStep) % edo + edo) % edo;
+    // Bass gate: the LOWEST note of the realized voicing must sit inside
+    // the exercise range [lowestRootAbs, highestRootAbs]. Inversions can
+    // push the root above the bass, so we gate on the bass — not the root
+    // — to keep the whole chord anchored in the user's window.
     const lowestRootAbs  = tonicPc + (lowestOct  - 4) * edo;
     const highestRootAbs = tonicPc + (highestOct - 4) * edo;
-    const rootInRange = (voicing: number[]): boolean => {
-      for (const n of voicing) {
-        if (((n % edo) + edo) % edo !== rootTargetPc) continue;
-        if (n >= lowestRootAbs && n <= highestRootAbs) return true;
-      }
-      return false;
-    };
-    // Bass gate: the LOWEST note of the voicing must also sit inside the
-    // exercise range. A voicing that cleared rootInRange but whose bass
-    // sits below (e.g. an inversion that dropped the 5 an octave) is
-    // rejected so voice-leading search skips it and tries the next candidate.
     const bassInRange = (voicing: number[]): boolean => {
       if (voicing.length === 0) return false;
       const low = Math.min(...voicing);
       return low >= lowestRootAbs && low <= highestRootAbs;
     };
+    // How far the bass sits outside the range (0 = in range). Used as a
+    // fallback tiebreaker when no candidate has its bass inside the window.
+    const bassOffset = (voicing: number[]): number => {
+      if (voicing.length === 0) return Infinity;
+      const low = Math.min(...voicing);
+      if (low < lowestRootAbs) return lowestRootAbs - low;
+      if (low > highestRootAbs) return low - highestRootAbs;
+      return 0;
+    };
 
-    let chordAbs: number[];
-    // Search oct over a wider window than the user's range. The oct param
-    // is the octave WE ANCHOR THE ROOT AT WHEN BUILDING CONTENT, but
-    // applyVoicingPattern may push the actual root up for inversion
-    // patterns (e.g. "5 1 3 7" lands the root one octave above its
-    // content root). We overshoot both ends and then filter to keep only
-    // candidates whose realized root lands inside the user's range.
+    // Enumerate every (octave, pattern) candidate in a window wider than
+    // the exercise range, since inversion patterns can shift the realized
+    // bass up or down from its content-root octave.
     const searchLo = lowestOct - 2;
     const searchHi = highestOct + 2;
+    const allCandidates: number[][] = [];
+    for (let oct = searchLo; oct <= searchHi; oct++) {
+      for (const pat of compatPatterns) {
+        const cand = buildVoicing(oct, pat);
+        if (cand.length > 0) allCandidates.push(cand);
+      }
+    }
+
+    let chordAbs: number[];
     if (prevChord && prevChord.length > 0) {
-      // Voice-leading by minimum total movement: for every (octave, pattern)
-      // candidate that keeps the root in range, measure how far each of its
-      // notes is from the nearest note in the previous chord and sum. The
-      // candidate with the smallest sum wins — this naturally rewards common
-      // tones (distance 0), stepwise motion, and penalizes leaps, without a
-      // hand-tuned multi-criterion score.
+      // Voice-leading by minimum total movement: for every candidate
+      // measure how far each of its notes is from the nearest note in the
+      // previous chord and sum. Walk candidates from nearest to farthest
+      // and pick the first whose bass is in range — that's "nearest
+      // voicing whose lowest note fits the exercise range".
       const distToPrev = (cand: number[]): number => {
         let total = 0;
         for (const n of cand) {
@@ -604,268 +654,43 @@ export default function ChordsTab({
         }
         return total;
       };
-      const scored: { voicing: number[]; dist: number }[] = [];
-      for (let oct = searchLo; oct <= searchHi; oct++) {
-        for (const pat of compatPatterns) {
-          const cand = buildVoicing(oct, pat);
-          if (cand.length === 0) continue;
-          if (!rootInRange(cand)) continue;
-          if (!bassInRange(cand)) continue;
-          scored.push({ voicing: cand, dist: distToPrev(cand) });
-        }
-      }
-      if (scored.length === 0) {
-        chordAbs = buildVoicing(refOctave, randomChoice(compatPatterns));
-      } else {
-        const minDist = scored.reduce((m, s) => Math.min(m, s.dist), Infinity);
-        // Pick randomly among candidates tied at the minimum so loops don't
-        // lock onto one exact voicing every iteration.
-        const best = scored.filter(s => s.dist === minDist);
+      const scored = allCandidates
+        .map(v => ({ voicing: v, dist: distToPrev(v), offset: bassOffset(v) }))
+        .sort((a, b) => a.dist - b.dist);
+      const inRange = scored.filter(s => s.offset === 0);
+      if (inRange.length > 0) {
+        // Among candidates tied at the minimum in-range distance, pick one
+        // at random so loops don't lock onto the same exact voicing.
+        const minDist = inRange[0].dist;
+        const best = inRange.filter(s => s.dist === minDist);
         chordAbs = randomChoice(best).voicing;
+      } else if (scored.length > 0) {
+        // No in-range candidate: pick the one whose bass is closest to
+        // the range, tiebroken by voice-leading distance.
+        const byOffset = [...scored].sort((a, b) => a.offset - b.offset || a.dist - b.dist);
+        chordAbs = byOffset[0].voicing;
+      } else {
+        chordAbs = buildVoicing(refOctave, randomChoice(compatPatterns));
       }
     } else {
-      // No previous chord: still enforce root-in-range AND bass-in-range
-      // so the very first chord also sits inside the exercise window.
-      const candidates: number[][] = [];
-      for (let oct = searchLo; oct <= searchHi; oct++) {
-        for (const pat of compatPatterns) {
-          const cand = buildVoicing(oct, pat);
-          if (cand.length === 0) continue;
-          if (!rootInRange(cand)) continue;
-          if (!bassInRange(cand)) continue;
-          candidates.push(cand);
-        }
+      // First chord: random pick among voicings whose bass is in range.
+      // If none exist, fall back to the candidate whose bass is closest
+      // to the range.
+      const inRange = allCandidates.filter(bassInRange);
+      if (inRange.length > 0) {
+        chordAbs = randomChoice(inRange);
+      } else if (allCandidates.length > 0) {
+        const byOffset = [...allCandidates].sort((a, b) => bassOffset(a) - bassOffset(b));
+        chordAbs = byOffset[0];
+      } else {
+        chordAbs = buildVoicing(refOctave, randomChoice(compatPatterns));
       }
-      chordAbs = candidates.length > 0
-        ? randomChoice(candidates)
-        : buildVoicing(refOctave, randomChoice(compatPatterns));
     }
 
     return { chordAbs, voicingType: "pattern", quality: triadQuality(shape, edo), appliedShape: [...shape] };
-  }, [section, checkedPatterns, patternNoteCounts, checkedChords, checkedExts, extTendency, regMode, edo, tonicPc, lowestOct, highestOct, clampToLayout, getCompatibleTypes, applyChordType, edoChordTypes, chordTypeMode, diatonicScaleRoots]);
+  }, [checkedPatterns, patternNoteCounts, checkedChords, checkedExts, checkedExtCounts, extTendency, regMode, edo, tonicPc, lowestOct, highestOct, clampToLayout, getCompatibleTypes, applyChordType, edoChordTypes, chordTypeMode, diatonicScaleRoots, checkedSevenths]);
 
-  // ── Isolated Chords: buildAndPlayFrames ─────────────────────────────
-
-  const buildAndPlayFrames = async (
-    seq: [string, number[] | null][],
-    usedFormula: string,
-    currentChordMap: Record<string, number[]>,
-  ) => {
-    const validCounts = Array.from(patternNoteCounts);
-    if (validCounts.length === 0) return; // no patterns selected
-    const targetNotes = randomChoice(validCounts);
-
-    const scalePcs = new Set<number>();
-    const checkedRomans = Array.from(checkedChords).filter(r => currentChordMap[r]);
-    for (const rn of checkedRomans) {
-      for (const s of currentChordMap[rn] ?? []) scalePcs.add(((s % edo) + edo) % edo);
-    }
-
-    const frames: number[][] = [];
-    const infoLines: string[] = [
-      `Progression: ${seq.map(([lbl]) => lbl).join(", ")}`,
-      "",
-    ];
-
-    if (tonicBetween) {
-      const sh = getChordShapes(edo);
-      const tonicShape = activeBank
-        ? (activeBank.levels[0]?.chords[0]?.steps ?? sh.MAJ.map(s => s))
-        : sh.MAJ.map(s => s);
-      const midOct = Math.floor((lowestOct + highestOct) / 2);
-      const tonicRoot = tonicPc + (midOct - 4) * edo;
-      let tonicAbs = tonicShape.map(s => tonicRoot + s);
-      tonicAbs = placeChordInRegister(tonicAbs, edo, tonicPc, lowestOct, highestOct, regMode);
-      tonicAbs = clampToLayout(tonicAbs);
-      frames.push(tonicAbs);
-      infoLines.push(`[1] Tonic context`);
-      infoLines.push("─".repeat(28));
-    }
-
-    for (const [rn, stepsOverride] of seq) {
-      let shape = stepsOverride ?? currentChordMap[rn];
-      if (!shape) { infoLines.push(`[${rn}] — missing shape`); continue; }
-
-      // Apply a random compatible chord type if any are checked
-      const compatTypes = getCompatibleTypes(shape);
-      if (compatTypes.length > 0) {
-        const chosenType = randomChoice(compatTypes);
-        shape = applyChordType(shape, chosenType);
-      }
-
-      // Match the voicing pattern's note count. If the pattern expects a 7th
-      // (≥4 notes) but only triad types are checked, auto-extend with the
-      // diatonic 7th so the voicing pattern can actually fit the chord.
-      if (targetNotes >= 4 && shape.length === 3) {
-        const rootPc = ((shape[0] % edo) + edo) % edo;
-        let seventhInterval: number | null = null;
-        if (chordTypeMode === "diatonic" && diatonicScaleRoots) {
-          const idx = diatonicScaleRoots.indexOf(rootPc);
-          if (idx >= 0) {
-            const seventhRootPc = diatonicScaleRoots[(idx + 6) % diatonicScaleRoots.length];
-            seventhInterval = ((seventhRootPc - rootPc) % edo + edo) % edo;
-          }
-        }
-        if (seventhInterval === null) seventhInterval = getChordShapes(edo).m7;
-        shape = [...shape, shape[0] + seventhInterval];
-      }
-
-      const rootStep = shape[0];
-
-      // Pick a random octave for the root within the register
-      const octave = lowestOct + Math.floor(Math.random() * (highestOct - lowestOct + 1));
-      const rootAbs = tonicPc + (octave - 4) * edo + rootStep;
-
-      let chordAbs = shape.map(s => rootAbs + (s - rootStep));
-      const quality = triadQuality(shape, edo);
-
-      // Match chord type for per-type stable/avoid
-      const chordRels = shape.map(s => ((s - rootStep) % edo + edo) % edo).sort((a, b) => a - b);
-      const matchedType = edoChordTypes.find(t => {
-        const tKey = t.steps.join(",");
-        return chordRels.join(",") === tKey || chordRels.join(",").startsWith(tKey + ",");
-      });
-
-      const buildExtPool = (strict: boolean): number[] => {
-        const pool: number[] = [];
-        for (const lbl of checkedExts) {
-          if (lbl === "7th") continue;
-          for (const s of getExtLabelToSteps(edo)[lbl] ?? []) {
-            if (strict && matchedType && (matchedType.stable.length > 0 || matchedType.avoid.length > 0)) {
-              const relPc = ((s) % edo + edo) % edo;
-              if (extTendency === "Stable" && !matchedType.stable.includes(relPc)) continue;
-              if (extTendency === "Avoid"  && !matchedType.avoid.includes(relPc)) continue;
-            } else if (strict) {
-              const pc = ((rootStep + s) % edo + edo) % edo;
-              if (extTendency === "Stable" && !scalePcs.has(pc)) continue;
-              if (extTendency === "Avoid"  &&  scalePcs.has(pc)) continue;
-            }
-            pool.push(s);
-          }
-        }
-        return pool;
-      };
-      let extStepPool = buildExtPool(true);
-      if (extStepPool.length === 0 && extTendency !== "Any") extStepPool = buildExtPool(false);
-
-      // Per-chord k_ext so the auto-7th (if added) doesn't double up on
-      // the target note count.
-      const k_ext = Math.max(0, targetNotes - chordAbs.length);
-      if (k_ext > 0 && extStepPool.length > 0) {
-        const existing = new Set(chordAbs);
-        const candidates = extStepPool.map(s => rootAbs + s).filter(n => !existing.has(n));
-        shuffle(candidates);
-        chordAbs = [...chordAbs, ...candidates.slice(0, k_ext)].sort((a, b) => a - b);
-      }
-
-      if (chordAbs.length > targetNotes) {
-        chordAbs = chordAbs.slice(0, targetNotes);
-      }
-
-      // Must match a selected voicing pattern — no fallback
-      const nNotes = chordAbs.length;
-      const compatPats = ALL_VOICING_PATTERNS.filter(p =>
-        checkedPatterns.has(p.id) && nNotes >= p.minNotes && (!p.maxNotes || nNotes <= p.maxNotes)
-      );
-      if (compatPats.length === 0) { infoLines.push(`[${rn}] — no matching voicing pattern`); continue; }
-
-      chordAbs = applyVoicingPattern(chordAbs, edo, randomChoice(compatPats));
-      chordAbs = clampToLayout(chordAbs);
-
-      if (chordAbs.length) {
-        frames.push(chordAbs);
-        const chordRootAbs = stepsOverride !== null
-          ? ((tonicPc + stepsOverride[0]) % edo + edo) % edo
-          : tonicPc + (currentChordMap[rn]?.[0] ?? 0);
-        infoLines.push(`[${frames.length}] ${rn} (${quality})`);
-        infoLines.push(`── Chord from Do ──`);
-        infoLines.push(describeChord(chordAbs, tonicPc, edo));
-        infoLines.push(`── Chord in context ──`);
-        infoLines.push(describeChord(chordAbs, chordRootAbs, edo));
-        const lilWarn = formatLilWarnings(checkLowIntervalLimits(chordAbs, edo), edo);
-        if (lilWarn) infoLines.push(lilWarn);
-        if (frames.length < seq.length + (tonicBetween ? 1 : 0)) infoLines.push("─".repeat(28));
-      }
-    }
-
-    const info = infoLines.join("\n").trim();
-    const optKey = `crd:${usedFormula}`;
-    setInfoText("");
-    setShowTarget(null);
-    setHasPendingInfo(false);
-    pendingInfo.current = { text: info, isTarget: responseMode !== "Play Audio" };
-    setHasPendingInfo(true);
-
-    lastPlayed.current = { frames, info };
-    setHasPlayed(true);
-    onPlay(optKey, `Chord Formula: ${usedFormula} (${seq.map(([lbl]) => lbl).join(' → ')})`);
-
-    if (responseMode === "Play Audio") {
-      audioEngine.playSequence(frames, edo, 1800, 1.5, playVol);
-      onResult(`Chord progression: ${seq.map(([lbl]) => lbl).join(" → ")}`);
-    } else {
-      onResult(`Show Target: ${seq.map(([lbl]) => lbl).join(" → ")} — click Show Answer`);
-    }
-  };
-
-  const play = async () => {
-    await ensureAudio();
-    const checkedRomans = Array.from(checkedChords).filter(r => chordMap[r]);
-    if (!checkedRomans.length) { setInfoText("Select at least one chord."); return; }
-
-    const formulas = Array.from(checkedFormulas);
-    let seq: [string, number[] | null][] | null = null;
-    let usedFormula = "custom";
-
-    if (formulas.length) {
-      for (let i = 0; i < 20; i++) {
-        const f = weightedRandomChoice(formulas, f => `crd:${f}`);
-        seq = buildSequenceFromFormula(f, checkedRomans, chordMap, edo);
-        if (seq && seq.length) { usedFormula = f; break; }
-      }
-    }
-    if (!seq) {
-      seq = Array.from({length: 3}, () => [randomChoice(checkedRomans), null] as [string, number[] | null]);
-      usedFormula = seq.map(([rn]) => rn).join('-');
-    }
-
-    lastPlayParams.current = { seq, formula: usedFormula, chordMap: { ...chordMap } };
-    await buildAndPlayFrames(seq, usedFormula, chordMap);
-  };
-
-  const revoice = async () => {
-    const params = lastPlayParams.current;
-    if (!params) return;
-    await ensureAudio();
-    await buildAndPlayFrames(params.seq, params.formula, params.chordMap);
-  };
-
-  const highlightFrames = (frames: number[][], gapMs: number) => {
-    frameTimers.current.forEach(id => clearTimeout(id));
-    frameTimers.current = [];
-    frames.forEach((frame, i) => {
-      const id = setTimeout(() => {
-        onHighlight(frame);
-      }, i * gapMs);
-      frameTimers.current.push(id);
-    });
-  };
-
-  const replay = () => {
-    const lp = lastPlayed.current;
-    if (!lp) return;
-    audioEngine.playSequence(lp.frames, edo, 1000, 1.5);
-  };
-
-  const handleShowInfo = () => {
-    const p = pendingInfo.current;
-    if (!p) return;
-    if (lastPlayed.current) highlightFrames(lastPlayed.current.frames, 1000);
-    if (p.isTarget) setShowTarget(p.text);
-    else setInfoText(p.text);
-  };
-
-  // ── Functional Harmony: loop engine ─────────────────────────────────
+  // ── Progressions: loop engine ───────────────────────────────────────
 
   const stopLoop = useCallback(() => {
     if (loopTimerId.current !== null) {
@@ -1178,16 +1003,12 @@ export default function ChordsTab({
     }
   }, [ensureAudio, playVoices, highlightAllVoices, playVol, loopGap, chordDur]);
 
-  // Stop loop on unmount or section change
+  // Stop loop on unmount
   useEffect(() => {
     return () => stopLoop();
   }, [stopLoop]);
 
-  useEffect(() => {
-    if (section === "isolated") stopLoop();
-  }, [section, stopLoop]);
-
-  // ── Shared UI helpers ───────────────────────────────────────────────
+  // ── UI helpers ──────────────────────────────────────────────────────
 
   const toggleLevel = (name: string) => {
     setCollapsedLevels(prev => { const n = new Set(prev); if (n.has(name)) n.delete(name); else n.add(name); return n; });
@@ -1206,133 +1027,21 @@ export default function ChordsTab({
 
   return (
     <div className="space-y-5">
-      {/* Section tabs — drum-pattern style pill buttons */}
-      <div className="flex gap-2 items-center">
-        {SECTION_META.map(s => {
-          const active = section === s.id;
-          return (
-            <button key={s.id}
-              onClick={() => setSection(s.id)}
-              style={{
-                padding: "6px 18px", borderRadius: 6, fontSize: 12, fontWeight: 700,
-                border: `1.5px solid ${active ? s.color : "#222"}`,
-                background: active ? s.color + "18" : "#111",
-                color: active ? s.color : "#555",
-                cursor: "pointer", transition: "all 0.15s",
-                letterSpacing: 0.5,
-              }}
-            >
-              {s.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Tonality selector row (shared) */}
+      {/* Tonality selector row */}
       <div className="flex items-center gap-3 flex-wrap">
         <label className="text-xs text-[#888] font-medium">TONALITY</label>
         <select value={tonality} onChange={e => setTonality(e.target.value)}
           className="bg-[#1e1e1e] border border-[#333] rounded px-2 py-1.5 text-xs text-white focus:outline-none">
           {tonalityNames.map(t => <option key={t}>{t}</option>)}
         </select>
-        {section === "isolated" && (
-          <label className="flex items-center gap-1.5 text-xs cursor-pointer text-[#aaa] hover:text-white">
-            <input type="checkbox" checked={tonicBetween}
-              onChange={() => setTonicBetween(!tonicBetween)}
-              className="accent-[#7173e6]" />
-            Tonic before question
-          </label>
-        )}
       </div>
 
       {/* ════════════════════════════════════════════════════════════════ */}
-      {/* ISOLATED CHORDS section                                        */}
+      {/* PROGRESSIONS section                                           */}
       {/* ════════════════════════════════════════════════════════════════ */}
-      {section === "isolated" && (
-        <>
-          {/* Formula + Controls row */}
-          <div className="grid grid-cols-1 lg:grid-cols-[4fr_1fr] gap-4">
-            {/* Left: controls + LIL underneath */}
-            <div className="flex flex-col gap-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div>
-                  <p className="text-xs text-[#888] mb-1.5 font-medium">FORMULA</p>
-                  <div className="space-y-1">
-                    {FORMULA_NAMES.map(f => (
-                      <label key={f} className="flex items-center gap-2 text-xs cursor-pointer text-[#aaa] hover:text-white">
-                        <input type="checkbox" checked={checkedFormulas.has(f)}
-                          onChange={() => setCheckedFormulas(toggleSet(checkedFormulas, f))}
-                          className="accent-[#7173e6]" />
-                        <span>
-                          {formatRomanNumeral(f)}
-                          {f === "ii/X V/X X"  && <span className="ml-1 text-[#555] italic">major X only</span>}
-                          {f === "iiø/X V/X X" && <span className="ml-1 text-[#555] italic">minor X only</span>}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                {/* Shared voicing controls */}
-                <VoicingControls
-                  regMode={regMode} setRegMode={setRegMode}
-                />
-                <ExtensionControls
-                  extTendency={extTendency} setExtTendency={setExtTendency}
-                  checkedExts={checkedExts} setCheckedExts={setCheckedExts}
-                  checkedExtCounts={checkedExtCounts} setCheckedExtCounts={setCheckedExtCounts} toggleSet={toggleSet}
-                />
-                <VoicingPatternControls checkedPatterns={checkedPatterns} setCheckedPatterns={setCheckedPatterns} toggleSet={toggleSet} />
-              </div>
-              <LilPreviewPanel checkedChords={checkedChords} chordMap={chordMap} edo={edo} tonicPc={tonicPc} lowestOct={lowestOct} highestOct={highestOct} getCompatibleTypes={getCompatibleTypes} applyChordType={applyChordType} />
-            </div>
-            {/* Right: chord types */}
-            <ChordTypeControls edo={edo} checkedChordTypes={checkedChordTypes} setCheckedChordTypes={setCheckedChordTypes} chordTypeMode={chordTypeMode} setChordTypeMode={setChordTypeMode} toggleSet={toggleSet} />
-          </div>
-
-          {/* Actions */}
-          <div className="flex gap-2 flex-wrap items-center">
-            <button onClick={play}
-              className="bg-[#7173e6] hover:bg-[#5a5cc8] text-white px-5 py-2 rounded text-sm font-medium transition-colors">
-              ▶ Play Progression
-            </button>
-            {hasPlayed && (
-              <>
-                <button onClick={replay}
-                  className="bg-[#1e1e1e] hover:bg-[#2a2a2a] border border-[#333] text-[#aaa] px-4 py-2 rounded text-sm transition-colors">
-                  Replay
-                </button>
-                <button onClick={revoice}
-                  className="bg-[#1e1e1e] hover:bg-[#2a2a2a] border border-[#333] text-[#aaa] px-4 py-2 rounded text-sm transition-colors"
-                  title="Same chords, different voicing">
-                  Re-voice
-                </button>
-              </>
-            )}
-            {hasPendingInfo && !showTarget && !infoText && (
-              <button onClick={handleShowInfo}
-                className="bg-[#1e1e1e] hover:bg-[#2a2a2a] border border-[#444] text-[#9999ee] px-4 py-2 rounded text-sm transition-colors">
-                Show Answer
-              </button>
-            )}
-          </div>
-
-          {showTarget && (
-            <div className="bg-[#1a2a1a] border border-[#3a5a3a] rounded p-3 text-xs text-[#8fc88f] font-mono whitespace-pre">{showTarget}</div>
-          )}
-          {infoText && !showTarget && (
-            <div className="bg-[#141414] border border-[#2a2a2a] rounded p-3 text-xs text-[#888] font-mono whitespace-pre">{infoText}</div>
-          )}
-        </>
-      )}
-
-      {/* ════════════════════════════════════════════════════════════════ */}
-      {/* FUNCTIONAL HARMONY section                                     */}
-      {/* ════════════════════════════════════════════════════════════════ */}
-      {section === "functional" && (
-        <>
-          <div className="bg-[#141008] border border-[#2a2210] rounded-lg px-4 py-3 space-y-3">
+      <div className="bg-[#141008] border border-[#2a2210] rounded-lg px-4 py-3 space-y-3">
             <p className="text-xs text-[#a08840] leading-relaxed">
-              Automatically builds looping progressions from your selected chords using functional harmony rules.
+              Automatically builds looping progressions from your selected chords using functional-harmony rules.
               The engine finds chord movements that make musical sense and loops them continuously.
             </p>
 
@@ -1482,10 +1191,14 @@ export default function ChordsTab({
 
             {/* Play / Stop / Replay / Show Answer */}
             <div className="flex gap-2 flex-wrap items-center">
-              <button onClick={startFunctionalLoop} disabled={isLooping}
-                className="bg-[#e0a040] hover:bg-[#c89030] disabled:opacity-50 text-black px-5 py-2 rounded text-sm font-bold transition-colors">
+              <button onClick={startFunctionalLoop} disabled={isLooping || !canPlay}
+                title={disabledReason ?? undefined}
+                className="bg-[#e0a040] hover:bg-[#c89030] disabled:opacity-50 disabled:cursor-not-allowed text-black px-5 py-2 rounded text-sm font-bold transition-colors">
                 Play
               </button>
+              {disabledReason && (
+                <span className="text-[10px] text-[#c06060]">{disabledReason}</span>
+              )}
               {isLooping && (
                 <button onClick={stopLoop}
                   className="bg-[#3a1a1a] hover:bg-[#4a2020] border border-[#6a3a3a] text-[#e06060] px-4 py-2 rounded text-sm font-bold transition-colors">
@@ -1504,6 +1217,7 @@ export default function ChordsTab({
                   {fhShowAnswer ? "Replay Answer" : "Show Answer"}
                 </button>
               )}
+              {answerButtons}
             </div>
 
             {/* Answer — only visible after clicking Show Answer */}
@@ -1520,15 +1234,20 @@ export default function ChordsTab({
               checkedExtCounts={checkedExtCounts} setCheckedExtCounts={setCheckedExtCounts} toggleSet={toggleSet}
             />
             <VoicingPatternControls checkedPatterns={checkedPatterns} setCheckedPatterns={setCheckedPatterns} toggleSet={toggleSet} />
-            <ChordTypeControls edo={edo} checkedChordTypes={checkedChordTypes} setCheckedChordTypes={setCheckedChordTypes} chordTypeMode={chordTypeMode} setChordTypeMode={setChordTypeMode} toggleSet={toggleSet} />
+            <QualityControls
+              edo={edo}
+              checkedThirds={checkedThirds} setCheckedThirds={setCheckedThirds}
+              checkedFifths={checkedFifths} setCheckedFifths={setCheckedFifths}
+              checkedSevenths={checkedSevenths} setCheckedSevenths={setCheckedSevenths}
+              chordTypeMode={chordTypeMode} setChordTypeMode={setChordTypeMode}
+              toggleSet={toggleSet}
+            />
           </div>
 
           <LilPreviewPanel checkedChords={checkedChords} chordMap={chordMap} edo={edo} tonicPc={tonicPc} lowestOct={lowestOct} highestOct={highestOct} getCompatibleTypes={getCompatibleTypes} applyChordType={applyChordType} />
-        </>
-      )}
 
       {/* ════════════════════════════════════════════════════════════════ */}
-      {/* CHORD SELECTION (shared between both sections)                 */}
+      {/* CHORD SELECTION                                                */}
       {/* ════════════════════════════════════════════════════════════════ */}
       <ChordSelectionPanel
         activeBank={activeBank}
@@ -1574,44 +1293,64 @@ function ExtensionControls({ extTendency, setExtTendency, checkedExts, setChecke
   checkedExtCounts: Set<number>; setCheckedExtCounts: (s: Set<number>) => void;
   toggleSet: <T>(s: Set<T>, v: T) => Set<T>;
 }) {
+  const tendencyOpts: { value: string; color: string; desc: string }[] = [
+    { value: "Any",    color: "#9999ee", desc: "Any extension allowed" },
+    { value: "Stable", color: "#7aaa6a", desc: "Prefer stable (chord-tone-ish) extensions" },
+    { value: "Avoid",  color: "#c06060", desc: "Prefer avoid-note extensions" },
+  ];
   return (
     <div className="space-y-3">
       <div>
-        <p className="text-xs text-[#888] mb-1.5">EXT TENDENCY</p>
-        <div className="flex gap-3">
-          {["Any","Stable","Avoid"].map(v => (
-            <label key={v} className="flex items-center gap-1 text-xs cursor-pointer text-[#aaa]">
-              <input type="radio" name="extTend" checked={extTendency===v}
-                onChange={() => setExtTendency(v)} className="accent-[#7173e6]" />
-              {v}
-            </label>
-          ))}
+        <p className="text-xs text-[#888] mb-1.5 font-medium">EXT TENDENCY</p>
+        <div className="flex flex-wrap gap-1">
+          {tendencyOpts.map(o => {
+            const on = extTendency === o.value;
+            return (
+              <button key={o.value} onClick={() => setExtTendency(o.value)} title={o.desc}
+                className={`px-2 py-1 text-[10px] rounded border transition-colors ${
+                  on ? "text-white" : "bg-[#111] border-[#2a2a2a] text-[#666] hover:text-[#aaa]"
+                }`}
+                style={on ? { backgroundColor: o.color + "30", borderColor: o.color, color: o.color } : {}}>
+                {o.value}
+              </button>
+            );
+          })}
         </div>
       </div>
       <div>
-        <p className="text-xs text-[#888] mb-1.5">EXTENSIONS</p>
-        <div className="grid grid-cols-2 gap-1">
-          {EXTENSION_LABELS_UI.map(lbl => (
-            <label key={lbl} className="flex items-center gap-1.5 text-xs cursor-pointer text-[#aaa] hover:text-white">
-              <input type="checkbox" checked={checkedExts.has(lbl)}
-                onChange={() => setCheckedExts(toggleSet(checkedExts, lbl))}
-                className="accent-[#7173e6]" />
-              {lbl}
-            </label>
-          ))}
+        <p className="text-xs text-[#888] mb-1.5 font-medium">EXTENSIONS</p>
+        <div className="flex flex-wrap gap-1">
+          {EXTENSION_LABELS_UI.map(lbl => {
+            const on = checkedExts.has(lbl);
+            const color = "#b07acc";
+            return (
+              <button key={lbl} onClick={() => setCheckedExts(toggleSet(checkedExts, lbl))}
+                className={`px-2 py-1 text-[10px] rounded border transition-colors ${
+                  on ? "text-white" : "bg-[#111] border-[#2a2a2a] text-[#666] hover:text-[#aaa]"
+                }`}
+                style={on ? { backgroundColor: color + "30", borderColor: color, color } : {}}>
+                {lbl}
+              </button>
+            );
+          })}
         </div>
       </div>
       <div>
-        <p className="text-xs text-[#888] mb-1.5"># EXTENSIONS</p>
-        <div className="flex gap-1.5 flex-wrap">
-          {EXT_COUNTS.map(n => (
-            <label key={n} className="flex items-center gap-1 text-xs cursor-pointer text-[#aaa]">
-              <input type="checkbox" checked={checkedExtCounts.has(n)}
-                onChange={() => setCheckedExtCounts(toggleSet(checkedExtCounts, n))}
-                className="accent-[#7173e6]" />
-              {n}
-            </label>
-          ))}
+        <p className="text-xs text-[#888] mb-1.5 font-medium"># EXTENSIONS</p>
+        <div className="flex flex-wrap gap-1">
+          {EXT_COUNTS.map(n => {
+            const on = checkedExtCounts.has(n);
+            const color = "#c8a860";
+            return (
+              <button key={n} onClick={() => setCheckedExtCounts(toggleSet(checkedExtCounts, n))}
+                className={`px-2 py-1 text-[10px] rounded border transition-colors min-w-[28px] ${
+                  on ? "text-white" : "bg-[#111] border-[#2a2a2a] text-[#666] hover:text-[#aaa]"
+                }`}
+                style={on ? { backgroundColor: color + "30", borderColor: color, color } : {}}>
+                {n}
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -1658,7 +1397,7 @@ function VoicingPatternControls({ checkedPatterns, setCheckedPatterns, toggleSet
           );
         })}
       </div>
-      {/* Active panel */}
+      {/* Active panel — per-pattern toggle buttons matching 3rd/5th/7th style */}
       <div className="bg-[#0e0e0e] border border-[#1a1a1a] rounded p-2">
         <div className="flex items-center gap-2 mb-1.5">
           <button onClick={() => selectGroup(activeTab)}
@@ -1666,92 +1405,132 @@ function VoicingPatternControls({ checkedPatterns, setCheckedPatterns, toggleSet
           <button onClick={() => deselectGroup(activeTab)}
             className="text-[9px] text-[#555] hover:text-[#e06060] border border-[#222] rounded px-2 py-0.5">None</button>
         </div>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
-          {patterns.map(p => (
-            <label key={p.id} className="flex items-center gap-1.5 text-[11px] cursor-pointer text-[#aaa] hover:text-white">
-              <input type="checkbox" checked={checkedPatterns.has(p.id)}
-                onChange={() => setCheckedPatterns(toggleSet(checkedPatterns, p.id))}
-                className="accent-[#7173e6]" style={{ width: 11, height: 11 }} />
-              <span className="font-mono">{p.label}</span>
-            </label>
-          ))}
+        <div className="flex flex-wrap gap-1">
+          {patterns.map(p => {
+            const on = checkedPatterns.has(p.id);
+            const color = "#9999ee";
+            return (
+              <button key={p.id} onClick={() => setCheckedPatterns(toggleSet(checkedPatterns, p.id))}
+                className={`px-2 py-1 text-[10px] font-mono rounded border transition-colors ${
+                  on ? "text-white" : "bg-[#111] border-[#2a2a2a] text-[#666] hover:text-[#aaa]"
+                }`}
+                style={on ? { backgroundColor: color + "30", borderColor: color, color } : {}}>
+                {p.label}
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>
   );
 }
 
-function ChordTypeControls({ edo, checkedChordTypes, setCheckedChordTypes, chordTypeMode, setChordTypeMode, toggleSet }: {
+function QualityControls({
+  edo, checkedThirds, setCheckedThirds,
+  checkedFifths, setCheckedFifths,
+  checkedSevenths, setCheckedSevenths,
+  chordTypeMode, setChordTypeMode, toggleSet,
+}: {
   edo: number;
-  checkedChordTypes: Set<string>; setCheckedChordTypes: (s: Set<string>) => void;
+  checkedThirds: Set<string>; setCheckedThirds: (s: Set<string>) => void;
+  checkedFifths: Set<string>; setCheckedFifths: (s: Set<string>) => void;
+  checkedSevenths: Set<string>; setCheckedSevenths: (s: Set<string>) => void;
   chordTypeMode: ChordTypeMode; setChordTypeMode: (v: ChordTypeMode) => void;
   toggleSet: <T>(s: Set<T>, v: T) => Set<T>;
 }) {
-  const allTypes = useMemo(() => getEdoChordTypes(edo), [edo]);
-  const triads = allTypes.filter(t => t.category === "triad");
-  const sevenths = allTypes.filter(t => t.category === "seventh");
+  const thirds   = useMemo(() => getAvailableThirdQualities(edo), [edo]);
+  const fifths   = useMemo(() => getAvailableFifthQualities(edo), [edo]);
+  const sevenths = useMemo(() => getAvailableSeventhQualities(edo), [edo]);
 
-  const selectAll = (cat: EdoChordType[]) => {
-    const next = new Set(checkedChordTypes);
-    cat.forEach(t => next.add(t.id));
-    setCheckedChordTypes(next);
-  };
-  const deselectAll = (cat: EdoChordType[]) => {
-    const next = new Set(checkedChordTypes);
-    cat.forEach(t => next.delete(t.id));
-    setCheckedChordTypes(next);
-  };
+  const tierList: { value: ChordTypeMode; label: string; color: string }[] = [
+    { value: "diatonic",           label: "Diatonic",              color: "#6a9aca" },
+    { value: "chromatic-diatonic", label: "Chromatic",             color: "#9999ee" },
+    { value: "diatonic-xen",       label: "Diatonic Xen",          color: "#c09050" },
+    { value: "chromatic-xen",      label: "Chromatic Xen",         color: "#c06090" },
+  ];
+  const visibleTiers = tierList.filter(t => edo !== 12 || (t.value !== "diatonic-xen" && t.value !== "chromatic-xen"));
 
   return (
     <div className="space-y-2">
-      {/* Chord-type progression tier */}
+      {/* Tier — button row like Melodic Patterns */}
       <div>
-        <p className="text-xs text-[#888] mb-1 font-medium">CHORD TYPES</p>
-        <div className="flex gap-x-3 gap-y-1 flex-wrap">
-          {CHORD_TYPE_MODES.map(m => (
-            <label key={m} className="flex items-center gap-1 text-[10px] cursor-pointer text-[#aaa]">
-              <input type="radio" name="chordTypeMode" checked={chordTypeMode === m}
-                onChange={() => setChordTypeMode(m)} className="accent-[#7173e6]" />
-              {CHORD_TYPE_MODE_LABELS[m]}
-            </label>
-          ))}
+        <p className="text-xs text-[#888] mb-1 font-medium">TIER</p>
+        <div className="flex flex-wrap gap-1">
+          {visibleTiers.map(t => {
+            const on = chordTypeMode === t.value;
+            return (
+              <button key={t.value} onClick={() => setChordTypeMode(t.value)} title={CHORD_TYPE_MODE_HINTS[t.value]}
+                className={`px-2 py-1 text-[10px] rounded border transition-colors ${
+                  on ? "text-white" : "bg-[#111] border-[#2a2a2a] text-[#666] hover:text-[#aaa]"
+                }`}
+                style={on ? { backgroundColor: t.color + "30", borderColor: t.color, color: t.color } : {}}>
+                {t.label}
+              </button>
+            );
+          })}
         </div>
         <p className="text-[9px] text-[#444] mt-0.5">
           {CHORD_TYPE_MODE_HINTS[chordTypeMode]}
         </p>
       </div>
+
+      {/* 3rds */}
       <div>
-        <div className="flex items-center gap-2 mb-1">
-          <p className="text-xs text-[#888] font-medium">TRIADS</p>
-          <button onClick={() => selectAll(triads)} className="text-[9px] text-[#555] hover:text-[#888]">all</button>
-          <button onClick={() => deselectAll(triads)} className="text-[9px] text-[#555] hover:text-[#888]">none</button>
-        </div>
-        <div className="flex flex-col gap-0.5 max-h-40 overflow-y-auto">
-          {triads.map(t => (
-            <label key={t.id} className="flex items-center gap-1.5 text-xs cursor-pointer text-[#aaa] hover:text-white">
-              <input type="checkbox" checked={checkedChordTypes.has(t.id)}
-                onChange={() => setCheckedChordTypes(toggleSet(checkedChordTypes, t.id))}
-                className="accent-[#7173e6]" />
-              <span title={t.name}>{t.abbr}</span>
-            </label>
-          ))}
+        <p className="text-xs text-[#888] mb-1 font-medium">3RDS</p>
+        <div className="flex flex-wrap gap-1">
+          {thirds.map(q => {
+            const on = checkedThirds.has(q.id);
+            const color = "#7aaa6a";
+            return (
+              <button key={q.id} onClick={() => setCheckedThirds(toggleSet(checkedThirds, q.id))} title={q.desc}
+                className={`px-2 py-1 text-[10px] rounded border transition-colors ${
+                  on ? "text-white" : "bg-[#111] border-[#2a2a2a] text-[#666] hover:text-[#aaa]"
+                }`}
+                style={on ? { backgroundColor: color + "30", borderColor: color, color } : {}}>
+                {q.label}
+              </button>
+            );
+          })}
         </div>
       </div>
+
+      {/* 5ths */}
       <div>
-        <div className="flex items-center gap-2 mb-1">
-          <p className="text-xs text-[#888] font-medium">7TH CHORDS</p>
-          <button onClick={() => selectAll(sevenths)} className="text-[9px] text-[#555] hover:text-[#888]">all</button>
-          <button onClick={() => deselectAll(sevenths)} className="text-[9px] text-[#555] hover:text-[#888]">none</button>
+        <p className="text-xs text-[#888] mb-1 font-medium">5THS</p>
+        <div className="flex flex-wrap gap-1">
+          {fifths.map(q => {
+            const on = checkedFifths.has(q.id);
+            const color = "#c8a860";
+            return (
+              <button key={q.id} onClick={() => setCheckedFifths(toggleSet(checkedFifths, q.id))} title={q.desc}
+                className={`px-2 py-1 text-[10px] rounded border transition-colors ${
+                  on ? "text-white" : "bg-[#111] border-[#2a2a2a] text-[#666] hover:text-[#aaa]"
+                }`}
+                style={on ? { backgroundColor: color + "30", borderColor: color, color } : {}}>
+                {q.label}
+              </button>
+            );
+          })}
         </div>
-        <div className="flex flex-col gap-0.5 max-h-52 overflow-y-auto">
-          {sevenths.map(t => (
-            <label key={t.id} className="flex items-center gap-1.5 text-xs cursor-pointer text-[#aaa] hover:text-white">
-              <input type="checkbox" checked={checkedChordTypes.has(t.id)}
-                onChange={() => setCheckedChordTypes(toggleSet(checkedChordTypes, t.id))}
-                className="accent-[#7173e6]" />
-              <span title={t.name}>{t.abbr}</span>
-            </label>
-          ))}
+      </div>
+
+      {/* 7ths — empty selection means "triads only". */}
+      <div>
+        <p className="text-xs text-[#888] mb-1 font-medium">7THS</p>
+        <div className="flex flex-wrap gap-1">
+          {sevenths.map(q => {
+            const on = checkedSevenths.has(q.id);
+            const color = "#b07acc";
+            return (
+              <button key={q.id} onClick={() => setCheckedSevenths(toggleSet(checkedSevenths, q.id))} title={q.desc}
+                className={`px-2 py-1 text-[10px] rounded border transition-colors ${
+                  on ? "text-white" : "bg-[#111] border-[#2a2a2a] text-[#666] hover:text-[#aaa]"
+                }`}
+                style={on ? { backgroundColor: color + "30", borderColor: color, color } : {}}>
+                {q.label}
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>

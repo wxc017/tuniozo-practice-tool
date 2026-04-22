@@ -1351,6 +1351,7 @@ function KSPatternGroup({
                 measureWidth={tileW - 12}
                 height={KS_TILE_H}
                 showClef={false}
+                oneBeatPerBar
               />
             </div>
           );
@@ -1788,19 +1789,29 @@ export default function DrumPatterns({
   // Restore from practice log — always appends to existing measures
   useEffect(() => {
     const drumData = readPendingRestore<{
-      measures: DrumMeasure[];
-      grid: GridType;
+      measures?: DrumMeasure[];
+      grid?: GridType;
       permOriginalCount?: number | null;
       universalPools?: Partial<Record<VoiceBtnId, string[]>>;
+      interplayMeasures?: InterplayMeasureData[];
+      interplayOstinatoId?: string | null;
+      interplayPhrase?: string;
     }>("drum");
     if (drumData) {
-      if (drumData.grid) setGrid(drumData.grid as GridType);
-      if (drumData.measures) {
-        setMeasures(prev => prev.length > 0 ? [...prev, ...drumData.measures] : drumData.measures);
+      if (drumData.interplayMeasures && drumData.interplayMeasures.length > 0) {
+        setInterplayMeasures(prev => prev.length > 0 ? [...prev, ...drumData.interplayMeasures!] : drumData.interplayMeasures!);
+        if (drumData.interplayOstinatoId !== undefined) setInterplayOstinatoId(drumData.interplayOstinatoId);
+        if (drumData.interplayPhrase) setInterplayPhrase(drumData.interplayPhrase);
+        setMode("interplay");
+      } else {
+        if (drumData.grid) setGrid(drumData.grid as GridType);
+        if (drumData.measures) {
+          setMeasures(prev => prev.length > 0 ? [...prev, ...drumData.measures!] : drumData.measures!);
+        }
+        if (drumData.permOriginalCount != null) setPermOriginalCount(drumData.permOriginalCount);
+        if (drumData.universalPools) setUniversalPools(drumData.universalPools);
+        setMode("ostinato");
       }
-      if (drumData.permOriginalCount != null) setPermOriginalCount(drumData.permOriginalCount);
-      if (drumData.universalPools) setUniversalPools(drumData.universalPools);
-      setMode("ostinato");
     }
     const accentData = readPendingRestore<{ measures: unknown[]; grid: string; importMode?: string }>("accent");
     if (accentData) {
@@ -1849,11 +1860,56 @@ export default function DrumPatterns({
   // Builder: phrase structure (e.g. "5+3") + one picked KSPattern per group.
   // Committing pushes each group as its own InterplayMeasureData — each with
   // its own time signature (length/16) — to `interplayMeasures`.
-  const [interplayPhrase, setInterplayPhrase] = useState<string>("4+4+4+4");
-  const [interplayPicks, setInterplayPicks] = useState<(KSPattern | null)[]>([]);
+  //
+  // All three of phrase/picks/measures persist across reloads via localStorage
+  // so the user's committed work isn't lost when they refresh.
+  const [interplayPhrase, setInterplayPhrase] = useState<string>(() => {
+    try {
+      const raw = localStorage.getItem("lt_interplay_phrase");
+      return raw ? (JSON.parse(raw) as string) : "4+4+4+4";
+    } catch { return "4+4+4+4"; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("lt_interplay_phrase", JSON.stringify(interplayPhrase)); } catch {}
+  }, [interplayPhrase]);
+
+  const [interplayPicks, setInterplayPicks] = useState<(KSPattern | null)[]>(() => {
+    try {
+      const raw = localStorage.getItem("lt_interplay_picks");
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("lt_interplay_picks", JSON.stringify(interplayPicks)); } catch {}
+  }, [interplayPicks]);
+
   // Null = no hi-hat; otherwise the OSTINATO_LIBRARY entry id (e.g. "o1", "o2").
-  const [interplayOstinatoId, setInterplayOstinatoId] = useState<string | null>("o2");
-  const [interplayMeasures, setInterplayMeasures] = useState<InterplayMeasureData[]>([]);
+  const [interplayOstinatoId, setInterplayOstinatoId] = useState<string | null>(() => {
+    try {
+      const raw = localStorage.getItem("lt_interplay_ostinatoId");
+      if (raw === null) return "o2";
+      const parsed = JSON.parse(raw);
+      return typeof parsed === "string" || parsed === null ? parsed : "o2";
+    } catch { return "o2"; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("lt_interplay_ostinatoId", JSON.stringify(interplayOstinatoId)); } catch {}
+  }, [interplayOstinatoId]);
+
+  const [interplayMeasures, setInterplayMeasures] = useState<InterplayMeasureData[]>(() => {
+    try {
+      const raw = localStorage.getItem("lt_interplay_measures");
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("lt_interplay_measures", JSON.stringify(interplayMeasures)); } catch {}
+  }, [interplayMeasures]);
+
   const [interplaySelectedIdx, setInterplaySelectedIdx] = useState<number | null>(null);
   // User-added custom patterns, persisted to localStorage.  Flat array; filter
   // by length at UI render time so each group shows its matching customs.
@@ -3546,6 +3602,11 @@ export default function DrumPatterns({
                         shortHits: REST_VISIBLE_IDS.has(h.id),
                         // Triplet patterns get a "3" tuplet bracket above each beat.
                         tupletNum: h.triplet ? 3 : undefined,
+                        // Force uniform slot spacing. Without this VexFlow's
+                        // auto-beaming collapses uneven durations (e.g. a
+                        // dotted-8 + 16 + 8 mix) and the third/fourth
+                        // note of the preview stack on top of each other.
+                        beamGrouping: h.triplet ? 3 : 4,
                       }]}
                       measureWidth={TILE_W - 10}
                       height={TILE_H}
@@ -3691,7 +3752,7 @@ export default function DrumPatterns({
                   return {
                     preview: `${interplayMeasures.length} bars (${sig}) — ${labels}`,
                     snapshot: { interplayMeasures, interplayOstinatoId, interplayPhrase },
-                    canRestore: false,
+                    canRestore: true,
                   };
                 }}
                 getCapture={async () => undefined}

@@ -578,8 +578,11 @@ function biasDensity(d: number, lo: number, hi: number, bias: DensityBias): numb
 }
 
 function chordDensity(style: RhythmStyle, rng: () => number, bias: DensityBias = "auto"): number {
+  // Straight should feel like classical/pop downbeat phrasing — one or two
+  // chord hits per bar, not a carpet. Keep the upper end well below 1.0 so
+  // probability × weight × arc doesn't saturate the slot grid.
   const base: Record<RhythmStyle, [number, number]> = {
-    straight:   [0.35, 1.2],
+    straight:   [0.20, 0.55],
     syncopated: [0.40, 1.4],
     shuffle:    [0.40, 1.3],
     tresillo:   [0.40, 1.3],
@@ -595,8 +598,10 @@ function chordDensity(style: RhythmStyle, rng: () => number, bias: DensityBias =
 }
 
 function melodyDensity(style: RhythmStyle, rng: () => number, bias: DensityBias = "auto"): number {
+  // Straight melodies should breathe — half-note / quarter-note phrasing
+  // rather than constant sixteenth-note chatter.
   const base: Record<RhythmStyle, [number, number]> = {
-    straight:   [0.55, 1.6],
+    straight:   [0.30, 0.70],
     syncopated: [0.65, 1.8],
     shuffle:    [0.55, 1.5],
     tresillo:   [0.55, 1.6],

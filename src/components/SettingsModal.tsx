@@ -2,6 +2,15 @@ import { useRef, useState, useEffect } from "react";
 import { exportMusicData, importMusicData, getMusicDataSummary, exportAcademicData, importAcademicData, getAcademicDataSummary } from "@/lib/storage";
 import { isGoogleDriveAvailable, requestAccessToken, uploadSync, downloadSync, getSyncInfo, getSavedToken, clearToken } from "@/lib/googleDrive";
 import { buildSyncPayload, restoreFromSyncPayload } from "@/lib/syncData";
+import {
+  isSupported as isFolderSyncSupported,
+  getStatus as getFolderSyncStatus,
+  connectFolder,
+  reconnectFolder,
+  disconnectFolder,
+  saveNow as folderSyncSaveNow,
+  type SyncStatus,
+} from "@/lib/folderSync";
 
 interface Props {
   onClose: () => void;
@@ -33,6 +42,17 @@ export default function SettingsModal({ onClose, onDataImported, betaPlayRotatio
   const [gdriveToken, setGdriveToken] = useState<string | null>(() => getSavedToken());
   const [gdriveStatus, setGdriveStatus] = useState<"idle" | "busy">("idle");
   const [gdriveSyncTime, setGdriveSyncTime] = useState<string | null>(null);
+
+  // Folder sync state
+  const [folderStatus, setFolderStatus] = useState<SyncStatus>({ state: "disconnected" });
+  const [folderBusy, setFolderBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const refresh = () => getFolderSyncStatus().then(s => { if (alive) setFolderStatus(s); });
+    refresh();
+    window.addEventListener("lt-folder-sync-status", refresh);
+    return () => { alive = false; window.removeEventListener("lt-folder-sync-status", refresh); };
+  }, []);
 
   const flash = (m: string) => {
     setMsg(m);
@@ -134,6 +154,46 @@ export default function SettingsModal({ onClose, onDataImported, betaPlayRotatio
     e.target.value = "";
   };
 
+  const handleFolderConnect = async () => {
+    setFolderBusy(true);
+    flash("Pick a folder…");
+    const res = await connectFolder();
+    setFolderBusy(false);
+    if (res.ok) {
+      flash("Folder connected — data will auto-save");
+      // If connectFolder loaded existing data, the UI needs to refresh
+      onDataImported();
+    } else {
+      flash(res.error ?? "Failed to connect folder");
+    }
+  };
+
+  const handleFolderReconnect = async () => {
+    setFolderBusy(true);
+    flash("Reconnecting…");
+    const res = await reconnectFolder({ loadFromFolder: true });
+    setFolderBusy(false);
+    if (res.ok) {
+      flash("Folder reconnected — loaded latest data");
+      onDataImported();
+    } else {
+      flash(res.error ?? "Reconnect failed");
+    }
+  };
+
+  const handleFolderSaveNow = async () => {
+    setFolderBusy(true);
+    flash("Saving…");
+    const res = await folderSyncSaveNow();
+    setFolderBusy(false);
+    flash(res.ok ? "Saved to folder" : (res.error ?? "Save failed"));
+  };
+
+  const handleFolderDisconnect = async () => {
+    await disconnectFolder();
+    flash("Folder disconnected");
+  };
+
   const handleAcademicExport = async () => {
     flash("Exporting academic data…");
     await exportAcademicData();
@@ -192,6 +252,86 @@ export default function SettingsModal({ onClose, onDataImported, betaPlayRotatio
                     <div className="text-xs text-[#555]">Hide music modes and show academic tools (Reading Workflow)</div>
                   </div>
                 </label>
+              </div>
+            </div>
+          )}
+
+          {/* Local Folder Sync section */}
+          {isFolderSyncSupported() && (
+            <div>
+              <h3 className="text-xs font-semibold text-[#5a8a5a] uppercase tracking-widest mb-3">Local Folder Sync</h3>
+              <div className="space-y-2">
+                {folderStatus.state === "disconnected" && (
+                  <button
+                    onClick={handleFolderConnect}
+                    disabled={folderBusy}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#5a8a5a] rounded-lg text-sm text-[#ccc] hover:text-white transition-colors text-left disabled:opacity-50"
+                  >
+                    <span className="text-base">📁</span>
+                    <div>
+                      <div className="font-medium">Connect a folder on your computer</div>
+                      <div className="text-xs text-[#555]">Auto-saves practice log & data to a local file (lumatone_practice_data.json)</div>
+                    </div>
+                  </button>
+                )}
+                {folderStatus.state === "needs-permission" && (
+                  <>
+                    <div className="px-3 py-2 bg-[#2a1a0a] border border-[#5a3a1a] rounded-lg text-xs text-[#d89a4a]">
+                      Folder <span className="text-[#ffcf88]">{folderStatus.folderName}</span> needs permission after this reload.
+                    </div>
+                    <button
+                      onClick={handleFolderReconnect}
+                      disabled={folderBusy}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 bg-[#1a1a1a] border border-[#5a8a5a] hover:border-[#7aaa7a] rounded-lg text-sm text-[#ccc] hover:text-white transition-colors text-left disabled:opacity-50"
+                    >
+                      <span className="text-base">🔓</span>
+                      <div>
+                        <div className="font-medium">Reconnect folder &amp; load latest</div>
+                        <div className="text-xs text-[#555]">One click per session (browser security requirement)</div>
+                      </div>
+                    </button>
+                    <button
+                      onClick={handleFolderDisconnect}
+                      className="w-full px-3 py-1.5 text-xs text-[#555] hover:text-[#999] transition-colors text-left"
+                    >
+                      Forget this folder
+                    </button>
+                  </>
+                )}
+                {folderStatus.state === "connected" && (
+                  <>
+                    <div className="px-3 py-2 bg-[#1a1a1a] border border-[#2a4a2a] rounded-lg">
+                      <div className="text-xs text-[#666]">
+                        Connected: <span className="text-[#ccc]">{folderStatus.folderName}</span>
+                      </div>
+                      <div className="text-xs text-[#555] mt-1">
+                        {folderStatus.lastSaved
+                          ? <>Last saved: <span className="text-[#aaa]">{new Date(folderStatus.lastSaved).toLocaleTimeString()}</span></>
+                          : <span>No saves yet this session</span>}
+                      </div>
+                      {folderStatus.lastError && (
+                        <div className="text-xs text-[#d87070] mt-1">Last error: {folderStatus.lastError}</div>
+                      )}
+                    </div>
+                    <button
+                      onClick={handleFolderSaveNow}
+                      disabled={folderBusy}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#3a3a3a] rounded-lg text-sm text-[#ccc] hover:text-white transition-colors text-left disabled:opacity-50"
+                    >
+                      <span className="text-base">↓</span>
+                      <div>
+                        <div className="font-medium">Save now</div>
+                        <div className="text-xs text-[#555]">Force an immediate write</div>
+                      </div>
+                    </button>
+                    <button
+                      onClick={handleFolderDisconnect}
+                      className="w-full px-3 py-1.5 text-xs text-[#555] hover:text-[#999] transition-colors text-left"
+                    >
+                      Disconnect folder
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           )}

@@ -18,6 +18,7 @@ import type { AccentMeasureData, AccentSubdivision } from "@/lib/accentData";
 import { slotsPerBeat, toRenderGrid } from "@/lib/accentData";
 import { VexDrumStrip } from "@/components/VexDrumNotation";
 import type { StripMeasureData } from "@/components/VexDrumNotation";
+import type { InterplayMeasureData } from "@/lib/kickSnareInterplay";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -94,6 +95,26 @@ function measureToStripData(m: DrumMeasure, grid: GridType): StripMeasureData {
     ghostHits: gHits, ghostDoubleHits: gDoubleHits,
     accentFlags: m.accentSlots,
   };
+}
+
+/** Convert InterplayMeasureData[] into StripMeasureData[] for live rendering
+ *  in the practice-log preview. Matches InterplayFinalRow's mapping so the
+ *  saved phrase reads the same as it did in Pattern Ostinato's final strip. */
+function interplayMeasuresToStrip(measures: InterplayMeasureData[]): StripMeasureData[] {
+  return measures.map(m => ({
+    grid: "16th" as const,
+    ostinatoHits:    m.hatHits,
+    ostinatoOpen:    m.hatOpenHits,
+    snareHits:       m.snareHits,
+    bassHits:        m.bassHits,
+    hhFootHits:      m.hhFootHits ?? [],
+    hhFootOpen:      [],
+    crashHits:       m.crashHits ?? [],
+    ghostHits:       m.ghostHits,
+    ghostDoubleHits: [],
+    accentFlags:     m.accentFlags,
+    slotOverride:    m.totalSlots,
+  }));
 }
 
 /** Convert AccentMeasureData[] into per-beat StripMeasureData[] for live rendering. */
@@ -767,6 +788,29 @@ function EntryCard({
         </>);
       })() : null}
 
+      {/* Pattern Ostinato (interplay) notation preview */}
+      {entry.mode === "drum-ostinato" && (entry.snapshot.interplayMeasures as InterplayMeasureData[] | undefined)?.length ? (() => {
+        const ipMeasures = entry.snapshot.interplayMeasures as InterplayMeasureData[];
+        const stripData = interplayMeasuresToStrip(ipMeasures);
+        const hasAccents = stripData.some(d => d.accentFlags?.some(Boolean));
+        const stripH = hasAccents ? 190 : 160;
+        const widths = ipMeasures.map(m => 60 + m.totalSlots * 48);
+        return (
+          <div style={{ overflowX: "auto", background: "#0a0a0a", borderRadius: 4, border: "1px solid #1a1a1a", padding: 6, marginBottom: 6, lineHeight: 0 }}>
+            <VexDrumStrip
+              measures={stripData}
+              measureWidths={widths}
+              measureWidth={widths[0] ?? 100}
+              height={stripH}
+              staveY={hasAccents ? 40 : undefined}
+              showClef
+              showTimeSig
+              oneBeatPerBar
+            />
+          </div>
+        );
+      })() : null}
+
       {/* Accent study: notation preview + compact variant ratings with stars */}
       {entry.mode === "accent-study" && (() => {
         const measures = entry.snapshot.measures as AccentMeasureData[] | undefined;
@@ -823,6 +867,7 @@ function EntryCard({
             && !(entry.mode === "konnakol-cycles" && (entry.snapshot.groups as KonnakolGroup[] | undefined)?.length)
             && !(entry.mode === "konnakol-mixed" && (entry.snapshot.chainGroups as KonnakolGroup[] | undefined)?.length)
             && !(entry.mode === "drum-ostinato" && (entry.snapshot.measures as DrumMeasure[] | undefined)?.length)
+            && !(entry.mode === "drum-ostinato" && (entry.snapshot.interplayMeasures as InterplayMeasureData[] | undefined)?.length)
             && !(entry.mode === "accent-study" && ((entry.snapshot.variantRatings && Object.keys(entry.snapshot.variantRatings as Record<string, number>).length > 0) || (entry.snapshot.measures as AccentMeasureData[] | undefined)?.length))
             && (
             <div style={{

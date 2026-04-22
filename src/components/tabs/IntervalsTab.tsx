@@ -23,10 +23,11 @@ interface Props {
   onShowOnKeyboard?: () => void;
   playVol?: number;
   tabSettingsRef?: React.MutableRefObject<TabSettingsSnapshot | null>;
+  answerButtons?: React.ReactNode;
 }
 
 export default function IntervalsTab({
-  tonicPc, lowestOct, highestOct, edo, onHighlight, responseMode, onResult, onPlay, lastPlayed, ensureAudio, onShowOnKeyboard, playVol = 0.65, tabSettingsRef
+  tonicPc, lowestOct, highestOct, edo, onHighlight, responseMode, onResult, onPlay, lastPlayed, ensureAudio, onShowOnKeyboard, playVol = 0.65, tabSettingsRef, answerButtons
 }: Props) {
   const frameTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [checked, setChecked] = useLS<Set<number>>("lt_ivl_checked", new Set([3,5,8,10,13,15,18,21,23,26,28]));
@@ -102,7 +103,9 @@ export default function IntervalsTab({
   };
 
   const buildNotes = (): {notes: {note: number; label: string}[]; steps: number[]; root: number} => {
-    const pool = Array.from(checked);
+    // Drop checked indices that aren't valid for the current EDO's interval
+    // name list — otherwise stale picks show up as "Root" in the answer.
+    const pool = Array.from(checked).filter(i => i >= 0 && i < ivNames.length);
     if (!pool.length) return {notes: [], steps: [], root: 0};
     const low = tonicPc + (lowestOct - 4) * edo;
     const high = tonicPc + (highestOct + 1 - 4) * edo;
@@ -112,16 +115,16 @@ export default function IntervalsTab({
 
     playCounter.current++;
     const opts = getOptionStats();
-    // Non-sequential styles fix the interval count (root + N intervals):
-    //   Dyad     → 1 interval  (2-note sonority)
-    //   Trichord → 2 intervals (3-note sonority)
-    //   Random   → 2 intervals (the frame splitter spreads them into 2-/3-
-    //              note sub-sonorities at random)
+    // Non-sequential styles fix the sonority size (no root involved — all
+    // notes are drawn from the selection pool):
+    //   Dyad     → 2 notes
+    //   Trichord → 3 notes
+    //   Random   → 3 notes (frame splitter spreads into 2-/3-note sub-sonorities)
     //  Sequential keeps the user-picked numNotes.
     const styleForced =
-      playStyle === "Dyad (2 at once)"     ? 1 :
-      playStyle === "Trichord (3 at once)" ? 2 :
-      playStyle === "Random (2–3 at once)" ? 2 :
+      playStyle === "Dyad (2 at once)"     ? 2 :
+      playStyle === "Trichord (3 at once)" ? 3 :
+      playStyle === "Random (2–3 at once)" ? 3 :
       null;
     const count = Math.min(styleForced ?? numNotes, 6);
     const notes: {note: number; label: string}[] = [];
@@ -132,47 +135,41 @@ export default function IntervalsTab({
       steps.push(step);
       lastPickedAt.current.set(step, playCounter.current);
       let n = r + step;
-      // Wrap into playable range, but allow exceeding by one octave
-      // so that e.g. octave doesn't collapse onto unison
-      if (n >= high + edo) n -= edo;
-      if (n < low) n += edo;
-      notes.push({note: n, label: ivNames[step] ?? "Root"});
+      // Wrap strictly into [low, high) so notes stay inside the exercise range.
+      while (n >= high) n -= edo;
+      while (n < low) n += edo;
+      notes.push({note: n, label: ivNames[step] ?? `Step ${step}`});
     }
     return {notes, steps, root: r};
   };
 
-  const buildFrames = (notes: {note: number; label: string}[], root: number): number[][] => {
+  const buildFrames = (notes: {note: number; label: string}[], _root: number): number[][] => {
     if (!notes.length) return [];
     const style = playStyle;
     if (style === "Sequential") {
-      // Each interval note plays simultaneously with the root
-      return notes.map(x => [root, x.note]);
+      // One note per frame — notes from the selection pool only, no root.
+      return notes.map(x => [x.note]);
     }
     if (style === "Dyad (2 at once)") {
-      return [notes.map(x => x.note)];
+      // Two notes from the pool stacked in one frame.
+      return [[...new Set(notes.map(x => x.note))]];
     }
     if (style === "Trichord (3 at once)") {
-      // One sonority: root + every interval note stacked.  With #Notes=2
-      // (the normal trichord count) you get a three-note chord in a single
-      // frame.  Higher #Notes still collapses to one frame so "trichord"
-      // literally means "one simultaneous stack" — pick a bigger #Notes
-      // value if you want a thicker chord, or switch to Sequential / Dyad
-      // / Random to spread the pitches in time.
-      return [[...new Set([root, ...notes.map(x => x.note)])]];
+      // Three notes from the pool stacked in one frame.
+      return [[...new Set(notes.map(x => x.note))]];
     }
     if (style === "Random (2–3 at once)") {
       const frames: number[][] = [];
       let i = 0;
       while (i < notes.length) {
-        const take = Math.random() < 0.5 ? 1 : 2;
-        const frame = [...new Set([root, ...notes.slice(i, i + take).map(x => x.note)])];
-        frames.push(frame);
+        const take = Math.random() < 0.5 ? 2 : 3;
+        const frame = [...new Set(notes.slice(i, i + take).map(x => x.note))];
+        if (frame.length) frames.push(frame);
         i += take;
       }
       return frames;
     }
-    // Fallback: root + interval simultaneously
-    return notes.map(x => [root, x.note]);
+    return notes.map(x => [x.note]);
   };
 
   const play = async () => {
@@ -295,6 +292,7 @@ export default function IntervalsTab({
             {answerVisible ? "Hide Answer" : "Show Answer"}
           </button>
         )}
+        {answerButtons}
         <button onClick={selectAll} className="text-xs text-[#666] hover:text-[#aaa] px-2 py-1">All</button>
         <button onClick={clearAll} className="text-xs text-[#666] hover:text-[#aaa] px-2 py-1">None</button>
       </div>

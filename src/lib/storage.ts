@@ -90,7 +90,23 @@ function decodePracticeLog(enc: EncodedLog): Record<string, unknown[]> {
   return data;
 }
 
-/** Detect encoded-v2 vs legacy object and always return decoded data. */
+// Report storage errors loudly so callers / UI can react. Previously these
+// were silently swallowed which allowed quota failures and corrupt-read
+// wipes to destroy yesterday's practice log without warning.
+function reportStorageError(key: string, op: "read" | "write", error: unknown): void {
+  const msg = error instanceof Error ? error.message : String(error);
+  // eslint-disable-next-line no-console
+  console.error(`[storage] ${op} failed for ${key}: ${msg}`, error);
+  try {
+    window.dispatchEvent(new CustomEvent("lt-storage-error", {
+      detail: { key, op, message: msg },
+    }));
+  } catch { /* jsdom / non-browser */ }
+}
+
+/** Detect encoded-v2 vs legacy object and always return decoded data.
+ *  On parse failure, quarantines the raw value under a recovery key so the
+ *  next write doesn't clobber it. */
 function readPracticeLog(raw: string | null): Record<string, unknown[]> {
   if (!raw) return {};
   try {
@@ -99,13 +115,41 @@ function readPracticeLog(raw: string | null): Record<string, unknown[]> {
       return decodePracticeLog(parsed as EncodedLog);
     }
     return (parsed && typeof parsed === "object") ? parsed : {};
-  } catch { return {}; }
+  } catch (err) {
+    // Quarantine: move the corrupt blob aside so the caller can start fresh
+    // without overwriting the only copy of the user's data.
+    try {
+      const backupKey = `${PRACTICE_LOG_KEY}__recovery_${Date.now()}`;
+      localStorage.setItem(backupKey, raw);
+      localStorage.removeItem(PRACTICE_LOG_KEY);
+      // eslint-disable-next-line no-console
+      console.error(`[storage] practice log corrupt; quarantined to ${backupKey}`);
+    } catch { /* if we can't even quarantine, leave raw in place */ }
+    reportStorageError(PRACTICE_LOG_KEY, "read", err);
+    return {};
+  }
 }
 
 /** Store the practice log in encoded form. */
 function writePracticeLog(data: Record<string, unknown[]>): void {
   const encoded = encodePracticeLog(data);
   localStorage.setItem(PRACTICE_LOG_KEY, JSON.stringify(encoded));
+}
+
+// Keys whose writes should trigger external syncers (folder sync, etc.)
+const SYNCABLE_KEYS = new Set([
+  "lt_practice_log",
+  "lt_note_entry_projects",
+  "lt_chord_charts",
+  "lt_drum_log",
+  "lt_accent_log",
+]);
+
+function notifyDataChanged(key: string): void {
+  if (!SYNCABLE_KEYS.has(key)) return;
+  try {
+    window.dispatchEvent(new CustomEvent("lt-data-changed", { detail: { key } }));
+  } catch { /* jsdom */ }
 }
 
 export function lsGet<T>(key: string, fallback: T): T {
@@ -117,19 +161,28 @@ export function lsGet<T>(key: string, fallback: T): T {
     const raw = localStorage.getItem(key);
     if (raw === null) return fallback;
     return JSON.parse(raw, reviver) as T;
-  } catch {
+  } catch (err) {
+    reportStorageError(key, "read", err);
     return fallback;
   }
 }
 
 export function lsSet(key: string, value: unknown): void {
   if (key === PRACTICE_LOG_KEY) {
-    try { writePracticeLog(value as Record<string, unknown[]>); } catch { /* quota */ }
+    try {
+      writePracticeLog(value as Record<string, unknown[]>);
+      notifyDataChanged(key);
+    } catch (err) {
+      reportStorageError(key, "write", err);
+    }
     return;
   }
   try {
     localStorage.setItem(key, JSON.stringify(value, replacer));
-  } catch { /* quota or serialisation – silently drop */ }
+    notifyDataChanged(key);
+  } catch (err) {
+    reportStorageError(key, "write", err);
+  }
 }
 
 /** Replacer/reviver are also used by practiceLog for strict saves */

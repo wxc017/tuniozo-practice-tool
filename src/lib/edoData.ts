@@ -757,6 +757,57 @@ const SEVENTH_QUALITY_DESCS: Record<string, string> = {
   sup7: "Supermajor 7th",
 };
 
+/** Derive a fifth-quality id from the absolute step of the 5th interval. */
+export function computeFifthQuality(step: number, edo: number): string {
+  const { P5, A1 } = getEDOIntervals(edo);
+  const dim5 = P5 - A1;
+  const aug5 = P5 + A1;
+  if (step === P5)   return "P5";
+  if (step === dim5) return "dim5";
+  if (step === aug5) return "aug5";
+  if (step > dim5 && step < P5) return "unter5";
+  if (step > P5 && step < aug5) return "super5";
+  if (step < dim5) return "dim5_lo";
+  return "aug5_hi";
+}
+
+const FIFTH_QUALITY_LABELS: Record<string, string> = {
+  dim5_lo: "Dim↓",
+  dim5:    "Dim",
+  unter5:  "Unter",
+  P5:      "Perfect",
+  super5:  "Super",
+  aug5:    "Aug",
+  aug5_hi: "Aug↑",
+};
+
+const FIFTH_QUALITY_DESCS: Record<string, string> = {
+  dim5_lo: "Very flat 5th (below standard dim5)",
+  dim5:    "Diminished 5th",
+  unter5:  "Unter 5th (between dim and perfect)",
+  P5:      "Perfect 5th",
+  super5:  "Super 5th (between perfect and aug)",
+  aug5:    "Augmented 5th",
+  aug5_hi: "Very sharp 5th (above standard aug5)",
+};
+
+/** Get available fifth qualities for a given EDO, in order from low to high. */
+export function getAvailableFifthQualities(edo: number): QualityInfo[] {
+  const types = getEdoChordTypes(edo);
+  const seen = new Set<string>();
+  const order: { id: string; step: number }[] = [];
+  for (const t of types) {
+    if (t.steps.length < 3) continue;
+    const step = t.steps[2];
+    const id = computeFifthQuality(step, edo);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    order.push({ id, step });
+  }
+  order.sort((a, b) => a.step - b.step);
+  return order.map(({ id }) => ({ id, label: FIFTH_QUALITY_LABELS[id] ?? id, desc: FIFTH_QUALITY_DESCS[id] ?? "" }));
+}
+
 // ── Extension label → steps ───────────────────────────────────────────
 export function getExtLabelToSteps(edo: number): Record<string, number[]> {
   const dm = getDegreeMap(edo);

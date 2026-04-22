@@ -20,6 +20,7 @@ interface Props {
   ensureAudio: () => Promise<void>;
   playVol?: number;
   onAnswer?: (optionKey: string, label: string, correct: boolean) => void;
+  answerButtons?: React.ReactNode;
 }
 
 // ── Mode data ─────────────────────────────────────────────────────────
@@ -458,7 +459,7 @@ const MODE_DESCRIPTIONS: Record<string, string> = {
 
 export default function ModeIdentificationTab({
   tonicPc, lowestOct, highestOct, edo, onHighlight,
-  onResult, onPlay, lastPlayed, ensureAudio, onAnswer,
+  onResult, onPlay, lastPlayed, ensureAudio, onAnswer, answerButtons,
 }: Props) {
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -815,6 +816,7 @@ export default function ModeIdentificationTab({
             Show Answer
           </button>
         )}
+        {answerButtons}
       </div>
     </div>
   );

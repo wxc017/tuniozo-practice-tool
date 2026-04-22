@@ -25,6 +25,7 @@ interface Props {
   onShowOnKeyboard?: () => void;
   playVol?: number;
   tabSettingsRef?: React.MutableRefObject<TabSettingsSnapshot | null>;
+  answerButtons?: React.ReactNode;
 }
 
 const LENGTH_OPTIONS = ["Any","3","4","5","6","7","8","9"];
@@ -32,7 +33,7 @@ const SCALE_FAM_NAMES = Object.keys(PATTERN_SCALE_FAMILIES);
 const GAP = 550;
 
 export default function JazzTab({
-  tonicPc, lowestOct, highestOct, edo, onHighlight, responseMode, onResult, onPlay, lastPlayed, ensureAudio, playVol = 0.65, tabSettingsRef,
+  tonicPc, lowestOct, highestOct, edo, onHighlight, responseMode, onResult, onPlay, lastPlayed, ensureAudio, playVol = 0.65, tabSettingsRef, answerButtons,
 }: Props) {
   const frameTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [checked, setChecked] = useLS<Set<string>>("lt_jazz_checked",
@@ -196,6 +197,7 @@ export default function JazzTab({
             Show Answer
           </button>
         )}
+        {answerButtons}
       </div>
 
       {showTarget && (

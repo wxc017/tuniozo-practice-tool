@@ -48,6 +48,7 @@ function fullBeatDur(beatCount: number, bottom: number): string | null {
  * Split a slot span into VexFlow duration strings, respecting beat boundaries.
  * startSlot: absolute position in the bar.
  * slotCount: how many slots this note/rest spans.
+ * totalSlots: bar length (used to decide half-bar alignment rules).
  * Returns an array of VexFlow duration strings whose values sum correctly.
  */
 function splitAtBeats(
@@ -55,6 +56,7 @@ function splitAtBeats(
   slotCount: number,
   beatSize: number,
   bottom: number = 4,
+  totalSlots: number = 0,
 ): string[] {
   if (slotCount <= 0) return [];
 
@@ -68,6 +70,13 @@ function splitAtBeats(
     while (rem >= 3) { result.push("4"); rem -= 3; }
     while (rem > 0) { result.push("8"); rem -= 1; }
     return result;
+  }
+
+  // Standard 16th grid in /4 (beatSize=4). For bottom=8 with beatSize=4 the
+  // existing beat-split is retained since duration mapping there expects the
+  // coarser per-beat fallback.
+  if (beatSize === 4 && bottom === 4) {
+    return greedySplit(startSlot, slotCount, totalSlots);
   }
 
   const endSlot = startSlot + slotCount;
@@ -100,12 +109,60 @@ function splitAtBeats(
   return segments.map(s => withinBeatDur(s, beatSize, bottom));
 }
 
+/**
+ * Greedy longest-first split for standard 16th-grid /4 time.
+ * At each step, picks the longest standard duration whose starting alignment
+ * is legal at the current position. Alignment rules: a duration of N slots
+ * may only start where `pos % alignment === 0`. Dotted values inherit the
+ * alignment of their next-larger power-of-2 base so they don't cross a
+ * higher-level metric boundary.
+ *
+ * For bars whose length divides into 8-slot halves (2/4, 4/4, 8/4, ...), the
+ * half-bar is treated as a higher-level boundary: half notes and dotted
+ * quarters must not cross it. For other bar sizes (3/4, 5/4, ...), no
+ * half-bar rule is applied so half notes at interior beats remain legal.
+ */
+function greedySplit(startSlot: number, slotCount: number, totalSlots: number): string[] {
+  const hasHalfBar = totalSlots > 0 && totalSlots % 8 === 0;
+  const halfAlign = hasHalfBar ? 8 : 4;
+
+  // Durations ordered longest-first. `align` = required divisor for start pos.
+  const D: Array<{ slots: number; str: string; align: number }> = [
+    { slots: 16, str: "1",  align: 16 },
+    { slots: 12, str: "2d", align: 16 },
+    { slots: 8,  str: "2",  align: halfAlign },
+    { slots: 6,  str: "4d", align: halfAlign },
+    { slots: 4,  str: "4",  align: 4 },
+    { slots: 3,  str: "8d", align: 4 },
+    { slots: 2,  str: "8",  align: 2 },
+    { slots: 1,  str: "16", align: 1 },
+  ];
+
+  const result: string[] = [];
+  let pos = startSlot;
+  let rem = slotCount;
+  while (rem > 0) {
+    let chosen: { slots: number; str: string } | null = null;
+    for (const d of D) {
+      if (d.slots > rem) continue;
+      if (pos % d.align !== 0) continue;
+      chosen = d;
+      break;
+    }
+    if (!chosen) chosen = { slots: 1, str: "16" };
+    result.push(chosen.str);
+    pos += chosen.slots;
+    rem -= chosen.slots;
+  }
+  return result;
+}
+
 // ── Build proper note/rest sequence from hit positions ────────────────────
 
 // Chord notes sit in the space just above the visible center line (stems up);
 // melody notes sit in the space just below (stems down). Separating pitch
 // placement keeps coincident chord+melody noteheads from stacking.
-const CHORD_KEY  = "c/5";
+const CHORD_KEY  = "g/5";
 const MELODY_KEY = "a/4";
 const REST_KEY = "b/4";
 
@@ -133,7 +190,7 @@ function buildVoice(
 
     // Fill gap before this hit with rests
     if (cursor < pos) {
-      const restDurs = splitAtBeats(cursor, pos - cursor, beatSize, bottom);
+      const restDurs = splitAtBeats(cursor, pos - cursor, beatSize, bottom, totalSlots);
       for (const dur of restDurs) {
         const rn = new StaveNote({
           keys: [REST_KEY], duration: dur + "r", stemDirection: stemDir,
@@ -144,7 +201,7 @@ function buildVoice(
     }
 
     // The hit note: spans from pos to nextPos
-    const durParts = splitAtBeats(pos, nextPos - pos, beatSize, bottom);
+    const durParts = splitAtBeats(pos, nextPos - pos, beatSize, bottom, totalSlots);
     // First part is the actual note
     const sn = new StaveNote({
       keys: [NOTE_KEY], duration: durParts[0], stemDirection: stemDir,
@@ -167,7 +224,7 @@ function buildVoice(
 
   // Fill remaining slots with rests
   if (cursor < totalSlots) {
-    const restDurs = splitAtBeats(cursor, totalSlots - cursor, beatSize, bottom);
+    const restDurs = splitAtBeats(cursor, totalSlots - cursor, beatSize, bottom, totalSlots);
     for (const dur of restDurs) {
       const rn = new StaveNote({
         keys: [REST_KEY], duration: dur + "r", stemDirection: stemDir,

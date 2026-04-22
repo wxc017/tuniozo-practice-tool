@@ -26,6 +26,7 @@ interface Props {
   playVol?: number;
   onAnswer?: (optionKey: string, label: string, correct: boolean) => void;
   tabSettingsRef?: React.MutableRefObject<TabSettingsSnapshot | null>;
+  answerButtons?: React.ReactNode;
 }
 
 const LENGTH_OPTIONS = ["Any","3","4","5","6","7","8","10","12"];
@@ -69,7 +70,7 @@ function resolveDegrees(
 }
 
 export default function MelodyTab({
-  tonicPc, lowestOct, highestOct, edo, onHighlight, responseMode, onResult, onPlay, lastPlayed, ensureAudio, playVol = 0.65, onAnswer, tabSettingsRef,
+  tonicPc, lowestOct, highestOct, edo, onHighlight, responseMode, onResult, onPlay, lastPlayed, ensureAudio, playVol = 0.65, onAnswer, tabSettingsRef, answerButtons,
 }: Props) {
   const frameTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [checked, setChecked] = useLS<Set<string>>("lt_mel_checked",
@@ -285,6 +286,7 @@ export default function MelodyTab({
             Show Answer
           </button>
         )}
+        {answerButtons}
       </div>
 
       {showTarget && (

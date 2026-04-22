@@ -150,25 +150,41 @@ function is12EdoChromatic(relStep: number, edo: number): boolean {
 
 /** Curated modal-interchange palette.  Each entry is a (relative degree,
  *  chord-type id) pair that practitioners actually borrow when stepping
- *  outside the active mode — Picardy I, Neapolitan bII, Lydian II, bIII /
- *  iv / v / bVI / bVII from minor, #IV° from Lydian, vii°7 from harmonic
- *  minor, etc.  The diatonic-skip in buildScaleAwareDrillPalette filters
- *  out whichever entries already belong to the current mode, so the SAME
- *  list works for both Ionian (surfaces bIII, iv, v, bVI, bVII…) and
- *  Aeolian (surfaces I, IV, II, vii°7…) tonics. */
+ *  outside the active mode.  Covers the three big sources — parallel major
+ *  ↔ parallel minor (Picardy I, iv/IV, bIII/iii, bVI/vi, bVII/vii…),
+ *  harmonic minor (V/V7 in minor, vii°7, bIII+), melodic minor (iminmaj7,
+ *  IV7 Lydian-dom, vii°/viiø7) — plus the classic modal flavors (bII
+ *  Neapolitan from Phrygian, II/II7 from Lydian, #IV° from Lydian, vi° from
+ *  Locrian).  The diatonic-skip in buildScaleAwareDrillPalette filters out
+ *  whichever entries already belong to the current mode, so the SAME list
+ *  works for every tonic — Ionian, Dorian, Phrygian, Lydian, Mixolydian,
+ *  Aeolian, Locrian, etc. */
 const BORROWED_CHORDS: { degRel: string; types: string[] }[] = [
-  { degRel: "1",  types: ["maj"] },                          // Picardy III (in minor)
-  { degRel: "b2", types: ["maj", "maj7"] },                  // Neapolitan (Phrygian)
-  { degRel: "2",  types: ["maj", "dom7"] },                  // Lydian II / V/V flavor
-  { degRel: "b3", types: ["maj", "maj7"] },                  // bIII (Aeolian)
-  { degRel: "3",  types: ["maj"] },                          // III (harmonic minor mediant)
-  { degRel: "4",  types: ["min", "min7"] },                  // iv (Aeolian / Dorian)
-  { degRel: "#4", types: ["dim", "halfdim7", "dim7"] },      // #IV° (Lydian / sec dim)
-  { degRel: "5",  types: ["min", "min7"] },                  // v (Aeolian)
-  { degRel: "b6", types: ["maj", "maj7"] },                  // bVI (Aeolian)
-  { degRel: "6",  types: ["maj"] },                          // VI (Dorian)
-  { degRel: "b7", types: ["maj", "maj7", "dom7"] },          // bVII (Mixolydian / Aeolian)
-  { degRel: "7",  types: ["dim7"] },                         // vii°7 (harmonic minor)
+  // Tonic: Picardy, parallel minor tonic, minmaj7 (harm/mel minor)
+  { degRel: "1",  types: ["maj", "maj7", "min", "min7", "minmaj7"] },
+  // Neapolitan + bII7 (sub-tritone flavor)
+  { degRel: "b2", types: ["maj", "maj7", "dom7"] },
+  // II (Lydian), II7 (V/V), ii (parallel major ii)
+  { degRel: "2",  types: ["maj", "maj7", "dom7", "min", "min7"] },
+  // bIII (Aeolian/Phrygian), bIII7 (Phrygian-dominant), bIII+ (harm/mel minor)
+  { degRel: "b3", types: ["maj", "maj7", "dom7", "aug", "augmaj7"] },
+  // III (harmonic-minor mediant), III7 (V/vi color), iii (parallel major)
+  { degRel: "3",  types: ["maj", "maj7", "dom7", "min", "min7"] },
+  // iv (parallel minor), IV (parallel major / Dorian), IV7 (Dorian / Lydian-dom)
+  { degRel: "4",  types: ["min", "min7", "maj", "maj7", "dom7"] },
+  // #IV°/#ivø7/#IV°7 (Lydian, sec dim), #IV7 (tritone flavor)
+  { degRel: "#4", types: ["dim", "halfdim7", "dim7", "dom7"] },
+  // V (harm-minor V in minor), V7 (essential dominant of minor), v (parallel
+  //   minor / Dorian / Phrygian), vø7 (Locrian/Phrygian)
+  { degRel: "5",  types: ["maj", "dom7", "min", "min7", "halfdim7"] },
+  // bVI (Aeolian), bVImaj7, bVI7 (bluesy turnaround)
+  { degRel: "b6", types: ["maj", "maj7", "dom7"] },
+  // VI (Dorian / parallel major), vi (parallel major)
+  { degRel: "6",  types: ["maj", "maj7", "min", "min7"] },
+  // bVII (Mixo/Aeolian), bVII7, bvii (Phrygian/Locrian)
+  { degRel: "b7", types: ["maj", "maj7", "dom7", "min", "min7"] },
+  // vii° / viiø7 (Ionian), vii°7 (harm minor), vii (Lydian)
+  { degRel: "7",  types: ["dim", "dim7", "halfdim7", "min", "min7"] },
 ];
 
 /** Curated microtonal palette.  Restricts the Microtonal Stable / Tense
@@ -222,6 +238,8 @@ function buildScaleAwareDrillPalette(
   const dm = getDegreeMap(edo);
   const P5 = dm["5"] ?? Math.round(edo * 7 / 12);
   const TT = Math.round(edo / 2);
+  const m3Step = Math.round(edo * 3 / 12);
+  const M3Step = Math.round(edo * 4 / 12);
 
   const cats: Record<DrillChordCategory, DrillChord[]> = {
     "diatonic": [], "modal": [], "secdom": [], "tritone": [], "xen-stable": [], "xen-tense": [],
@@ -235,7 +253,16 @@ function buildScaleAwareDrillPalette(
     seen.add(key);
     const relRoot = ((absRoot - tonicRoot) % edo + edo) % edo;
     const relPcs = absPcs.map(pc => ((pc - tonicRoot) % edo + edo) % edo);
-    const roman = romanOverride ?? toRomanNumeral(edo, relRoot, type.abbr, relPcs);
+    let roman = romanOverride ?? toRomanNumeral(edo, relRoot, type.abbr, relPcs);
+    // Sus chords have no third, so toRomanNumeral defaults to uppercase.
+    // For a diatonic sus, match the case to the scale's own third at this root.
+    if (!romanOverride && (type.id === "sus2" || type.id === "sus4" || type.id === "dom7sus4")) {
+      const hasMinor = scaleSet.has(((absRoot + m3Step) % edo + edo) % edo);
+      const hasMajor = scaleSet.has(((absRoot + M3Step) % edo + edo) % edo);
+      if (hasMinor && !hasMajor) {
+        roman = roman.replace(/^([b#]*)([IVX]+)/, (_, acc, rn) => acc + rn.toLowerCase());
+      }
+    }
     cats[cat].push({ roman, root: relRoot, steps: type.steps, chordTypeId: type.id, group: cat });
   };
 
@@ -2525,8 +2552,8 @@ function PatternDrillSection({
             const chords = byCat[cat];
             if (chords.length === 0) return null;
             const info = DRILL_CATEGORY_INFO[cat];
-            const triads   = chords.filter(rc => !rc.roman.includes("7"));
-            const sevenths = chords.filter(rc =>  rc.roman.includes("7"));
+            const triads   = chords.filter(rc => rc.steps.length <= 3);
+            const sevenths = chords.filter(rc => rc.steps.length >= 4);
             const renderBtn = (rc: DrillChord) => {
               const checked = checkedChords.has(rc.roman);
               return (

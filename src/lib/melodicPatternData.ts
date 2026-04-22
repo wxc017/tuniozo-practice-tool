@@ -170,6 +170,9 @@ export function toRomanNumeralParts(
   else if (id === "minmaj7") suffix = "mM7";
   else if (id === "halfdim7" || id.startsWith("halfdim")) suffix = "ø7";
   else if (id === "dim7" || id.startsWith("dim7")) suffix = "°7";
+  else if (id === "augmaj7") suffix = "maj7♯5";
+  else if (id === "aug7") suffix = "7♯5";
+  else if (id === "dom7sus4") suffix = "7sus4";
   // Xenharmonic triads
   else if (id === "submin") suffix = "sub";
   else if (id === "supermaj") suffix = "sup";

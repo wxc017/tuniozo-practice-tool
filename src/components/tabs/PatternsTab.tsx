@@ -25,6 +25,7 @@ interface Props {
   onShowOnKeyboard?: () => void;
   playVol?: number;
   tabSettingsRef?: React.MutableRefObject<TabSettingsSnapshot | null>;
+  answerButtons?: React.ReactNode;
 }
 
 const LENGTH_OPTIONS = ["Any","3","4","5","6","7","8","10","12"];
@@ -32,7 +33,7 @@ const LENGTH_OPTIONS = ["Any","3","4","5","6","7","8","10","12"];
 const GAP = 580;
 
 export default function PatternsTab({
-  tonicPc, lowestOct, highestOct, edo, onHighlight, responseMode, onResult, onPlay, lastPlayed, ensureAudio, onShowOnKeyboard, playVol = 0.65, tabSettingsRef,
+  tonicPc, lowestOct, highestOct, edo, onHighlight, responseMode, onResult, onPlay, lastPlayed, ensureAudio, onShowOnKeyboard, playVol = 0.65, tabSettingsRef, answerButtons,
 }: Props) {
   const frameTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const familyNames = Object.keys(PATTERN_SCALE_FAMILIES);
@@ -218,6 +219,7 @@ export default function PatternsTab({
             Show Answer
           </button>
         )}
+        {answerButtons}
       </div>
 
       {showTarget && (
