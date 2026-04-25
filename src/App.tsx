@@ -166,6 +166,10 @@ export default function App() {
   const [betaComma, setBetaComma] = useLS<boolean>("lt_beta_comma", false);
   const [betaMathLab, setBetaMathLab] = useLS<boolean>("lt_beta_math_lab", false);
   const [betaTransform, setBetaTransform] = useLS<boolean>("lt_beta_transform", false);
+  // Master "Beta" gate: when off, hides experimental modes (Vocal Percussion,
+  // Mixed Groups, Drill & Response, Uncommon Meters, Solkattu, Quick Transcriptions,
+  // Interval Browser, Microwave, Temperament Explorer) from the section picker.
+  const [betaMode, setBetaMode] = useLS<boolean>("lt_beta_mode", false);
   const [academicMode, setAcademicMode] = useLS<boolean>("lt_academic_mode", false);
   // Dynamically load academic components (only present in local dev)
   const [academicComps, setAcademicComps] = useState<{
@@ -574,40 +578,60 @@ export default function App() {
 
           {/* Row 1: Title + Section selector + Export/Import + EDO */}
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-3">
-              <select
-                value={section}
-                onChange={e => { stopAllAudio(); setSection(e.target.value); }}
-                className="bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-white focus:outline-none"
-              >
-                {academicMode ? (<>
+            <div className="flex items-center gap-2 flex-wrap">
+              {academicMode ? (
+                <select
+                  value={section}
+                  onChange={e => { stopAllAudio(); setSection(e.target.value); }}
+                  className="bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-white focus:outline-none"
+                >
                   <option value="reading-workflow">Reading Workflow</option>
                   <option value="note-writing">Note Writing</option>
                   <option value="simple-doc">Document</option>
-                </>) : (<>
-                  <optgroup label="Useful">
-                    <option value="ear-trainer">Spatial Audiation</option>
-                    <option value="drum-patterns">Drum Patterns</option>
-                    <option value="vocal-percussion">Vocal Percussion</option>
-                    <option value="mixed-groups">Mixed Groups</option>
-                    <option value="melodic-patterns">Melodic Patterns</option>
-                    <option value="harmony-workshop">Harmony Workshop</option>
-                  </optgroup>
-                  <optgroup label="Experimental">
-                    <option value="chord-chart">Chord Chart</option>
-                    <option value="drill-response">Drill & Response</option>
-                    <option value="uncommon-meters">Uncommon Meters</option>
-                    <option value="konnakol">Solkattu</option>
-                    <option value="note-entry">Quick Transcriptions</option>
-                    <option value="phrase-decomposition">Phrase Decomposition</option>
-                    <option value="lattice">Harmonic Lattice</option>
-                    <option value="interval-browser">Interval Browser</option>
-                    <option value="microwave">Microwave</option>
-                    <option value="temperament-explorer">Temperament Explorer</option>
-                    {betaMathLab && <option value="math-lab">Math Lab</option>}
-                  </optgroup>
-                </>)}
-              </select>
+                </select>
+              ) : (() => {
+                const SECTION_BUTTONS: { id: string; label: string; beta?: boolean }[] = [
+                  // Always-visible
+                  { id: "ear-trainer",          label: "Spatial Audiation" },
+                  { id: "drum-patterns",        label: "Drum Patterns" },
+                  { id: "melodic-patterns",     label: "Melodic Patterns" },
+                  { id: "harmony-workshop",     label: "Harmony Workshop" },
+                  { id: "chord-chart",          label: "Chord Chart" },
+                  { id: "lattice",              label: "Harmonic Lattice" },
+                  // Beta-gated
+                  { id: "vocal-percussion",     label: "Vocal Percussion",     beta: true },
+                  { id: "mixed-groups",         label: "Mixed Groups",         beta: true },
+                  { id: "drill-response",       label: "Drill & Response",     beta: true },
+                  { id: "uncommon-meters",      label: "Uncommon Meters",      beta: true },
+                  { id: "konnakol",             label: "Solkattu",             beta: true },
+                  { id: "note-entry",           label: "Quick Transcriptions", beta: true },
+                  { id: "phrase-decomposition", label: "Phrase Decomposition", beta: true },
+                  { id: "interval-browser",     label: "Interval Browser",     beta: true },
+                  { id: "microwave",            label: "Microwave",            beta: true },
+                  { id: "temperament-explorer", label: "Temperament Explorer", beta: true },
+                ];
+                const visible = SECTION_BUTTONS.filter(b => !b.beta || betaMode);
+                if (betaMathLab) visible.push({ id: "math-lab", label: "Math Lab", beta: true });
+                return visible.map(b => {
+                  const active = section === b.id;
+                  return (
+                    <button
+                      key={b.id}
+                      onClick={() => { if (!active) { stopAllAudio(); setSection(b.id); } }}
+                      className={`px-2 py-1 text-xs rounded border transition-colors ${
+                        active
+                          ? "bg-[#7173e618] border-[#7173e6] text-[#9999ee]"
+                          : b.beta
+                            ? "bg-[#1a1410] border-[#2a2418] text-[#988868] hover:text-[#cab48a] hover:border-[#3a3424]"
+                            : "bg-[#1a1a1a] border-[#2a2a2a] text-[#888] hover:text-[#ccc] hover:border-[#3a3a3a]"
+                      }`}
+                      title={b.beta ? `${b.label} (Beta)` : b.label}
+                    >
+                      {b.label}
+                    </button>
+                  );
+                });
+              })()}
             </div>
             <div className="flex items-center gap-2 ml-auto">
               {!academicMode && <button onClick={stopAllAudio}
@@ -1458,6 +1482,18 @@ export default function App() {
           onBetaMathLabChange={(v) => {
             setBetaMathLab(v);
             if (!v && section === "math-lab") setSection("ear-trainer");
+          }}
+          betaMode={betaMode}
+          onBetaModeChange={(v) => {
+            setBetaMode(v);
+            if (!v) {
+              const BETA_SECTIONS = new Set([
+                "vocal-percussion","mixed-groups","drill-response","uncommon-meters",
+                "konnakol","note-entry","phrase-decomposition","interval-browser",
+                "microwave","temperament-explorer",
+              ]);
+              if (BETA_SECTIONS.has(section)) setSection("ear-trainer");
+            }
           }}
           academicMode={academicMode}
           academicAvailable={academicAvailable}

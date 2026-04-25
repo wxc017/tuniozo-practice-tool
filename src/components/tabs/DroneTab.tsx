@@ -52,16 +52,19 @@ interface Props {
 
 const DURATION_OPTIONS = ["1","2","3","4","5"];
 type PlayMode = "After drone" | "Over drone";
+const PLAY_STYLES = ["Sequential","Dyad (2 at once)","Trichord (3 at once)","Random (2–3 at once)"] as const;
+type DronePlayStyle = typeof PLAY_STYLES[number];
 
 interface DroneParams {
   chordAbs: number[];
   droneRoot: number;
-  ivlNote: number | null;
-  ivlName: string | null;
+  ivlFrames: number[][];     // each entry = a slot of notes that play together
+  ivlFrameNames: string[][]; // parallel name labels for the answer reveal
   droneVol: number;
   ivlVol: number;
   dur: number;
   playMode: PlayMode;
+  noteGapMs: number;          // gap between sequential slots
 }
 
 export default function DroneTab({
@@ -77,6 +80,8 @@ export default function DroneTab({
     new Set<string>(["1"])
   );
   const [checkedIvls, setCheckedIvls] = useLS<Set<number>>("lt_drn_ivls", new Set());
+  const [numNotes, setNumNotes] = useLS<number>("lt_drn_numNotes", 1);
+  const [playStyle, setPlayStyle] = useLS<DronePlayStyle>("lt_drn_playStyle", "Sequential");
   const chromDegrees = getChromDegrees(edo);
   const [duration, setDuration] = useLS<string>("lt_drn_duration", "4");
   const [playMode, setPlayMode] = useLS<PlayMode>("lt_drn_playMode", "After drone");
@@ -125,21 +130,25 @@ export default function DroneTab({
   };
 
   const showSequential = (params: DroneParams) => {
-    const { chordAbs, ivlNote, dur, playMode } = params;
-    if (ivlNote === null) {
-      onHighlight(chordAbs);
+    const { chordAbs, ivlFrames, dur, playMode, noteGapMs } = params;
+    onHighlight(chordAbs);
+    if (ivlFrames.length === 0) {
       setTimeout(() => onHighlight([]), dur + 500);
       return;
     }
     if (playMode === "Over drone") {
-      onHighlight(chordAbs);
-      setTimeout(() => onHighlight([...chordAbs, ivlNote]), Math.floor(dur / 2));
+      const startOff = Math.floor(dur / 2);
+      ivlFrames.forEach((frame, i) => {
+        setTimeout(() => onHighlight([...chordAbs, ...frame]), startOff + i * noteGapMs);
+      });
       setTimeout(() => onHighlight([]), dur + 500);
     } else {
-      onHighlight(chordAbs);
       setTimeout(() => onHighlight([]), dur);
-      setTimeout(() => onHighlight([ivlNote]), dur + 400);
-      setTimeout(() => onHighlight([]), dur + 2500);
+      const baseT = dur + 400;
+      ivlFrames.forEach((frame, i) => {
+        setTimeout(() => onHighlight(frame), baseT + i * noteGapMs);
+      });
+      setTimeout(() => onHighlight([]), baseT + ivlFrames.length * noteGapMs + 800);
     }
   };
 
@@ -185,54 +194,114 @@ export default function DroneTab({
       if (voiced.length) chordAbs = voiced;
     }
 
-    // Pick interval relative to drone root
-    let ivlNote: number | null = null;
-    let ivlName: string | null = null;
-    let ivlIdx: number | null = null;
+    // Pick N interval steps from the checked pool (per # Notes / Play Style),
+    // resolve each to an absolute pitch in the register window, then split
+    // into frames for the chosen play style.
+    const styleForced =
+      playStyle === "Dyad (2 at once)"     ? 2 :
+      playStyle === "Trichord (3 at once)" ? 3 :
+      playStyle === "Random (2–3 at once)" ? 3 :
+      null;
+    const targetCount = Math.max(1, Math.min(styleForced ?? numNotes, 6));
+    const pickedIdxs: number[] = [];
+    const pickedNames: string[] = [];
+    const pickedAbs: number[] = [];
     if (checkedIvls.size) {
-      ivlIdx = weightedRandomChoice(Array.from(checkedIvls), i => `drn:ivl:${i}`);
-      ivlName = ivlNames[ivlIdx] ?? `Step ${ivlIdx}`;
-      let n = droneRoot + ivlIdx;
-      while (n >= high) n -= edo;
-      while (n < low)  n += edo;
-      if (n >= low && n < high) ivlNote = n;
+      let prev: number | undefined;
+      for (let i = 0; i < targetCount; i++) {
+        const pool = Array.from(checkedIvls);
+        const candidates = pool.length > 1 && prev !== undefined ? pool.filter(s => s !== prev) : pool;
+        const idx = weightedRandomChoice(candidates, c => `drn:ivl:${c}`);
+        prev = idx;
+        let n = droneRoot + idx;
+        while (n >= high) n -= edo;
+        while (n < low)  n += edo;
+        if (n >= low && n < high) {
+          pickedIdxs.push(idx);
+          pickedNames.push(ivlNames[idx] ?? `Step ${idx}`);
+          pickedAbs.push(n);
+        }
+      }
+    }
+
+    // Frames per play style:
+    //   Sequential:        one frame per note
+    //   Dyad / Trichord:   one frame containing all notes
+    //   Random (2-3):      mixed 2 / 3 sized frames
+    const ivlFrames: number[][] = [];
+    const ivlFrameNames: string[][] = [];
+    if (pickedAbs.length > 0) {
+      if (playStyle === "Sequential") {
+        for (let i = 0; i < pickedAbs.length; i++) {
+          ivlFrames.push([pickedAbs[i]]);
+          ivlFrameNames.push([pickedNames[i]]);
+        }
+      } else if (playStyle === "Dyad (2 at once)" || playStyle === "Trichord (3 at once)") {
+        ivlFrames.push([...new Set(pickedAbs)]);
+        ivlFrameNames.push([...pickedNames]);
+      } else {
+        // Random (2–3 at once)
+        let i = 0;
+        while (i < pickedAbs.length) {
+          const take = Math.random() < 0.5 ? 2 : 3;
+          const slice = pickedAbs.slice(i, i + take);
+          const slNames = pickedNames.slice(i, i + take);
+          if (slice.length) {
+            ivlFrames.push([...new Set(slice)]);
+            ivlFrameNames.push(slNames);
+          }
+          i += take;
+        }
+      }
     }
 
     const dur = parseInt(duration) * 1000;
+    const noteGapMs = 700;
     const label = `${degLabel} — ${chordName}`;
-    const params: DroneParams = { chordAbs, droneRoot, ivlNote, ivlName, droneVol, ivlVol, dur, playMode };
+    const params: DroneParams = {
+      chordAbs, droneRoot, ivlFrames, ivlFrameNames,
+      droneVol, ivlVol, dur, playMode, noteGapMs,
+    };
     lastDroneParams.current = params;
 
-    const frames = [chordAbs, ...(ivlNote !== null ? [[ivlNote]] : [])];
+    const frames = [chordAbs, ...ivlFrames];
     const lilWarn = formatLilWarnings(checkLowIntervalLimits(chordAbs, edo), edo);
-    const info = [`Drone: ${label}`, ivlNote !== null ? `Interval: ${ivlName}` : "", lilWarn].filter(Boolean).join("\n");
+    const ivlInfo = ivlFrameNames.length ? `Intervals: ${ivlFrameNames.map(f => f.join("+")).join(" → ")}` : "";
+    const info = [`Drone: ${label}`, ivlInfo, lilWarn].filter(Boolean).join("\n");
     lastPlayed.current = { frames, info };
     setHasPlayed(true);
 
     setDroneActive(true);
     setDroneLabel(label);
-    setAnswerText(ivlNote !== null ? `${label} — ${ivlName}` : label);
+    setAnswerText(ivlInfo ? `${label} — ${ivlFrameNames.map(f => f.join("+")).join(" → ")}` : label);
     setAnswerVisible(false);
     onDroneStateChange?.(true);
     onResult(`Chord Drone: ${label}`);
     onPlay(`drn:${chordName}`, `Drone: ${label}`);
-    if (ivlIdx !== null && ivlName !== null) {
-      recordAnswer(`drn:ivl:${ivlIdx}`, `Drone Interval: ${ivlName}`, true);
-      onAnswer?.(`drn:ivl:${ivlIdx}`, `Drone Interval: ${ivlName}`, true);
+    for (const idx of pickedIdxs) {
+      const name = ivlNames[idx] ?? `Step ${idx}`;
+      recordAnswer(`drn:ivl:${idx}`, `Drone Interval: ${name}`, true);
+      onAnswer?.(`drn:ivl:${idx}`, `Drone Interval: ${name}`, true);
     }
 
     audioEngine.startDrone(chordAbs, edo, droneVol);
 
-    if (playMode === "Over drone" && ivlNote !== null) {
-      setTimeout(() => { audioEngine.playNote(ivlNote!, edo, 1.5, ivlVol); }, Math.floor(dur / 2));
+    const scheduleFrames = (startOffsetMs: number) => {
+      ivlFrames.forEach((frame, i) => {
+        setTimeout(() => audioEngine.playChord(frame, edo, 1.4, ivlVol), startOffsetMs + i * noteGapMs);
+      });
+    };
+
+    if (playMode === "Over drone" && ivlFrames.length > 0) {
+      scheduleFrames(Math.floor(dur / 2));
     }
 
     setTimeout(() => {
       audioEngine.stopDrone();
       setDroneActive(false);
       onDroneStateChange?.(false);
-      if (playMode === "After drone" && ivlNote !== null) {
-        setTimeout(() => { audioEngine.playNote(ivlNote!, edo, 1.5, ivlVol); }, 300);
+      if (playMode === "After drone" && ivlFrames.length > 0) {
+        scheduleFrames(300);
       }
     }, dur);
   };
@@ -247,15 +316,20 @@ export default function DroneTab({
   const replay = () => {
     const params = lastDroneParams.current;
     if (!params) return;
-    const { chordAbs, ivlNote, droneVol: dv, ivlVol: iv, dur, playMode } = params;
+    const { chordAbs, ivlFrames, droneVol: dv, ivlVol: iv, dur, playMode, noteGapMs } = params;
     audioEngine.startDrone(chordAbs, edo, dv);
-    if (playMode === "Over drone" && ivlNote !== null) {
-      setTimeout(() => audioEngine.playNote(ivlNote!, edo, 1.5, iv), Math.floor(dur / 2));
+    const scheduleFrames = (startOffsetMs: number) => {
+      ivlFrames.forEach((frame, i) => {
+        setTimeout(() => audioEngine.playChord(frame, edo, 1.4, iv), startOffsetMs + i * noteGapMs);
+      });
+    };
+    if (playMode === "Over drone" && ivlFrames.length > 0) {
+      scheduleFrames(Math.floor(dur / 2));
     }
     setTimeout(() => {
       audioEngine.stopDrone();
-      if (playMode === "After drone" && ivlNote !== null) {
-        setTimeout(() => audioEngine.playNote(ivlNote!, edo, 1.5, iv), 300);
+      if (playMode === "After drone" && ivlFrames.length > 0) {
+        scheduleFrames(300);
       }
     }, dur);
   };
@@ -279,6 +353,39 @@ export default function DroneTab({
 
       {/* Controls row */}
       <div className="flex flex-wrap gap-4 items-end">
+        <div>
+          <label className="text-xs text-[#888] block mb-1"># Notes</label>
+          {(() => {
+            // Only Sequential honors the # Notes pick — the other styles imply
+            // a fixed sonority size (Dyad = 2, Trichord = 3, Random = 2-3).
+            const disabled = playStyle !== "Sequential";
+            return (
+              <div className="flex gap-1" title={disabled ? `${playStyle} uses a fixed sonority size` : undefined}>
+                {[1,2,3,4,5,6].map(n => (
+                  <button key={n}
+                    onClick={() => { if (!disabled) setNumNotes(n); }}
+                    disabled={disabled}
+                    className={`w-8 h-8 rounded text-xs font-medium transition-colors ${
+                      disabled
+                        ? "bg-[#141414] text-[#444] border border-[#222] cursor-not-allowed"
+                        : numNotes === n
+                          ? "bg-[#7173e6] text-white"
+                          : "bg-[#1e1e1e] text-[#888] hover:bg-[#2a2a2a] border border-[#333]"
+                    }`}>{n}</button>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+
+        <div>
+          <label className="text-xs text-[#888] block mb-1">Play Style</label>
+          <select value={playStyle} onChange={e => setPlayStyle(e.target.value as DronePlayStyle)}
+            className="bg-[#1e1e1e] border border-[#333] rounded px-2 py-1.5 text-sm text-white focus:outline-none">
+            {PLAY_STYLES.map(s => <option key={s}>{s}</option>)}
+          </select>
+        </div>
+
         <div>
           <label className="text-xs text-[#888] block mb-1">Duration (sec)</label>
           <select value={duration} onChange={e => setDuration(e.target.value)}

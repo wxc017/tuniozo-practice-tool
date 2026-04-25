@@ -3,18 +3,24 @@ import { FOLK_SONG_LIBRARY, FOLK_SONG_GROUPS } from "@/lib/folkSongData";
 import {
   Renderer, Stave, StaveNote, StaveNoteStruct, Voice, Formatter, Beam, Barline, Dot, Fraction, StaveTie,
 } from "vexflow";
-import { getAvailableThirdQualities, getAvailableSeventhQualities, getDegreeMap, getPatternScaleMaps, getModeDegreeMap, pcToNoteNameWithEnharmonic, formatHalfAccidentals } from "@/lib/edoData";
+import { getBaseChords, getDegreeMap, getPatternScaleMaps, getModeDegreeMap, pcToNoteNameWithEnharmonic, formatHalfAccidentals } from "@/lib/edoData";
 import { generateRhythm, melodyPositionStrengths, isTripletStyle, STYLE_INFO, type RhythmStyle, type DensityBias } from "@/lib/rhythmGen";
 import {
-  type HarmonyCategory,
   type ProgressionMode,
   type Tonality,
   type ProgChord,
-  HARMONY_CATEGORIES,
-  availableHarmonyCategories,
-  generateProgression,
   getDrillChordPalette,
 } from "@/lib/melodicPatternData";
+import {
+  getTonalityBanks, APPROACH_KINDS, APPROACH_LABELS,
+  type ApproachKind, type ChordEntry, type TonalityBank,
+} from "@/lib/tonalityBanks";
+import {
+  TONALITY_FAMILIES,
+  generatePoolProgression, getAllPoolChords,
+  applicableXenKinds, XEN_LABEL, XEN_COLOR,
+  type XenKind, type PoolProgChord,
+} from "@/lib/tonalityChordPool";
 
 // ── Folk song data ──────────────────────────────────────────────────
 export interface MelodyBeat {
@@ -1075,9 +1081,6 @@ function SnareLineStave({
 }
 
 // ── Colors ──────────────────────────────────────────────────────────
-const HARMONY_GROUP_COLORS: Record<string, string> = {
-  Diatonic: "#5a8a5a", Chromatic: "#c06090", Extended: "#c8aa50",
-};
 
 const SUPPORTED_EDOS = [12, 31, 41] as const;
 type SupportedEdo = (typeof SUPPORTED_EDOS)[number];
@@ -1122,33 +1125,13 @@ export default function HarmonyWorkshop() {
 
   const modePcs = useMemo(() => getModePcs(edo, scaleFamily, modeName), [edo, scaleFamily, modeName]);
 
-  // ── Harmony category selection ──────────────────────────────────
-  const [harmonyCats, setHarmonyCats] = useState<Set<HarmonyCategory>>(new Set(["functional"]));
-  const toggleHarmony = (c: HarmonyCategory) =>
-    setHarmonyCats((prev) => {
-      const next = new Set(prev);
-      if (next.has(c)) { if (next.size > 1) next.delete(c); }
-      else next.add(c);
-      return next;
-    });
-
-  const availableThirdQualities = useMemo(() => getAvailableThirdQualities(edo), [edo]);
-  const [checkedThirdQualities, setCheckedThirdQualities] = useState<Set<string>>(new Set(["min3", "maj3"]));
-  const toggleThirdQuality = (q: string) =>
-    setCheckedThirdQualities((prev) => { const n = new Set(prev); if (n.has(q)) n.delete(q); else n.add(q); return n; });
-
-  const availableSeventhQualities = useMemo(() => getAvailableSeventhQualities(edo), [edo]);
-  const [checkedSeventhQualities, setCheckedSeventhQualities] = useState<Set<string>>(new Set(["min7", "maj7"]));
-  const toggleSeventhQuality = (q: string) =>
-    setCheckedSeventhQualities((prev) => { const n = new Set(prev); if (n.has(q)) n.delete(q); else n.add(q); return n; });
-
-  // Filter out Xenharmonic — covered by 3rd/7th filters
-  const availableCats = useMemo(() => {
-    const all = availableHarmonyCategories(edo);
-    // Remove xen categories
-    for (const c of all) { if (c.startsWith("xen_")) all.delete(c); }
-    return all;
-  }, [edo]);
+  // ── Tonality + chord-pool selection (mirrors MelodicPatterns) ──
+  const [tonalitySet, setTonalitySet] = useState<Set<string>>(new Set(["Major"]));
+  const [checkedByTonality, setCheckedByTonality] = useState<Record<string, string[]>>(
+    { Major: ["I", "IV", "V", "ii", "iii", "vi", "vii°"] });
+  const [approachesByTonality, setApproachesByTonality] = useState<Record<string, Record<string, ApproachKind[]>>>({});
+  const [xenByTonality, setXenByTonality] = useState<Record<string, Record<string, XenKind[]>>>({});
+  const tonalityBanks = useMemo<TonalityBank[]>(() => getTonalityBanks(edo), [edo]);
 
   // ── Song selection ──────────────────────────────────────────────
   const [selectedSongId, setSelectedSongId] = useState(FOLK_SONGS[0].id);
@@ -1193,8 +1176,6 @@ export default function HarmonyWorkshop() {
   const prevEdo = useRef(edo);
   if (prevEdo.current !== edo) {
     prevEdo.current = edo;
-    setCheckedThirdQualities(new Set(["min3", "maj3"]));
-    setCheckedSeventhQualities(new Set(["min7", "maj7"]));
     setResult(null);
     setHistory([]);
   }
@@ -1228,15 +1209,27 @@ export default function HarmonyWorkshop() {
   }, [modePcs, edo, tonality]);
 
   // ── Reharmonize ─────────────────────────────────────────────────
+  const pickRoundTonality = useCallback((): string | null => {
+    const arr = Array.from(tonalitySet);
+    if (arr.length === 0) return null;
+    return arr[Math.floor(Math.random() * arr.length)];
+  }, [tonalitySet]);
+
   const handleReharmonize = useCallback(() => {
     const barCount = song.bars.length;
+    void effectiveTonality;
+    const t = pickRoundTonality();
+    if (!t) return;
 
-    // Main progression: one chord per bar.
-    const mainChords = generateProgression(
-      edo, barCount, harmonyCats, progMode, 3,
-      effectiveTonality, tonicRoot,
-      checkedSeventhQualities, checkedThirdQualities, false,
+    // Main progression: one chord per bar (Markov walk on the pool).
+    const mainChords: ProgChord[] = generatePoolProgression(
+      edo, barCount, t,
+      checkedByTonality[t] ?? [],
+      approachesByTonality[t] ?? {},
+      xenByTonality[t] ?? {},
+      tonicRoot, progMode,
     );
+    if (mainChords.length === 0) return;
 
     // Candidate pulse positions where a mid-bar chord is metrically
     // valid in this meter, intersected with what the user has enabled.
@@ -1259,10 +1252,12 @@ export default function HarmonyWorkshop() {
     // Secondary-dominant builder: V7 of the *next* bar's chord, pulling
     // into the downbeat. Falls through to any pool chord that shares a
     // common tone with the next chord (smooth voice-leading).
-    const chordPool = generateProgression(
-      edo, 0, harmonyCats, "pool", 3,
-      effectiveTonality, tonicRoot,
-      checkedSeventhQualities, checkedThirdQualities, false,
+    const chordPool: PoolProgChord[] = getAllPoolChords(
+      edo, t,
+      checkedByTonality[t] ?? [],
+      approachesByTonality[t] ?? {},
+      xenByTonality[t] ?? {},
+      tonicRoot,
     );
     const dm = getDegreeMap(edo);
     const P5 = dm["5"] ?? 7;
@@ -1344,7 +1339,7 @@ export default function HarmonyWorkshop() {
       const next = [...prev, r];
       return next.length > 50 ? next.slice(next.length - 50) : next;
     });
-  }, [edo, song, harmonyCats, progMode, effectiveTonality, tonicRoot, checkedSeventhQualities, checkedThirdQualities, adaptMelody, modePcs, midBarPulses]);
+  }, [edo, song, tonalitySet, checkedByTonality, approachesByTonality, xenByTonality, progMode, effectiveTonality, tonicRoot, adaptMelody, modePcs, midBarPulses, pickRoundTonality]);
 
   const timeSig = song.timeSignature;
 
@@ -1398,57 +1393,11 @@ export default function HarmonyWorkshop() {
           </div>
         </div>
 
-        {/* Harmony categories — no Xen row */}
+        {/* Logic toggle (Markov vs Random) */}
         <div className="flex flex-wrap gap-1.5 items-center">
-          <span className="text-[10px] text-[#666] uppercase tracking-wider">Harmony</span>
-          {HARMONY_CATEGORIES.filter((c) => availableCats.has(c.id)).map((c) => {
-            const on = harmonyCats.has(c.id);
-            const color = HARMONY_GROUP_COLORS[c.group] ?? "#999";
-            return (
-              <button key={c.id} onClick={() => toggleHarmony(c.id)} title={`${c.desc} [${c.group}]`}
-                className={`px-1.5 py-0.5 text-[10px] rounded border transition-colors ${
-                  on ? "text-white" : "bg-[#111] border-[#2a2a2a] text-[#666] hover:text-[#aaa]"
-                }`}
-                style={on ? { backgroundColor: color + "30", borderColor: color, color } : {}}>
-                {c.label.replace("{edo}", String(edo))}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* 3rds + 7ths + Logic */}
-        <div className="flex flex-wrap gap-1.5 items-center">
-          <span className="text-[10px] text-[#666] uppercase tracking-wider">3rds</span>
-          {availableThirdQualities.map((q) => {
-            const on = checkedThirdQualities.has(q.id);
-            return (
-              <button key={q.id} onClick={() => toggleThirdQuality(q.id)} title={q.desc}
-                className={`px-1.5 py-0.5 text-[10px] rounded border transition-colors ${
-                  on ? "text-white bg-[#1a2a1a] border-[#3a6a3a] text-[#7aaa6a]" : "bg-[#111] border-[#2a2a2a] text-[#666] hover:text-[#aaa]"
-                }`}>
-                {q.label}
-              </button>
-            );
-          })}
-          {availableSeventhQualities.length > 0 && (<>
-            <div className="border-l border-[#2a2a2a] h-4 mx-0.5" />
-            <span className="text-[10px] text-[#666] uppercase tracking-wider">7ths</span>
-            {availableSeventhQualities.map((q) => {
-              const on = checkedSeventhQualities.has(q.id);
-              return (
-                <button key={q.id} onClick={() => toggleSeventhQuality(q.id)} title={q.desc}
-                  className={`px-1.5 py-0.5 text-[10px] rounded border transition-colors ${
-                    on ? "text-white bg-[#1a1a2a] border-[#4a4a8a] text-[#b07acc]" : "bg-[#111] border-[#2a2a2a] text-[#666] hover:text-[#aaa]"
-                  }`}>
-                  {q.label}
-                </button>
-              );
-            })}
-          </>)}
-          <div className="border-l border-[#2a2a2a] h-4 mx-0.5" />
           <span className="text-[10px] text-[#666] uppercase tracking-wider">Logic</span>
           {([
-            { value: "functional" as ProgressionMode, label: "Functional", color: "#6a9aca" },
+            { value: "functional" as ProgressionMode, label: "Markov", color: "#6a9aca" },
             { value: "random" as ProgressionMode, label: "Random", color: "#999" },
           ] as const).map((m) => (
             <button key={m.value} onClick={() => setProgMode(m.value)}
@@ -1461,6 +1410,16 @@ export default function HarmonyWorkshop() {
           ))}
         </div>
       </div>
+
+      {/* Tonality multi-select + per-tonality chord pool (mirrors MelodicPatterns) */}
+      <HWTonalityChordPicker
+        edo={edo}
+        tonalityBanks={tonalityBanks}
+        tonalitySet={tonalitySet} setTonalitySet={setTonalitySet}
+        checkedByTonality={checkedByTonality} setCheckedByTonality={setCheckedByTonality}
+        approachesByTonality={approachesByTonality} setApproachesByTonality={setApproachesByTonality}
+        xenByTonality={xenByTonality} setXenByTonality={setXenByTonality}
+      />
 
       {/* ── Song selector ── */}
       <div className="bg-[#111] border border-[#222] rounded-lg px-3 py-1.5 flex items-center gap-3">
@@ -1735,6 +1694,289 @@ export default function HarmonyWorkshop() {
           ))}
         </div>
       </details>
+    </div>
+  );
+}
+
+// ── Tonality + chord-pool picker (mirrors MelodicPatterns) ──────────
+function HWTonalityChordPicker({
+  edo, tonalityBanks,
+  tonalitySet, setTonalitySet,
+  checkedByTonality, setCheckedByTonality,
+  approachesByTonality, setApproachesByTonality,
+  xenByTonality, setXenByTonality,
+}: {
+  edo: number;
+  tonalityBanks: TonalityBank[];
+  tonalitySet: Set<string>;
+  setTonalitySet: (next: Set<string>) => void;
+  checkedByTonality: Record<string, string[]>;
+  setCheckedByTonality: (next: Record<string, string[]>) => void;
+  approachesByTonality: Record<string, Record<string, ApproachKind[]>>;
+  setApproachesByTonality: (next: Record<string, Record<string, ApproachKind[]>>) => void;
+  xenByTonality: Record<string, Record<string, XenKind[]>>;
+  setXenByTonality: (next: Record<string, Record<string, XenKind[]>>) => void;
+}) {
+  const banksByName = useMemo(() => {
+    const m: Record<string, TonalityBank> = {};
+    for (const b of tonalityBanks) m[b.name] = b;
+    return m;
+  }, [tonalityBanks]);
+
+  const toggleTonality = (name: string) => {
+    const next = new Set(tonalitySet);
+    if (next.has(name)) next.delete(name); else next.add(name);
+    setTonalitySet(next);
+    if (next.has(name) && !checkedByTonality[name]) {
+      const bank = banksByName[name];
+      if (bank) {
+        const primary = bank.levels.find(l => l.name === "Primary");
+        if (primary) {
+          setCheckedByTonality({ ...checkedByTonality, [name]: primary.chords.map(c => c.label) });
+        }
+      }
+    }
+  };
+
+  const toggleChord = (tonality: string, label: string) => {
+    const list = checkedByTonality[tonality] ?? [];
+    const has = list.includes(label);
+    const nextList = has ? list.filter(l => l !== label) : [...list, label];
+    setCheckedByTonality({ ...checkedByTonality, [tonality]: nextList });
+  };
+
+  const setLevelChecked = (tonality: string, levelChords: ChordEntry[], select: boolean) => {
+    const list = new Set(checkedByTonality[tonality] ?? []);
+    for (const c of levelChords) {
+      if (select) list.add(c.label); else list.delete(c.label);
+    }
+    setCheckedByTonality({ ...checkedByTonality, [tonality]: Array.from(list) });
+  };
+
+  const toggleApproach = (tonality: string, target: string, kind: ApproachKind) => {
+    const tApp = approachesByTonality[tonality] ?? {};
+    const list = tApp[target] ?? [];
+    const has = list.includes(kind);
+    const nextList = has ? list.filter(k => k !== kind) : [...list, kind];
+    const nextT = { ...tApp, [target]: nextList };
+    if (nextList.length === 0) delete nextT[target];
+    setApproachesByTonality({ ...approachesByTonality, [tonality]: nextT });
+  };
+
+  const toggleXen = (tonality: string, target: string, kind: XenKind) => {
+    const tXen = xenByTonality[tonality] ?? {};
+    const list = tXen[target] ?? [];
+    const has = list.includes(kind);
+    const nextList = has ? list.filter(k => k !== kind) : [...list, kind];
+    const nextT = { ...tXen, [target]: nextList };
+    if (nextList.length === 0) delete nextT[target];
+    setXenByTonality({ ...xenByTonality, [tonality]: nextT });
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-[#0e0e0e] border border-[#1a1a1a] rounded p-2 space-y-2">
+        <div className="flex items-center gap-2">
+          <p className="text-xs text-[#888] font-medium">TONALITIES</p>
+          <button onClick={() => setTonalitySet(new Set(tonalityBanks.map(b => b.name)))}
+            className="text-[9px] text-[#555] hover:text-[#9999ee] border border-[#222] rounded px-2 py-0.5">All</button>
+          {TONALITY_FAMILIES.map(g => (
+            <button key={g.key} onClick={() => {
+              const next = new Set(tonalitySet);
+              for (const t of g.tonalities) if (banksByName[t]) next.add(t);
+              setTonalitySet(next);
+            }}
+              className="text-[9px] text-[#555] hover:text-[#aaa] border border-[#222] rounded px-2 py-0.5">
+              +{g.label}
+            </button>
+          ))}
+          <button onClick={() => setTonalitySet(new Set())}
+            className="text-[9px] text-[#555] hover:text-[#aaa] border border-[#222] rounded px-2 py-0.5 ml-auto">Clear</button>
+        </div>
+        {TONALITY_FAMILIES.map(group => {
+          const available = group.tonalities.filter(t => banksByName[t]);
+          if (!available.length) return null;
+          return (
+            <div key={group.key}>
+              <p className="text-[9px] mb-1 font-medium tracking-wider"
+                 style={{ color: group.color }}>{group.label}</p>
+              <div className="flex flex-wrap gap-1">
+                {available.map(t => {
+                  const on = tonalitySet.has(t);
+                  return (
+                    <button key={t} onClick={() => toggleTonality(t)}
+                      className={`px-2 py-1 text-[10px] rounded border transition-colors ${
+                        on ? "text-white" : "bg-[#111] border-[#2a2a2a] text-[#666] hover:text-[#aaa]"
+                      }`}
+                      style={on ? { backgroundColor: group.color + "30", borderColor: group.color, color: group.color } : {}}>
+                      {t}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {Array.from(tonalitySet).map(tonality => {
+        const bank = banksByName[tonality];
+        if (!bank) return null;
+        const family = TONALITY_FAMILIES.find(f => f.tonalities.includes(tonality));
+        const accent = family?.color ?? "#7173e6";
+        return (
+          <HWChordSelectionPanel
+            key={tonality}
+            tonality={tonality}
+            accent={accent}
+            bank={bank}
+            checkedSet={new Set(checkedByTonality[tonality] ?? [])}
+            toggleChord={(label) => toggleChord(tonality, label)}
+            setLevel={(chs, sel) => setLevelChecked(tonality, chs, sel)}
+            approachMap={approachesByTonality[tonality] ?? {}}
+            toggleApproach={(target, kind) => toggleApproach(tonality, target, kind)}
+            xenMap={xenByTonality[tonality] ?? {}}
+            toggleXen={(target, kind) => toggleXen(tonality, target, kind)}
+            edo={edo}
+          />
+        );
+      })}
+      {tonalitySet.size === 0 && (
+        <div className="text-xs text-[#666] italic px-3 py-2 border border-[#222] rounded">
+          Pick at least one tonality above to choose chords.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HWChordSelectionPanel({
+  tonality, accent, bank, checkedSet,
+  toggleChord, setLevel, approachMap, toggleApproach,
+  xenMap, toggleXen,
+  edo,
+}: {
+  tonality: string;
+  accent: string;
+  bank: TonalityBank;
+  checkedSet: Set<string>;
+  toggleChord: (label: string) => void;
+  setLevel: (chords: ChordEntry[], select: boolean) => void;
+  approachMap: Record<string, ApproachKind[]>;
+  toggleApproach: (target: string, kind: ApproachKind) => void;
+  xenMap: Record<string, XenKind[]>;
+  toggleXen: (target: string, kind: XenKind) => void;
+  edo: number;
+}) {
+  const baseMap = useMemo<Record<string, number[]>>(
+    () => Object.fromEntries(getBaseChords(edo)), [edo]);
+  const VISIBLE_LEVELS = new Set(["Primary", "Diatonic", "Modal Interchange"]);
+  const APPROACH_COLORS: Record<ApproachKind, string> = {
+    secdom: "#c77a4a", secdim: "#a86bb8", iiV: "#4a9ac7", TT: "#c7a14a",
+  };
+  const visibleLevels = bank.levels.filter(l => VISIBLE_LEVELS.has(l.name));
+  return (
+    <div className="border rounded overflow-hidden" style={{ borderColor: accent + "40" }}>
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-[#0a0a0a]">
+        <span className="text-[11px] font-semibold tracking-wide" style={{ color: accent }}>{tonality.toUpperCase()}</span>
+      </div>
+      <div className="space-y-2 p-2">
+        {visibleLevels.map(level => {
+          const allChecked = level.chords.every(c => checkedSet.has(c.label));
+          const someChecked = level.chords.some(c => checkedSet.has(c.label));
+          return (
+            <div key={level.name} className="border border-[#1a1a1a] rounded overflow-hidden">
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-[#0e0e0e]">
+                <span className="text-xs text-[#888] font-medium flex-1">{level.name}</span>
+                <span className="text-[10px] text-[#444]">{level.chords.filter(c => checkedSet.has(c.label)).length}/{level.chords.length}</span>
+                <button onClick={() => setLevel(level.chords, !allChecked)}
+                  className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                    allChecked ? "" : someChecked ? "border-[#444] text-[#888]" : "border-[#222] text-[#555]"
+                  }`}
+                  style={allChecked ? { borderColor: accent, color: accent } : undefined}>
+                  {allChecked ? "Clear" : "All"}
+                </button>
+              </div>
+              <div className="grid gap-1 p-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4">
+                {level.chords.map(entry => {
+                  const isChecked = checkedSet.has(entry.label);
+                  const enabledApproaches = new Set(approachMap[entry.label] ?? []);
+                  const TONIC_LABELS = new Set(["I", "i", "I°", "i°", "I+", "i+"]);
+                  const isTonic = TONIC_LABELS.has(entry.label) || (entry.steps != null && entry.steps[0] === 0);
+                  const showApproaches = !isTonic && level.name !== "Modal Interchange";
+                  return (
+                    <div key={entry.label}
+                      className="rounded overflow-hidden border transition-colors flex flex-col"
+                      style={isChecked
+                        ? { background: accent + "30", borderColor: accent }
+                        : { background: "#141414", borderColor: "#1a1a1a" }}>
+                      <button onClick={() => toggleChord(entry.label)}
+                        className={`w-full text-left px-2 py-1 text-xs transition-colors ${
+                          isChecked ? "" : "text-[#666] hover:text-[#888]"
+                        }`}
+                        style={isChecked ? { color: accent } : undefined}>
+                        {entry.label}
+                      </button>
+                      {showApproaches && (
+                        <div className="flex gap-0.5 px-1 py-1">
+                          {APPROACH_KINDS.map(k => {
+                            const on = enabledApproaches.has(k);
+                            const color = APPROACH_COLORS[k];
+                            return (
+                              <button key={k}
+                                disabled={!isChecked}
+                                onClick={() => toggleApproach(entry.label, k)}
+                                title={isChecked ? `${APPROACH_LABELS[k]}${entry.label}` : `Enable ${entry.label} first`}
+                                className={`flex-1 text-[8px] leading-none py-0.5 rounded border transition-colors ${
+                                  !isChecked ? "opacity-40 cursor-not-allowed bg-[#0e0e0e] text-[#444] border-[#222]"
+                                  : on ? "text-black font-semibold"
+                                  : "bg-[#1a1a1a] text-[#888] border-[#333] hover:text-[#ddd] hover:border-[#555]"
+                                }`}
+                                style={isChecked && on ? { background: color, borderColor: color } : undefined}>
+                                {APPROACH_LABELS[k]}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {(() => {
+                        const xenSteps = entry.steps ?? baseMap[entry.label] ?? null;
+                        const xenAvail = xenSteps ? applicableXenKinds(xenSteps, edo) : [];
+                        if (xenAvail.length === 0) return null;
+                        const enabledXen = new Set(xenMap[entry.label] ?? []);
+                        return (
+                          <div className="flex gap-0.5 px-1 py-1 mt-auto">
+                            {xenAvail.map(k => {
+                              const on = enabledXen.has(k);
+                              const color = XEN_COLOR[k];
+                              return (
+                                <button key={k}
+                                  disabled={!isChecked}
+                                  onClick={() => toggleXen(entry.label, k)}
+                                  title={isChecked
+                                    ? `${entry.label} with ${k === "neu" ? "neutral" : k === "sub" ? "subminor" : k === "sup" ? "supermajor" : k === "qrt" ? "quartal" : "quintal"} variant`
+                                    : `Enable ${entry.label} first`}
+                                  className={`flex-1 text-[9px] leading-none py-0.5 rounded border transition-colors ${
+                                    !isChecked ? "opacity-40 cursor-not-allowed bg-[#0e0e0e] text-[#444] border-[#222]"
+                                    : on ? "text-black font-semibold"
+                                    : "bg-[#141414] text-[#888] border-[#333] hover:text-[#ddd] hover:border-[#555]"
+                                  }`}
+                                  style={isChecked && on ? { background: color, borderColor: color } : undefined}>
+                                  {XEN_LABEL[k]}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

@@ -25,12 +25,14 @@ interface Props {
   onBetaTransformChange: (v: boolean) => void;
   betaMathLab: boolean;
   onBetaMathLabChange: (v: boolean) => void;
+  betaMode: boolean;
+  onBetaModeChange: (v: boolean) => void;
   academicMode: boolean;
   academicAvailable?: boolean;
   onAcademicModeChange: (v: boolean) => void;
 }
 
-export default function SettingsModal({ onClose, onDataImported, betaPlayRotation, onBetaPlayRotationChange, betaIntervalChain, onBetaIntervalChainChange, betaComma, onBetaCommaChange, betaTransform, onBetaTransformChange, betaMathLab, onBetaMathLabChange, academicMode, academicAvailable = false, onAcademicModeChange }: Props) {
+export default function SettingsModal({ onClose, onDataImported, betaPlayRotation, onBetaPlayRotationChange, betaIntervalChain, onBetaIntervalChainChange, betaComma, onBetaCommaChange, betaTransform, onBetaTransformChange, betaMathLab, onBetaMathLabChange, betaMode, onBetaModeChange, academicMode, academicAvailable = false, onAcademicModeChange }: Props) {
   const importRef = useRef<HTMLInputElement>(null);
   const musicImportRef = useRef<HTMLInputElement>(null);
   const academicImportRef = useRef<HTMLInputElement>(null);
@@ -234,6 +236,25 @@ export default function SettingsModal({ onClose, onDataImported, betaPlayRotatio
 
         {/* Content */}
         <div className="px-5 py-5 space-y-6 overflow-y-auto">
+
+          {/* Beta toggle — exposes experimental sections in the top button bar. */}
+          <div>
+            <h3 className="text-xs font-semibold text-[#c8a860] uppercase tracking-widest mb-3">Beta</h3>
+            <div className="space-y-2">
+              <label className="flex items-center gap-3 px-3 py-2.5 bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#3a3a3a] rounded-lg cursor-pointer transition-colors">
+                <input
+                  type="checkbox"
+                  checked={betaMode}
+                  onChange={e => onBetaModeChange(e.target.checked)}
+                  className="accent-[#c8a860] w-4 h-4 cursor-pointer"
+                />
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-[#ccc]">Beta</div>
+                  <div className="text-xs text-[#555]">Show experimental sections: Vocal Percussion, Mixed Groups, Drill &amp; Response, Uncommon Meters, Solkattu, Quick Transcriptions, Phrase Decomposition, Interval Browser, Microwave, Temperament Explorer</div>
+                </div>
+              </label>
+            </div>
+          </div>
 
           {/* Mode section (only if academic components are present locally) */}
           {academicAvailable && (
