@@ -281,11 +281,40 @@ function getColorsMinusThird(mode: ModeInfo): string[] {
   return colors.length ? colors : [third];
 }
 
+// Diatonic non-character tones (the mode's 4th, 5th, 7th positions when
+// they aren't already classed as stable or character).  Used to break
+// monotony in archetypes when the color set is small (e.g. Aeolian only
+// has b6 as a color — fillers like 4 and b7 keep the phrase melodic
+// without revealing the mode through repeats).
+function getMelodicExtras(mode: ModeInfo): string[] {
+  const stable = new Set(mode.stable);
+  const colors = new Set(mode.character);
+  const out: string[] = [];
+  for (const p of [3, 4, 6]) {
+    const deg = mode.scaleDegrees[p];
+    if (!deg || deg === "1") continue;
+    if (stable.has(deg) || colors.has(deg)) continue;
+    out.push(deg);
+  }
+  return out;
+}
+
+// Pick a degree from `pool`, avoiding `avoid` when possible.  Falls back
+// to picking from the full pool when filtering would empty it.
+function pickAvoiding(pool: string[], avoid: string | undefined): string {
+  if (pool.length === 0) return "1";
+  if (pool.length === 1 || avoid === undefined) return pool[Math.floor(Math.random() * pool.length)];
+  const filtered = pool.filter(x => x !== avoid);
+  const src = filtered.length > 0 ? filtered : pool;
+  return src[Math.floor(Math.random() * src.length)];
+}
+
 // Archetype B — framed by stable non-root tones (3rd, 5th, etc.).
 // Root never appears; drone supplies the tonic reference.
 const archetypeStableFramed: ArchetypeFn = (mode, tonicAbs, edo, low, high, phraseLen) => {
   const third = getThird(mode);
   const colors = getColorsMinusThird(mode);
+  const extras = getMelodicExtras(mode);
   const anchorSet = new Set<string>();
   for (const s of mode.stable) if (s !== "1") anchorSet.add(s);
   anchorSet.add(third);
@@ -298,10 +327,14 @@ const archetypeStableFramed: ArchetypeFn = (mode, tonicAbs, edo, low, high, phra
   const mustHit = [...colors].sort(() => Math.random() - 0.5);
   const seq: string[] = [start, ...mustHit];
   const fillCount = Math.max(0, phraseLen - 1 - seq.length);
+  // When the mode has only 1-2 colors, blend in the diatonic 4/5/7 extras
+  // so the phrase doesn't end up as anchor-color-anchor-color repeats.
+  const colorPool = colors.length <= 2 ? [...colors, ...extras] : colors;
   for (let i = 0; i < fillCount; i++) {
+    const prev = seq[seq.length - 1];
     const r = Math.random();
-    if (r < 0.35) seq.push(randomChoice(anchors));
-    else          seq.push(colors[Math.floor(Math.random() * colors.length)]);
+    if (r < 0.35) seq.push(pickAvoiding(anchors, prev));
+    else          seq.push(pickAvoiding(colorPool, prev));
   }
   seq.push(end);
   return voiceLeadSeq(seq, mode, tonicAbs, edo, low, high);
@@ -316,15 +349,26 @@ const archetypeSpine: ArchetypeFn = (mode, tonicAbs, edo, low, high, phraseLen) 
   const spine = chord.slice(1, 4);
   if (!spine.length) return null;
   const colors = getColorsMinusThird(mode);
+  const extras = getMelodicExtras(mode);
 
   const shuffledSpine = [...spine].sort(() => Math.random() - 0.5);
-  const shuffledColors = [...colors].sort(() => Math.random() - 0.5);
-  const target = Math.max(spine.length + colors.length, phraseLen);
+  // Blend extras into the color stream when colors are sparse.
+  const colorPool = (colors.length <= 2 ? [...colors, ...extras] : [...colors])
+    .sort(() => Math.random() - 0.5);
+  const target = Math.max(spine.length + colorPool.length, phraseLen);
   const seq: string[] = [];
   let si = 0, ci = 0;
   while (seq.length < target) {
-    if (Math.random() < 0.5) seq.push(shuffledSpine[si++ % shuffledSpine.length]);
-    else                     seq.push(shuffledColors[ci++ % shuffledColors.length]);
+    const prev: string | undefined = seq.length > 0 ? seq[seq.length - 1] : undefined;
+    if (Math.random() < 0.5) {
+      let pick = shuffledSpine[si++ % shuffledSpine.length];
+      if (pick === prev && shuffledSpine.length > 1) pick = shuffledSpine[si++ % shuffledSpine.length];
+      seq.push(pick);
+    } else {
+      let pick = colorPool[ci++ % colorPool.length];
+      if (pick === prev && colorPool.length > 1) pick = colorPool[ci++ % colorPool.length];
+      seq.push(pick);
+    }
   }
   return voiceLeadSeq(seq, mode, tonicAbs, edo, low, high);
 };
@@ -334,6 +378,7 @@ const archetypeSpine: ArchetypeFn = (mode, tonicAbs, edo, low, high, phraseLen) 
 const archetypeLandOnColor: ArchetypeFn = (mode, tonicAbs, edo, low, high, phraseLen) => {
   const third = getThird(mode);
   const colors = getColorsMinusThird(mode);
+  const extras = getMelodicExtras(mode);
   const stableNonRoot = mode.stable.filter(d => d !== "1");
   const stable = stableNonRoot.length ? stableNonRoot.concat([third]) : [third];
 
@@ -342,11 +387,13 @@ const archetypeLandOnColor: ArchetypeFn = (mode, tonicAbs, edo, low, high, phras
   const mustHit = colors.filter(c => c !== finalColor).sort(() => Math.random() - 0.5);
   const seq: string[] = [start, ...mustHit];
   const fillCount = Math.max(0, phraseLen - 1 - seq.length);
+  const colorPool = colors.length <= 2 ? [...colors, ...extras] : colors;
   for (let i = 0; i < fillCount; i++) {
+    const prev = seq[seq.length - 1];
     const r = Math.random();
-    if (r < 0.3)       seq.push(randomChoice(stable));
-    else if (r < 0.55) seq.push(third);
-    else               seq.push(colors[Math.floor(Math.random() * colors.length)]);
+    if (r < 0.3)       seq.push(pickAvoiding(stable, prev));
+    else if (r < 0.55) seq.push(prev === third ? pickAvoiding(stable, prev) : third);
+    else               seq.push(pickAvoiding(colorPool, prev));
   }
   seq.push(finalColor);
   return voiceLeadSeq(seq, mode, tonicAbs, edo, low, high);
@@ -376,6 +423,7 @@ export const SCALE_PATTERN_LABEL: Record<ScalePattern, string> = {
 function generateScale(
   mode: ModeInfo, tonicAbs: number, edo: number, low: number, high: number,
   allowedPatterns: ScalePattern[] = SCALE_PATTERNS,
+  maxNotes: number = Infinity,
 ): { notes: number[]; degrees: string[]; pattern: ScalePattern } | null {
   const modeMap = getModeDegreeMap(edo, mode.family, mode.name);
   const n = mode.scaleDegrees.length;
@@ -392,6 +440,16 @@ function generateScale(
   else if (pattern === "thirds-up")   { idxSeq = [0,2,4,6,1,3,5].filter(i => i<n); octPos = "end";   }
   else if (pattern === "thirds-down") { idxSeq = [6,4,2,0,5,3,1].filter(i => i<n); octPos = "start"; }
   else                                { idxSeq = [...asc].sort(() => Math.random() - 0.5); octPos = null; }
+
+  // Honour the Max-notes setting: truncate the traversal so the phrase
+  // stays at most maxNotes long.  Drop the octave bookend when it would
+  // push past the cap so the user gets exactly maxNotes notes.
+  if (Number.isFinite(maxNotes) && maxNotes > 0) {
+    const reserve = octPos === null ? 0 : 1; // octave occupies one slot
+    const slots = Math.max(1, Math.floor(maxNotes) - reserve);
+    if (slots < idxSeq.length) idxSeq = idxSeq.slice(0, slots);
+    if (Math.floor(maxNotes) < 1 + reserve) octPos = null; // no room for octave
+  }
 
   const degrees = idxSeq.map(i => mode.scaleDegrees[i]);
   if (octPos === "end")   degrees.push("1");
@@ -599,7 +657,7 @@ export default function ModeIdentificationTab({
       degrees = built.degrees;
       chordInfo = { name: built.chordName, degrees: built.degrees };
     } else {
-      const built = generateScale(mode, midAbs, edo, low, high, Array.from(enabledScalePatterns));
+      const built = generateScale(mode, midAbs, edo, low, high, Array.from(enabledScalePatterns), maxNotes);
       if (!built) { onResult("Could not fit scale in register."); return; }
       frames = built.notes.map(n => [n]);
       gapMs = Math.round(noteSec * 1000);

@@ -161,6 +161,11 @@ export default function ChordsTab({
   const [melodyVol, setMelodyVol] = useLS<number>("lt_crd_vol_melody", 0.75);
   const [passingTones, setPassingTones] = useLS<boolean>("lt_crd_passing_tones", false);
   const fhVoicesRef = useRef<{ chords: number[][]; bass: number[][]; melody: number[][]; appliedShapes: (number[] | null)[] } | null>(null);
+  // Recency tracking for tonality picking — bias toward tonalities the
+  // user hasn't seen lately so a multi-tonality pool actually rotates
+  // instead of stochastically clumping on the same key.
+  const tonalityPickCounter = useRef(0);
+  const tonalityLastPickedAt = useRef<Map<string, number>>(new Map());
 
   useEffect(() => { isLoopingRef.current = isLooping; }, [isLooping]);
 
@@ -478,7 +483,7 @@ export default function ChordsTab({
     return counts;
   }, [checkedPatterns]);
 
-  const voiceChord = useCallback((rn: string, stepsOverride: number[] | null, currentChordMap: Record<string, number[]>, prevChord: number[] | null = null, xenList: string[] = []) => {
+  const voiceChord = useCallback((rn: string, stepsOverride: number[] | null, currentChordMap: Record<string, number[]>, prevChord: number[] | null = null, xenList: string[] = [], scaleRootsOverride?: number[] | null) => {
     // No voicing patterns selected → nothing to play
     if (patternNoteCounts.size === 0) return null;
 
@@ -499,15 +504,17 @@ export default function ChordsTab({
 
     // If the selected voicing pattern expects a 7th (≥4 notes) but the applied
     // chord type is a triad, auto-extend with the diatonic 7th so the
-    // "1 3 5 7" voicing actually has a 7th to voice. Falls back to a plain
-    // minor 7th when the root isn't on the active scale.
+    // "1 3 5 7" voicing actually has a 7th to voice.  Use the per-round
+    // tonality's scale roots when supplied (multi-tonality loops can pick
+    // a different tonality each round, so the global memo is wrong here).
     if (targetNotes >= 4 && shape.length === 3) {
+      const scaleRoots = scaleRootsOverride !== undefined ? scaleRootsOverride : diatonicScaleRoots;
       const rootPc = ((shape[0] % edo) + edo) % edo;
       let seventhInterval: number | null = null;
-      if (diatonicScaleRoots) {
-        const idx = diatonicScaleRoots.indexOf(rootPc);
+      if (scaleRoots) {
+        const idx = scaleRoots.indexOf(rootPc);
         if (idx >= 0) {
-          const seventhRootPc = diatonicScaleRoots[(idx + 6) % diatonicScaleRoots.length];
+          const seventhRootPc = scaleRoots[(idx + 6) % scaleRoots.length];
           seventhInterval = ((seventhRootPc - rootPc) % edo + edo) % edo;
         }
       }
@@ -724,7 +731,7 @@ export default function ChordsTab({
     audioEngine.silencePlay();
   }, []);
 
-  const buildLoopFrames = useCallback((progression: string[], chordMapOverride?: Record<string, number[]>, xenForNumeral?: Record<string, string[]>): { chords: number[][]; bass: number[][]; melody: number[][]; appliedShapes: (number[] | null)[] } => {
+  const buildLoopFrames = useCallback((progression: string[], chordMapOverride?: Record<string, number[]>, xenForNumeral?: Record<string, string[]>, scaleRootsOverride?: number[] | null): { chords: number[][]; bass: number[][]; melody: number[][]; appliedShapes: (number[] | null)[] } => {
     const useMap = chordMapOverride ?? chordMap;
     const chords: number[][] = [];
     const appliedShapes: (number[] | null)[] = [];
@@ -733,7 +740,7 @@ export default function ChordsTab({
     let prevVoicing: number[] | null = null;
     for (const rn of progression) {
       const xenList = xenForNumeral?.[rn] ?? [];
-      const result = voiceChord(rn, null, useMap, prevVoicing, xenList);
+      const result = voiceChord(rn, null, useMap, prevVoicing, xenList, scaleRootsOverride);
       chords.push(result ? result.chordAbs : []);
       appliedShapes.push(result ? result.appliedShape : null);
       if (result && result.chordAbs.length > 0) prevVoicing = result.chordAbs;
@@ -883,11 +890,31 @@ export default function ChordsTab({
       setLoopInfo("Select at least 2 chords in a tonality.");
       return;
     }
-    const pickedTonality = randomChoice(usableTonalities);
+    // Recency-weighted pick: tonalities not chosen recently get higher
+    // weight, capped at (pool size + 3) so the bias doesn't blow up over
+    // a long session.  A tonality never picked before is treated as
+    // older than any picked one.
+    tonalityPickCounter.current++;
+    const now = tonalityPickCounter.current;
+    const cap = usableTonalities.length + 3;
+    const weights = usableTonalities.map(t => {
+      const lastAt = tonalityLastPickedAt.current.get(t);
+      const age = lastAt === undefined ? cap : now - lastAt;
+      return Math.min(age, cap);
+    });
+    const totalWeight = weights.reduce((s, w) => s + w, 0);
+    let r = Math.random() * totalWeight;
+    let pickedTonality = usableTonalities[usableTonalities.length - 1];
+    for (let i = 0; i < usableTonalities.length; i++) {
+      r -= weights[i];
+      if (r <= 0) { pickedTonality = usableTonalities[i]; break; }
+    }
+    tonalityLastPickedAt.current.set(pickedTonality, now);
     const tonalityChordMap = buildChordMapForTonality(pickedTonality);
     const tonalityEffective = buildEffectiveCheckedForTonality(pickedTonality);
     const tonalityApproachLabels = new Set(buildApproachEntriesForTonality(pickedTonality).map(e => e.label));
     const tonalityXen = xenByTonality[pickedTonality] ?? {};
+    const tonalityScaleRoots = buildDiatonicScaleRootsForTonality(pickedTonality);
 
     const checkedRomans = Array.from(tonalityEffective).filter(r => tonalityChordMap[r]);
     if (checkedRomans.length < 2) {
@@ -902,7 +929,7 @@ export default function ChordsTab({
     }
 
     setCurrentLoop(progression);
-    const voices = buildLoopFrames(progression, tonalityChordMap, tonalityXen);
+    const voices = buildLoopFrames(progression, tonalityChordMap, tonalityXen, tonalityScaleRoots);
     if (!voices.chords.some(c => c.length > 0)) {
       setLoopInfo("Could not voice these chords.");
       return;
@@ -952,7 +979,7 @@ export default function ChordsTab({
     playVoices(voices, gapMs, noteDur, playVol * 0.7);
     const d = setTimeout(() => { setIsLooping(false); }, voices.chords.length * gapMs + 500);
     frameTimers.current.push(d);
-  }, [ensureAudio, stopLoop, tonalitySet, buildEffectiveCheckedForTonality, buildChordMapForTonality, buildApproachEntriesForTonality, lastPlayed, loopLength, loopGap, chordDur, buildLoopFrames, playVoices, onPlay, onResult, edo, tonicPc, playVol, textureLayers, xenByTonality]);
+  }, [ensureAudio, stopLoop, tonalitySet, buildEffectiveCheckedForTonality, buildChordMapForTonality, buildApproachEntriesForTonality, buildDiatonicScaleRootsForTonality, lastPlayed, loopLength, loopGap, chordDur, buildLoopFrames, playVoices, onPlay, onResult, edo, tonicPc, playVol, textureLayers, xenByTonality]);
 
   const replayFunctionalLoop = useCallback(() => {
     const voices = fhVoicesRef.current;
