@@ -2998,7 +2998,9 @@ function PatternDrillSection({
                 </span>
               </div>
               <div className="space-y-2 p-2">
-                {activeBank.levels.map(level => {
+                {activeBank.levels
+                  .filter(level => level.name === "Primary" || level.name === "Diatonic" || level.name === "Modal Interchange")
+                  .map(level => {
                   const visible = level.chords.filter(e => {
                     const s = e.steps ?? chordMap[e.label];
                     return s && s.length > 0;
@@ -3017,6 +3019,19 @@ function PatternDrillSection({
                       return next;
                     });
                   };
+                  // Approach toggles use the same color palette as MP / ChordsTab.
+                  const APPROACH_COLORS: Record<ApproachKind, string> = {
+                    secdom: "#c77a4a", secdim: "#a86bb8", iiV: "#4a9ac7", TT: "#c7a14a",
+                  };
+                  // Get the approach chord labels (V/X, vii°/X, ii/X, TT/X)
+                  // for a target — used to know whether the toggle is on.
+                  const approachLabelsFor = (target: string, kind: ApproachKind): string[] => {
+                    const targetSteps = chordMap[target];
+                    if (!targetSteps) return [];
+                    return getApproachChords(target, targetSteps, kind, edo)
+                      .filter(e => !(kind === "iiV" && e.label.startsWith("V/")))
+                      .map(e => e.label);
+                  };
                   return (
                     <div key={level.name} className="border border-[#1a1a1a] rounded overflow-hidden">
                       <div className="flex items-center gap-2 px-3 py-1.5 bg-[#0e0e0e]">
@@ -3030,45 +3045,86 @@ function PatternDrillSection({
                           {allChecked ? "Clear" : "All"}
                         </button>
                       </div>
-                      <div className="grid gap-1 p-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4">
+                      <div className="grid gap-1 p-2 grid-cols-2 sm:grid-cols-3 md:grid-cols-4 auto-rows-fr">
                         {visible.map(entry => {
                           const isChecked = checkedChords.has(entry.label);
                           const baseSteps = entry.steps ?? chordMap[entry.label] ?? null;
                           const xenAvail = baseSteps ? applicableXenKinds(baseSteps, edo) : [];
+                          const TONIC_LABELS = new Set(["I", "i", "I°", "i°", "I+", "i+"]);
+                          const isTonic = TONIC_LABELS.has(entry.label) || (entry.steps != null && entry.steps[0] === 0);
+                          const showApproaches = !isTonic && level.name !== "Modal Interchange";
+                          const toggleApproach = (kind: ApproachKind) => {
+                            const labels = approachLabelsFor(entry.label, kind);
+                            if (labels.length === 0) return;
+                            const allOn = labels.every(l => checkedChords.has(l));
+                            setCheckedChords(prev => {
+                              const next = new Set(prev);
+                              for (const l of labels) {
+                                if (allOn) next.delete(l); else next.add(l);
+                              }
+                              setDrillChords([...next]);
+                              return next;
+                            });
+                          };
                           return (
                             <div key={entry.label}
-                              className="rounded overflow-hidden border transition-colors"
+                              className="rounded overflow-hidden border transition-colors flex flex-col h-full"
                               style={isChecked
                                 ? { background: accent + "30", borderColor: accent }
                                 : { background: "#141414", borderColor: "#1a1a1a" }}>
                               <button onClick={() => toggleChord(entry.label)}
-                                className={`w-full text-left px-2 py-1 text-xs transition-colors ${
+                                className={`flex-1 w-full text-left px-2 py-1 text-xs transition-colors ${
                                   isChecked ? "" : "text-[#666] hover:text-[#888]"
                                 }`}
                                 style={isChecked ? { color: accent } : undefined}>
                                 {formatRomanNumeral(entry.label)}
                               </button>
-                              {xenAvail.length > 0 && (
-                                <div className="flex gap-0.5 px-1 py-1"
-                                  style={{ background: isChecked ? "rgba(0,0,0,0.4)" : "#080808" }}>
-                                  {xenAvail.map(k => {
-                                    const variantLabel = `${entry.label}${XEN_SUFFIX}${k}`;
-                                    const on = checkedChords.has(variantLabel);
-                                    const color = XEN_COLOR[k];
-                                    return (
-                                      <button key={k}
-                                        onClick={() => toggleChord(variantLabel)}
-                                        title={`${entry.label} with ${k === "neu" ? "neutral" : k === "sub" ? "subminor" : "supermajor"} 3rd`}
-                                        className={`flex-1 text-[8px] leading-none py-0.5 rounded border transition-colors ${
-                                          on ? "text-black font-semibold" : "bg-[#141414] text-[#888] border-[#333] hover:text-[#ddd] hover:border-[#555]"
-                                        }`}
-                                        style={on ? { background: color, borderColor: color } : undefined}>
-                                        {XEN_LABEL[k]}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              )}
+                              <div className="flex flex-col gap-0.5">
+                                {showApproaches && (
+                                  <div className="flex gap-0.5 px-1 pt-1">
+                                    {APPROACH_KINDS.map(k => {
+                                      const labels = approachLabelsFor(entry.label, k);
+                                      const on = labels.length > 0 && labels.every(l => checkedChords.has(l));
+                                      const color = APPROACH_COLORS[k];
+                                      return (
+                                        <button key={k}
+                                          onClick={() => isChecked ? toggleApproach(k) : toggleChord(entry.label)}
+                                          title={isChecked ? `${APPROACH_LABELS[k]}${entry.label}` : `Click to enable ${entry.label}`}
+                                          className={`flex-1 min-h-[24px] text-[10px] leading-tight px-1 py-1 rounded border transition-colors ${
+                                            !isChecked ? "bg-[#141414] text-[#555] border-[#222] hover:text-[#aaa] hover:border-[#444]"
+                                            : on ? "text-black font-semibold"
+                                            : "bg-[#1a1a1a] text-[#888] border-[#333] hover:text-[#ddd] hover:border-[#555]"
+                                          }`}
+                                          style={isChecked && on ? { background: color, borderColor: color } : undefined}>
+                                          {APPROACH_LABELS[k]}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                                {xenAvail.length > 0 && (
+                                  <div className="flex gap-0.5 px-1 pb-1">
+                                    {xenAvail.map(k => {
+                                      const variantLabel = `${entry.label}${XEN_SUFFIX}${k}`;
+                                      const on = checkedChords.has(variantLabel);
+                                      const color = XEN_COLOR[k];
+                                      return (
+                                        <button key={k}
+                                          onClick={() => isChecked ? toggleChord(variantLabel) : toggleChord(entry.label)}
+                                          title={isChecked ? `${entry.label} ${XEN_LABEL[k]}` : `Click to enable ${entry.label}`}
+                                          className={`flex-1 min-h-[24px] text-[10px] leading-tight px-1 py-1 rounded border transition-colors ${
+                                            !isChecked ? "bg-[#141414] text-[#555] border-[#222] hover:text-[#aaa] hover:border-[#444]"
+                                            : on ? "text-black font-semibold"
+                                            : "bg-[#141414] text-[#888] border-[#333] hover:text-[#ddd] hover:border-[#555]"
+                                          }`}
+                                          style={isChecked && on ? { background: color, borderColor: color } : undefined}>
+                                          {XEN_LABEL[k]}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           );
                         })}

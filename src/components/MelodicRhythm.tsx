@@ -137,11 +137,12 @@ function greedySplit(startSlot: number, slotCount: number, totalSlots: number): 
     { slots: 8,  str: "2",  align: halfAlign },
     { slots: 6,  str: "4d", align: halfAlign },
     { slots: 4,  str: "4",  align: 4 },
-    // Dotted-8 allowed to start at any 8th-note position (align=2),
-    // so an offbeat 3-slot span renders as a clean dotted-8 instead
-    // of "8 tied to 16".  Crossing one beat boundary is conventional
-    // in contemporary / jazz notation and reads more cleanly than a tie.
-    { slots: 3,  str: "8d", align: 2 },
+    // Dotted-8 must start on a beat (align=4) — relaxing this to
+    // 16th-grid alignment lets greedy split produce cascading
+    // dotted-8 + 8 + 8d-tied-to-16 chains across consecutive notes
+    // that beam poorly and read worse than the original 8+16 tied
+    // form the relaxed rule was meant to replace.
+    { slots: 3,  str: "8d", align: 4 },
     { slots: 2,  str: "8",  align: 1, noBeatCross: true },
     { slots: 1,  str: "16", align: 1 },
   ];
