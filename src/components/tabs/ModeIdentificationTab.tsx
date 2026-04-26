@@ -429,8 +429,35 @@ function generateScale(
   const n = mode.scaleDegrees.length;
   const asc = Array.from({ length: n }, (_, i) => i);
   const pool = allowedPatterns.length ? allowedPatterns : SCALE_PATTERNS;
-  const pattern = randomChoice(pool);
 
+  // Try the user's chosen pattern first; fall back through the rest of
+  // the enabled patterns so a narrow register doesn't drop the round.
+  // We also try shuffle as a last resort even if disabled — its
+  // voice-leading bounds the spread to ~1 octave so it always fits.
+  const tried = new Set<ScalePattern>();
+  const primary = randomChoice(pool);
+  const orderedAttempts: ScalePattern[] = [primary, ...pool.filter(p => p !== primary)];
+  if (!orderedAttempts.includes("shuffle")) orderedAttempts.push("shuffle");
+
+  for (const pattern of orderedAttempts) {
+    if (tried.has(pattern)) continue;
+    tried.add(pattern);
+    const built = tryBuildScale(mode, modeMap, asc, n, pattern, tonicAbs, edo, low, high, maxNotes);
+    if (built) return built;
+  }
+  return null;
+}
+
+function tryBuildScale(
+  mode: ModeInfo,
+  modeMap: Record<string, number>,
+  asc: number[],
+  n: number,
+  pattern: ScalePattern,
+  tonicAbs: number, edo: number, low: number, high: number,
+  maxNotes: number,
+): { notes: number[]; degrees: string[]; pattern: ScalePattern } | null {
+  void mode;
   // Build the degree-index traversal and decide where (if anywhere) the
   // octave tonic sits — monotonic patterns bookend so the phrase resolves.
   let idxSeq: number[];
@@ -484,7 +511,10 @@ function generateScale(
     }
   }
 
-  // Shift the whole line as a unit to fit the register.
+  // Shift the whole line as a unit to fit the register.  If the natural
+  // spread exceeds (high − low), no shift will fit and we bail; the
+  // caller falls through to the next pattern.  STRICT enforcement: any
+  // note outside [low, high] disqualifies the phrase.
   let fitted = notes.slice();
   while (Math.max(...fitted) > high) fitted = fitted.map(v => v - edo);
   while (Math.min(...fitted) < low)  fitted = fitted.map(v => v + edo);
@@ -657,7 +687,14 @@ export default function ModeIdentificationTab({
       degrees = built.degrees;
       chordInfo = { name: built.chordName, degrees: built.degrees };
     } else {
-      const built = generateScale(mode, midAbs, edo, low, high, Array.from(enabledScalePatterns), maxNotes);
+      // Scale exercises strictly stop at the tonic of `highestOct` —
+      // notes never go above that.  strictWindowBounds returns the top
+      // of the next octave (tonic+edo) as the upper bound; scales pull
+      // that back to (tonic+0) so the phrase doesn't bleed into the
+      // octave above the user's register.
+      const scaleHigh = tonicPc + (highestOct - 4) * edo;
+      const scaleLow  = tonicPc + (lowestOct  - 4) * edo;
+      const built = generateScale(mode, midAbs, edo, scaleLow, scaleHigh, Array.from(enabledScalePatterns), maxNotes);
       if (!built) { onResult("Could not fit scale in register."); return; }
       frames = built.notes.map(n => [n]);
       gapMs = Math.round(noteSec * 1000);
