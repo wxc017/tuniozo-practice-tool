@@ -322,13 +322,16 @@ const archetypeStableFramed: ArchetypeFn = (mode, tonicAbs, edo, low, high, phra
   const anchors = [...anchorSet];
   if (!anchors.length) anchors.push(third);
 
+  // Honour phraseLen strictly: reserve 2 slots for start + end, cap the
+  // mustHit color list to whatever's left.  A short maxNotes (e.g. 3)
+  // shouldn't blow past its budget just because the mode has many colors.
+  const target = Math.max(2, phraseLen);
   const start = randomChoice(anchors);
   const end = randomChoice(anchors);
-  const mustHit = [...colors].sort(() => Math.random() - 0.5);
+  const innerSlots = Math.max(0, target - 2);
+  const mustHit = [...colors].sort(() => Math.random() - 0.5).slice(0, innerSlots);
   const seq: string[] = [start, ...mustHit];
-  const fillCount = Math.max(0, phraseLen - 1 - seq.length);
-  // When the mode has only 1-2 colors, blend in the diatonic 4/5/7 extras
-  // so the phrase doesn't end up as anchor-color-anchor-color repeats.
+  const fillCount = Math.max(0, target - 1 - seq.length);
   const colorPool = colors.length <= 2 ? [...colors, ...extras] : colors;
   for (let i = 0; i < fillCount; i++) {
     const prev = seq[seq.length - 1];
@@ -352,10 +355,10 @@ const archetypeSpine: ArchetypeFn = (mode, tonicAbs, edo, low, high, phraseLen) 
   const extras = getMelodicExtras(mode);
 
   const shuffledSpine = [...spine].sort(() => Math.random() - 0.5);
-  // Blend extras into the color stream when colors are sparse.
   const colorPool = (colors.length <= 2 ? [...colors, ...extras] : [...colors])
     .sort(() => Math.random() - 0.5);
-  const target = Math.max(spine.length + colorPool.length, phraseLen);
+  // Honour phraseLen strictly — never exceed the user's Max-notes budget.
+  const target = Math.max(1, phraseLen);
   const seq: string[] = [];
   let si = 0, ci = 0;
   while (seq.length < target) {
@@ -382,11 +385,18 @@ const archetypeLandOnColor: ArchetypeFn = (mode, tonicAbs, edo, low, high, phras
   const stableNonRoot = mode.stable.filter(d => d !== "1");
   const stable = stableNonRoot.length ? stableNonRoot.concat([third]) : [third];
 
+  // Honour phraseLen strictly: 1 slot for the final color, the rest is
+  // start + must-hits + fillers, all capped to fit.
+  const target = Math.max(2, phraseLen);
   const finalColor = randomChoice(colors);
   const start = randomChoice(stable);
-  const mustHit = colors.filter(c => c !== finalColor).sort(() => Math.random() - 0.5);
+  const innerSlots = Math.max(0, target - 2);
+  const mustHit = colors
+    .filter(c => c !== finalColor)
+    .sort(() => Math.random() - 0.5)
+    .slice(0, innerSlots);
   const seq: string[] = [start, ...mustHit];
-  const fillCount = Math.max(0, phraseLen - 1 - seq.length);
+  const fillCount = Math.max(0, target - 1 - seq.length);
   const colorPool = colors.length <= 2 ? [...colors, ...extras] : colors;
   for (let i = 0; i < fillCount; i++) {
     const prev = seq[seq.length - 1];
@@ -502,10 +512,24 @@ function tryBuildScale(
     } else if (direction === "down") {
       let m = base; while (m > prev) m -= edo; notes.push(m);
     } else {
-      let best = base, bestD = Math.abs(base - prev);
+      // Free voice-leading: prefer the octave that keeps the note inside
+      // the register window AND stays close to the previous note.  Falls
+      // back to nearest-overall when no in-window candidate exists.
+      let best: number | null = null;
+      let bestD = Infinity;
       for (let k = -4; k <= 4; k++) {
-        const cand = base + k * edo, d = Math.abs(cand - prev);
+        const cand = base + k * edo;
+        if (cand < low || cand > high) continue;
+        const d = Math.abs(cand - prev);
         if (d < bestD) { bestD = d; best = cand; }
+      }
+      if (best === null) {
+        best = base;
+        bestD = Math.abs(base - prev);
+        for (let k = -4; k <= 4; k++) {
+          const cand = base + k * edo, d = Math.abs(cand - prev);
+          if (d < bestD) { bestD = d; best = cand; }
+        }
       }
       notes.push(best);
     }
@@ -668,11 +692,14 @@ export default function ModeIdentificationTab({
     let pattern: ScalePattern | null = null;
 
     if (kind === "colors") {
-      // Pick a random archetype; fall through the pool if one can't fit the register.
+      // Use the same strict window as scales: phrase ends at the tonic
+      // of `highestOct` (no bleed into the next octave above).
+      const tightHigh = tonicPc + (highestOct - 4) * edo;
+      const tightLow  = tonicPc + (lowestOct  - 4) * edo;
       const shuffled = [...ARCHETYPES].sort(() => Math.random() - 0.5);
       let result: PhraseResult = null;
       for (const arche of shuffled) {
-        result = arche(mode, midAbs, edo, low, high, maxNotes);
+        result = arche(mode, midAbs, edo, tightLow, tightHigh, maxNotes);
         if (result) break;
       }
       if (!result) { onResult("Could not fit phrase in register."); return; }
