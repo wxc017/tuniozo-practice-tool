@@ -425,15 +425,27 @@ const ARCHETYPES: ArchetypeFn[] = [
 // monotonic patterns bookend with the tonic octave, non-monotonic ones don't.
 // Non-monotonic patterns remove the "ascending-scale gestalt" so the user
 // actually has to identify the intervals, not the overall contour.
-type ScalePattern = "up" | "down" | "thirds-up" | "thirds-down" | "shuffle";
-const SCALE_PATTERNS: ScalePattern[] = ["up", "down", "thirds-up", "thirds-down", "shuffle"];
+// Mode-phrase patterns merge the old "Color Set" exercise with five
+// degree-cycle traversals.  Every pattern hits all 7 scale degrees
+// (except color-set, which is melodic and biased to character tones),
+// using free voice-leading that inverts each note to stay inside the
+// register window — so even a 1-octave window plays cleanly.
+type ScalePattern =
+  | "color-set"
+  | "thirds"
+  | "fourths"
+  | "fifths"
+  | "sixths"
+  | "shuffle";
+const SCALE_PATTERNS: ScalePattern[] = ["color-set", "thirds", "fourths", "fifths", "sixths", "shuffle"];
 
 export const SCALE_PATTERN_LABEL: Record<ScalePattern, string> = {
-  "up":          "ascending ↑",
-  "down":        "descending ↓",
-  "thirds-up":   "thirds ↑",
-  "thirds-down": "thirds ↓",
-  "shuffle":     "shuffled",
+  "color-set":   "Color Set",
+  "thirds":      "Scale 3rds",
+  "fourths":     "Scale 4ths",
+  "fifths":      "Scale 5ths",
+  "sixths":      "Scale 6ths",
+  "shuffle":     "Scale shuffled",
 };
 
 function generateScale(
@@ -444,12 +456,16 @@ function generateScale(
   const modeMap = getModeDegreeMap(edo, mode.family, mode.name);
   const n = mode.scaleDegrees.length;
   const asc = Array.from({ length: n }, (_, i) => i);
-  const pool = allowedPatterns.length ? allowedPatterns : SCALE_PATTERNS;
+  // color-set is dispatched separately by the caller — strip it here
+  // so generateScale only handles degree-cycle patterns.
+  const scalePool = (allowedPatterns.length ? allowedPatterns : SCALE_PATTERNS)
+    .filter(p => p !== "color-set");
+  const pool = scalePool.length > 0 ? scalePool : SCALE_PATTERNS.filter(p => p !== "color-set");
 
   // Try the user's chosen pattern first; fall back through the rest of
   // the enabled patterns so a narrow register doesn't drop the round.
-  // We also try shuffle as a last resort even if disabled — its
-  // voice-leading bounds the spread to ~1 octave so it always fits.
+  // Shuffle is appended last as a guaranteed fallback — its voice-leading
+  // bounds the spread to ~1 octave so it always fits.
   const tried = new Set<ScalePattern>();
   const primary = randomChoice(pool);
   const orderedAttempts: ScalePattern[] = [primary, ...pool.filter(p => p !== primary)];
@@ -473,39 +489,40 @@ function tryBuildScale(
   tonicAbs: number, edo: number, low: number, high: number,
   maxNotes: number,
 ): { notes: number[]; degrees: string[]; pattern: ScalePattern } | null {
-  void mode;
-  // Build the degree-index traversal and decide where (if anywhere) the
-  // octave tonic sits — monotonic patterns bookend so the phrase resolves.
+  // Degree-index traversal for each pattern.  Step counts walk the
+  // diatonic degree wheel:
+  //   thirds  → +2 mod 7  → [0,2,4,6,1,3,5]
+  //   fourths → +3 mod 7  → [0,3,6,2,5,1,4]
+  //   fifths  → +4 mod 7  → [0,4,1,5,2,6,3]
+  //   sixths  → +5 mod 7  → [0,5,3,1,6,4,2]
+  //   shuffle → random permutation
+  // No octave bookend on any of them — voice-leading inverts each
+  // note so the line stays in the user's register window.
   let idxSeq: number[];
-  let octPos: "start" | "end" | null;
-  if (pattern === "up")               { idxSeq = asc;                             octPos = "end";   }
-  else if (pattern === "down")        { idxSeq = [...asc].reverse();              octPos = "start"; }
-  else if (pattern === "thirds-up")   { idxSeq = [0,2,4,6,1,3,5].filter(i => i<n); octPos = "end";   }
-  else if (pattern === "thirds-down") { idxSeq = [6,4,2,0,5,3,1].filter(i => i<n); octPos = "start"; }
-  else                                { idxSeq = [...asc].sort(() => Math.random() - 0.5); octPos = null; }
+  if (pattern === "thirds")       idxSeq = [0,2,4,6,1,3,5].filter(i => i < n);
+  else if (pattern === "fourths") idxSeq = [0,3,6,2,5,1,4].filter(i => i < n);
+  else if (pattern === "fifths")  idxSeq = [0,4,1,5,2,6,3].filter(i => i < n);
+  else if (pattern === "sixths")  idxSeq = [0,5,3,1,6,4,2].filter(i => i < n);
+  else                            idxSeq = [...asc].sort(() => Math.random() - 0.5);
+  const octPos: "start" | "end" | null = null;
 
   // Honour the Max-notes setting: truncate the traversal so the phrase
-  // stays at most maxNotes long.  Drop the octave bookend when it would
-  // push past the cap so the user gets exactly maxNotes notes.
+  // stays at most maxNotes long.
   if (Number.isFinite(maxNotes) && maxNotes > 0) {
-    const reserve = octPos === null ? 0 : 1; // octave occupies one slot
-    const slots = Math.max(1, Math.floor(maxNotes) - reserve);
+    const slots = Math.max(1, Math.floor(maxNotes));
     if (slots < idxSeq.length) idxSeq = idxSeq.slice(0, slots);
-    if (Math.floor(maxNotes) < 1 + reserve) octPos = null; // no room for octave
   }
 
   const degrees = idxSeq.map(i => mode.scaleDegrees[i]);
-  if (octPos === "end")   degrees.push("1");
-  else if (octPos === "start") degrees.unshift("1");
 
-  // Pitch placement. Monotonic patterns force each step in its direction
-  // (so thirds-up stays ascending even across the 7→2 wrap); shuffle
-  // voice-leads each degree to the nearest octave of the previous note.
-  const direction = (pattern === "down" || pattern === "thirds-down") ? "down"
-                  : (pattern === "up"   || pattern === "thirds-up")   ? "up"
-                  : "free";
+  // All non-color-set patterns use free voice-leading with in-window
+  // preference: each note picks the octave that stays inside [low, high]
+  // AND closest to the previous note.  This is what gives "Scale 4ths"
+  // its inverted-within-an-octave shape (C → F → B → E → A → D → G).
+  const direction = "free";
 
   const notes: number[] = [];
+  void direction; // patterns are uniformly free-voice-leading now
   for (let i = 0; i < degrees.length; i++) {
     const isOct = (octPos === "end"   && i === degrees.length - 1)
                || (octPos === "start" && i === 0);
@@ -513,32 +530,28 @@ function tryBuildScale(
     const base = tonicAbs + step;
     if (i === 0) { notes.push(base); continue; }
     const prev = notes[i - 1];
-    if (direction === "up") {
-      let m = base; while (m < prev) m += edo; notes.push(m);
-    } else if (direction === "down") {
-      let m = base; while (m > prev) m -= edo; notes.push(m);
-    } else {
-      // Free voice-leading: prefer the octave that keeps the note inside
-      // the register window AND stays close to the previous note.  Falls
-      // back to nearest-overall when no in-window candidate exists.
-      let best: number | null = null;
-      let bestD = Infinity;
+    // Free voice-leading: prefer the octave that keeps the note inside
+    // [low, high] AND stays close to the previous note.  This is what
+    // gives "Scale 4ths" its inverted-within-an-octave shape (C → F →
+    // B → E → A → D → G).  Falls back to nearest-overall when no
+    // in-window candidate exists.
+    let best: number | null = null;
+    let bestD = Infinity;
+    for (let k = -4; k <= 4; k++) {
+      const cand = base + k * edo;
+      if (cand < low || cand > high) continue;
+      const d = Math.abs(cand - prev);
+      if (d < bestD) { bestD = d; best = cand; }
+    }
+    if (best === null) {
+      best = base;
+      bestD = Math.abs(base - prev);
       for (let k = -4; k <= 4; k++) {
-        const cand = base + k * edo;
-        if (cand < low || cand > high) continue;
-        const d = Math.abs(cand - prev);
+        const cand = base + k * edo, d = Math.abs(cand - prev);
         if (d < bestD) { bestD = d; best = cand; }
       }
-      if (best === null) {
-        best = base;
-        bestD = Math.abs(base - prev);
-        for (let k = -4; k <= 4; k++) {
-          const cand = base + k * edo, d = Math.abs(cand - prev);
-          if (d < bestD) { bestD = d; best = cand; }
-        }
-      }
-      notes.push(best);
     }
+    notes.push(best);
   }
 
   // Shift the whole line as a unit to fit the register.  If the natural
@@ -632,12 +645,13 @@ export default function ModeIdentificationTab({
   );
   const [maxNotes, setMaxNotes] = useLS<number>("lt_modeid_maxNotes", 8);
   const [noteSec, setNoteSec] = useLS<number>("lt_modeid_noteSec", DEFAULT_GAP / 1000);
-  const [enabledTypes, setEnabledTypes] = useLS<{ colors: boolean; chord: boolean; scale: boolean }>(
-    "lt_modeid_types_v2", { colors: true, chord: true, scale: true }
+  // Mode Phrase patterns — Color Set + 5 degree-cycle traversals are
+  // independent toggles, plus Characteristic Chord (different exercise
+  // type, kept separate).  Each round picks one enabled item at random.
+  const [enabledPatterns, setEnabledPatterns] = useLS<Set<ScalePattern>>(
+    "lt_modeid_phrase_patterns_v3", new Set<ScalePattern>(SCALE_PATTERNS),
   );
-  const [enabledScalePatterns, setEnabledScalePatterns] = useLS<Set<ScalePattern>>(
-    "lt_modeid_scale_patterns", new Set<ScalePattern>(SCALE_PATTERNS)
-  );
+  const [chordEnabled, setChordEnabled] = useLS<boolean>("lt_modeid_chord_enabled_v3", true);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [hasPlayed, setHasPlayed] = useState(false);
@@ -679,13 +693,16 @@ export default function ModeIdentificationTab({
     const pool = ALL_MODES.filter(m => enabledModes.has(m.name));
     if (!pool.length) { onResult("Enable at least one mode in the pool."); return; }
 
-    // Pick randomly among the enabled play types.
-    const kinds: Array<"colors" | "chord" | "scale"> = [];
-    if (enabledTypes.colors) kinds.push("colors");
-    if (enabledTypes.chord)  kinds.push("chord");
-    if (enabledTypes.scale)  kinds.push("scale");
-    if (!kinds.length) { onResult("Enable Color Set, Characteristic Chord, or Scale."); return; }
-    const kind = randomChoice(kinds);
+    // Pick randomly among the enabled patterns.  Chord is appended as a
+    // pseudo-pattern so the merge-into-one-row UI works.
+    type Picked = ScalePattern | "chord";
+    const choices: Picked[] = [...enabledPatterns];
+    if (chordEnabled) choices.push("chord");
+    if (!choices.length) { onResult("Enable at least one pattern."); return; }
+    const picked: Picked = randomChoice(choices);
+    const kind: "colors" | "chord" | "scale" =
+      picked === "chord" ? "chord" :
+      picked === "color-set" ? "colors" : "scale";
 
     const mode = randomChoice(pool);
     const [low, high] = strictWindowBounds(tonicPc, edo, lowestOct, highestOct);
@@ -697,11 +714,14 @@ export default function ModeIdentificationTab({
     let chordInfo: { name: string; degrees: string[] } | null = null;
     let pattern: ScalePattern | null = null;
 
-    if (kind === "colors") {
-      // Use the same strict window as scales: phrase ends at the tonic
-      // of `highestOct` (no bleed into the next octave above).
-      const tightHigh = tonicPc + (highestOct - 4) * edo;
-      const tightLow  = tonicPc + (lowestOct  - 4) * edo;
+    // Strict window for any horizontal phrase (Color Set + Scale): the
+    // phrase ends at the tonic of `highestOct`, no bleed into the
+    // octave above.  Characteristic Chord uses the wider bounds since
+    // it's a vertical sonority.
+    const tightHigh = tonicPc + (highestOct - 4) * edo;
+    const tightLow  = tonicPc + (lowestOct  - 4) * edo;
+
+    if (picked === "color-set") {
       const shuffled = [...ARCHETYPES].sort(() => Math.random() - 0.5);
       let result: PhraseResult = null;
       for (const arche of shuffled) {
@@ -712,7 +732,8 @@ export default function ModeIdentificationTab({
       frames = result.notes.map(n => [n]);
       gapMs = Math.round(noteSec * 1000);
       degrees = result.degrees;
-    } else if (kind === "chord") {
+      pattern = "color-set";
+    } else if (picked === "chord") {
       const built = generateChord(mode, midAbs, edo, low, high);
       if (!built) { onResult("Mode has no chord options."); return; }
       frames = [built.notes];
@@ -720,14 +741,9 @@ export default function ModeIdentificationTab({
       degrees = built.degrees;
       chordInfo = { name: built.chordName, degrees: built.degrees };
     } else {
-      // Scale exercises strictly stop at the tonic of `highestOct` —
-      // notes never go above that.  strictWindowBounds returns the top
-      // of the next octave (tonic+edo) as the upper bound; scales pull
-      // that back to (tonic+0) so the phrase doesn't bleed into the
-      // octave above the user's register.
-      const scaleHigh = tonicPc + (highestOct - 4) * edo;
-      const scaleLow  = tonicPc + (lowestOct  - 4) * edo;
-      const built = generateScale(mode, midAbs, edo, scaleLow, scaleHigh, Array.from(enabledScalePatterns), maxNotes);
+      // picked is one of the scale patterns.  Pass a single-pattern pool
+      // so the user gets exactly what they enabled.
+      const built = generateScale(mode, midAbs, edo, tightLow, tightHigh, [picked], maxNotes);
       if (!built) { onResult("Could not fit scale in register."); return; }
       frames = built.notes.map(n => [n]);
       gapMs = Math.round(noteSec * 1000);
@@ -815,64 +831,48 @@ export default function ModeIdentificationTab({
             className="w-28 accent-[#7173e6]" />
           <span className="text-xs text-[#555] w-10 font-mono">{noteSec.toFixed(2)}s</span>
         </div>
-        {/* Play-type toggles — Play button picks randomly from those enabled */}
+        {/* Pattern toggles — single merged row.  Each round picks one
+            enabled pattern at random.  Color Set runs the archetype
+            phrase generator; the four "Scale Nths" patterns walk the
+            diatonic degree wheel by N (3rds = +2, 4ths = +3 mod 7,
+            etc.) with free voice-leading so the phrase stays inside
+            the register.  Scale Shuffled is a random permutation.
+            Characteristic Chord is a vertical sonority. */}
         <div>
-          <label className="text-xs text-[#888] block mb-1">Play types</label>
-          <div className="flex gap-1">
-            {([
-              { key: "colors", label: "Color Set",            color: "#7173e6" },
-              { key: "chord",  label: "Characteristic Chord", color: "#a06cc8" },
-              { key: "scale",  label: "Scale",                color: "#5cca8a" },
-            ] as const).map(t => {
-              const on = enabledTypes[t.key];
-              return (
-                <button key={t.key}
-                  onClick={() => setEnabledTypes(prev => {
-                    const next = { ...prev, [t.key]: !prev[t.key] };
-                    // At least one must stay enabled
-                    if (!next.colors && !next.chord && !next.scale) return prev;
-                    return next;
-                  })}
-                  className={`px-2 py-1 text-[10px] rounded border transition-colors ${
-                    on ? "text-white" : "bg-[#111] border-[#2a2a2a] text-[#666] hover:text-[#aaa]"
-                  }`}
-                  style={on ? { backgroundColor: t.color + "30", borderColor: t.color, color: t.color } : {}}>
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        {/* Scale patterns — only selectable when the Scale play type is on */}
-        <div className={enabledTypes.scale ? "" : "opacity-50"}>
-          <label className="text-xs text-[#888] block mb-1">
-            Scale patterns
-            {!enabledTypes.scale && <span className="ml-1 text-[#555]">(enable Scale to edit)</span>}
-          </label>
+          <label className="text-xs text-[#888] block mb-1">Patterns</label>
           <div className="flex gap-1 flex-wrap">
             {SCALE_PATTERNS.map(p => {
-              const on = enabledScalePatterns.has(p);
-              const color = "#5cca8a";
-              const disabled = !enabledTypes.scale;
+              const on = enabledPatterns.has(p);
+              const color = p === "color-set" ? "#7173e6" : "#5cca8a";
               return (
                 <button key={p}
-                  disabled={disabled}
-                  onClick={() => setEnabledScalePatterns(prev => {
+                  onClick={() => setEnabledPatterns(prev => {
                     const next = new Set(prev);
                     if (next.has(p)) {
-                      if (next.size > 1) next.delete(p);
+                      // At least one phrase pattern OR chord must stay on.
+                      if (next.size > 1 || chordEnabled) next.delete(p);
                     } else next.add(p);
                     return next;
                   })}
                   className={`px-2 py-1 text-[10px] rounded border transition-colors ${
-                    disabled ? "cursor-not-allowed bg-[#0e0e0e] border-[#222] text-[#444]"
-                    : on ? "" : "bg-[#111] border-[#2a2a2a] text-[#666] hover:text-[#aaa]"
+                    on ? "" : "bg-[#111] border-[#2a2a2a] text-[#666] hover:text-[#aaa]"
                   }`}
-                  style={!disabled && on ? { backgroundColor: color + "30", borderColor: color, color } : undefined}>
+                  style={on ? { backgroundColor: color + "30", borderColor: color, color } : undefined}>
                   {SCALE_PATTERN_LABEL[p]}
                 </button>
               );
             })}
+            <button
+              onClick={() => {
+                if (chordEnabled && enabledPatterns.size === 0) return;
+                setChordEnabled(!chordEnabled);
+              }}
+              className={`px-2 py-1 text-[10px] rounded border transition-colors ${
+                chordEnabled ? "" : "bg-[#111] border-[#2a2a2a] text-[#666] hover:text-[#aaa]"
+              }`}
+              style={chordEnabled ? { backgroundColor: "#a06cc830", borderColor: "#a06cc8", color: "#a06cc8" } : undefined}>
+              Characteristic Chord
+            </button>
           </div>
         </div>
       </div>
