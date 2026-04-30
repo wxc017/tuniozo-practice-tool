@@ -1384,26 +1384,30 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
       // Render the editing bar at a larger natural size so it fills
       // the bottom pane.  Override geometry, then restore.
       const containerW = editPaneRef.current.parentElement?.clientWidth ?? 900;
-      // Render the editing bar at the SAME natural size as the
-      // preview (no STAVE_AREA_H / LINE_SPACING override) — VexFlow
-      // 5's Stave option API didn't actually scale the staff.
-      // The visible enlargement is instead done by CSS-scaling the
-      // rendered SVG; the click handler divides pointer coords by
-      // EDIT_PANE_SCALE so hits still align.
-      const targetStaveH = STAVE_AREA_H;
+      // The editing bar uses the same per-pixel staff geometry as
+      // the preview (LINE_SPACING = 10), then CSS-scales the SVG by
+      // EDIT_PANE_SCALE for the visual enlargement.  We DO override
+      // STAVE_AREA_H + STAVE_TOP_Y so the SVG box fits the staff
+      // tightly — otherwise the default 160 px area leaves a big
+      // empty band above + below the staff once scaled.
+      const targetStaveH = 64;   // 4*LS (= 40) + 24 px margins
       const targetLS = LINE_SPACING;
       const savedMW    = MEASURE_W;
       const savedMPR   = MEASURES_PER_ROW;
       const savedSAH   = STAVE_AREA_H;
       const savedLS    = LINE_SPACING;
       const savedSTY   = STAVE_TOP_Y;
+      // Pre-scale width budget: the CSS-scaled SVG must fit inside
+      // the wrapper (`width: 100%`), so the pre-scale natural width
+      // must be at most containerW / EDIT_PANE_SCALE.  Subtract
+      // CLEF_EXTRA_W (still allocated even when clef is hidden) and
+      // a small margin to keep the right barline visible.
+      const preScaleW  = containerW / EDIT_PANE_SCALE;
       MEASURES_PER_ROW = 1;
-      MEASURE_W        = Math.max(280, containerW - CLEF_EXTRA_W - 30);
+      MEASURE_W        = Math.max(280, preScaleW - CLEF_EXTRA_W - 6);
       LINE_SPACING     = targetLS;
       STAVE_AREA_H     = targetStaveH;
-      // Small top margin so ledger lines for crash / hh fit above
-      // the top staff line.
-      STAVE_TOP_Y      = Math.max(14, Math.floor(targetStaveH * 0.06));
+      STAVE_TOP_Y      = 12;  // small top margin so cymbals sit clear of the SVG edge
       try {
         const synthSetup: ScoreSetup = {
           ...activeProject.setup,
@@ -3446,7 +3450,7 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
              × scale + header + padding) so there's no extra dead
              space below it. */}
         <div ref={editPaneContainerRef} className="flex-shrink-0 bg-[#070707] border-t border-[#222] px-0 pt-1 pb-0 overflow-hidden"
-             style={{ height: STAVE_AREA_H * EDIT_PANE_SCALE + 38 }}>
+             style={{ height: 64 * EDIT_PANE_SCALE + 32 }}>
           <div className="flex items-center gap-2 mb-1 px-3 text-[10px] text-[#666] uppercase tracking-wider">
             <span>Editing bar</span>
             <span className="text-white font-mono">{editingBarIdx + 1}</span>
@@ -3501,10 +3505,7 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
               position: "relative",
               display: "block",
               width: "100%",
-              height: STAVE_AREA_H * EDIT_PANE_SCALE,
-              // Prevent the browser's native text selection from
-              // kicking in when the user drags on the edit pane —
-              // we use the drag for our own mass-select rectangle.
+              height: 64 * EDIT_PANE_SCALE,
               userSelect: "none",
               WebkitUserSelect: "none",
             }}
