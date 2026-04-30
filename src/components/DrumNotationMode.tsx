@@ -3,11 +3,15 @@ import {
 } from "react";
 import {
   Renderer, Stave, StaveNote, Voice, Formatter, Beam, Barline, Accidental, Dot,
+  Articulation, Annotation, GraceNote, GraceNoteGroup, Parenthesis,
+  Tuplet, Volta,
   GhostNote as VFGhostNote,
   type StaveNoteStruct,
 } from "vexflow";
 import {
   NoteData, NoteEntryProject, ScoreSetup, Duration, AccidentalType,
+  NoteheadType, NOTEHEAD_SUFFIX, NOTEHEAD_LABELS, NOTEHEAD_ORDER,
+  DrumArticulation, DRUM_ARTIC_LABELS, DRUM_ARTIC_ORDER, DrumStick,
   DURATION_SLOTS, DURATION_ORDER, DURATION_NAMES, VF_DURATION_MAP,
   KEY_NAMES, KEY_LABELS, measureSlots, decomposeSlotsToRestSpecs, noteSlots,
   linePosToPitch, pitchToLineIdx,
@@ -70,6 +74,60 @@ function usableWidth(): number {
 }
 function rowSvgW(count: number): number {
   return CLEF_EXTRA_W + count * MEASURE_W + 10;
+}
+
+// Append the notehead glyph suffix to a VexFlow pitch key.  Drum mode
+// uses this to swap regular drumheads for X / circle-X / diamond etc.
+function pitchWithHead(pitch: string, head?: NoteheadType): string {
+  if (!head || head === "default") return pitch;
+  return pitch + NOTEHEAD_SUFFIX[head];
+}
+
+// Apply drum-mode articulation modifiers to a freshly-built StaveNote.
+// Reuses VexFlow's standard glyphs so the look matches AccentStudy /
+// VexDrumNotation:
+//   accent → ">" articulation above
+//   ghost  → parentheses around the notehead
+//   flam   → 1 slashed grace note before
+//   drag   → 2 slashed grace notes before
+function applyDrumArtic(
+  vfn: StaveNote,
+  artic: DrumArticulation | undefined,
+  keyIdx: number,
+  pitch: string,
+) {
+  if (!artic || artic === "normal") return;
+  if (artic === "accent") {
+    try { vfn.addModifier(new Articulation("a>").setPosition(3), keyIdx); } catch { /* */ }
+    return;
+  }
+  if (artic === "ghost") {
+    try { vfn.addModifier(new Parenthesis(1 /* LEFT */), keyIdx); } catch { /* */ }
+    try { vfn.addModifier(new Parenthesis(2 /* RIGHT */), keyIdx); } catch { /* */ }
+    return;
+  }
+  if (artic === "flam" || artic === "drag") {
+    const count = artic === "flam" ? 1 : 2;
+    const gracers: GraceNote[] = [];
+    for (let i = 0; i < count; i++) {
+      gracers.push(new GraceNote({
+        keys: [pitch],
+        duration: "16",
+        slash: true,
+      } as StaveNoteStruct));
+    }
+    try { vfn.addModifier(new GraceNoteGroup(gracers, false), keyIdx); } catch { /* */ }
+  }
+}
+
+function applyDrumStick(vfn: StaveNote, stick: DrumStick | undefined, keyIdx: number) {
+  if (!stick) return;
+  try {
+    const a = new Annotation(stick);
+    // Position 4 = above; matches VexDrumNotation's sticking placement.
+    (a as unknown as { setPosition(p: number): Annotation }).setPosition(4);
+    vfn.addModifier(a, keyIdx);
+  } catch { /* */ }
 }
 
 // idGroups[i] = array of NoteData.ids for vfNotes[i] (chord = multiple ids)
@@ -136,7 +194,7 @@ function buildVFNotes(
       const isSel = selectedIds.includes(note.id);
       const color = isPlay ? "#88ccff" : isSel ? "#7173e6" : "#ffffff";
       const vfn = new StaveNote({
-        keys: [note.pitch],
+        keys: [pitchWithHead(note.pitch, note.notehead)],
         duration: VF_DURATION_MAP[note.duration],
         dots: note.dotted ? 1 : 0,
         clef,
@@ -147,6 +205,8 @@ function buildVFNotes(
       if (note.accidental) {
         try { vfn.addModifier(new Accidental(note.accidental), 0); } catch { /* skip */ }
       }
+      applyDrumArtic(vfn, note.articulation, 0, pitchWithHead(note.pitch, note.notehead));
+      applyDrumStick(vfn, note.stick, 0);
       vfn.setStyle({ fillStyle: color, strokeStyle: color });
       try {
         (vfn as unknown as { setLedgerLineStyle(s: object): void })
@@ -166,7 +226,7 @@ function buildVFNotes(
         pitchToLineIdx(b.pitch, vfClef) - pitchToLineIdx(a.pitch, vfClef)
       );
       const dotted = sorted.some(n => n.dotted);
-      const keys = sorted.map(n => n.pitch);
+      const keys = sorted.map(n => pitchWithHead(n.pitch, n.notehead));
       const vfn = new StaveNote({
         keys,
         duration: VF_DURATION_MAP[sorted[0].duration],
@@ -180,6 +240,8 @@ function buildVFNotes(
         if (n.accidental) {
           try { vfn.addModifier(new Accidental(n.accidental), idx); } catch { /* skip */ }
         }
+        applyDrumArtic(vfn, n.articulation, idx, pitchWithHead(n.pitch, n.notehead));
+        applyDrumStick(vfn, n.stick, idx);
       });
       // Color each notehead individually so selecting one doesn't highlight the whole chord
       const keyColors = sorted.map(n => {
@@ -276,6 +338,28 @@ function renderScore(
         stave.addTimeSignature(`${ts.num}/${ts.den}`);
       }
       if (isLast) stave.setEndBarType(Barline.type.END);
+
+      // First / second / third ending bracket (Volta) — added BEFORE
+      // draw so VexFlow places the bracket correctly above the stave.
+      const voltaLabel = setup.perBarVolta?.[mIdx];
+      if (voltaLabel) {
+        try {
+          const next = setup.perBarVolta?.[mIdx + 1];
+          const prev = setup.perBarVolta?.[mIdx - 1];
+          // BEGIN: this bar starts a volta and the next bar isn't part
+          // of the same one.  MID: continued.  END / END_MID: closes.
+          // Single-bar volta = BEGIN_END.
+          let voltaType: number;
+          // Volta.type values: 1=BEGIN, 2=MID, 3=END, 4=BEGIN_END.
+          if (!prev && !next) voltaType = 4;          // single-bar
+          else if (!prev) voltaType = 1;              // start of multi-bar
+          else if (!next) voltaType = 3;              // end of multi-bar
+          else voltaType = 2;                          // middle
+          (stave as unknown as { setVoltaType(t: number, l: string, y: number): void })
+            .setVoltaType(voltaType, voltaLabel, -8);
+        } catch { /* skip volta errors */ }
+      }
+
       stave.setContext(ctx).draw();
 
       // Record actual usable note area from VexFlow.
@@ -393,6 +477,50 @@ function renderScore(
           ctx.setStrokeStyle("#ffffff");
           ctx.setFillStyle("#ffffff");
           beams.forEach(b => { try { b.setContext(ctx).draw(); } catch { /* skip */ } });
+
+          // ── Tuplet brackets ──
+          // Walk vfNotes alongside mNotes; whenever consecutive notes
+          // share the same `tuplet` value, group them into a single
+          // VexFlow Tuplet bracket.  notesOccupied uses standard
+          // ratios: 3:2, 5:4, 6:4, 7:4 — matching common drum-set
+          // tuplet conventions.
+          {
+            const tupletGroups: { notes: StaveNote[]; n: 3 | 5 | 6 | 7 }[] = [];
+            let runStart = -1;
+            let runN: 3 | 5 | 6 | 7 | null = null;
+            const flushRun = (endIdx: number) => {
+              if (runStart < 0 || runN === null) return;
+              const groupNotes = vfNotes.slice(runStart, endIdx);
+              if (groupNotes.length >= 2) tupletGroups.push({ notes: groupNotes, n: runN });
+              runStart = -1;
+              runN = null;
+            };
+            for (let i = 0; i < vfNotes.length; i++) {
+              const nd = mNotes.find(n => n.startSlot === slotMap[i]);
+              const t = nd?.tuplet;
+              if (t && (runN === null || t === runN)) {
+                if (runStart < 0) { runStart = i; runN = t; }
+              } else {
+                flushRun(i);
+                if (t) { runStart = i; runN = t; }
+              }
+            }
+            flushRun(vfNotes.length);
+
+            for (const g of tupletGroups) {
+              const occupied = g.n === 3 ? 2 : g.n === 6 ? 4 : 4; // 5:4, 7:4
+              try {
+                const tup = new Tuplet(g.notes, {
+                  numNotes: g.n,
+                  notesOccupied: occupied,
+                  bracketed: true,
+                  ratioed: false,
+                });
+                tup.setContext(ctx).draw();
+              } catch { /* skip tuplet errors */ }
+            }
+          }
+
 
           // Build anchor map from actual rendered positions of ALL tickables
           // (both real notes and ghost fills).  This ensures the hover grid
@@ -1086,18 +1214,12 @@ function NoteEntryLogBar({ activeProject }: { activeProject: NoteEntryProject })
 
 // ── Main editor ──────────────────────────────────────────────────────────────
 
-interface NoteEntryModeProps {
-  /** When provided, auto-opens that project on mount and hides the
-   *  internal project list — used by `ScoringMode` so there's a
-   *  single unified project picker for both Harmonic and Drum. */
+interface DrumNotationModeProps {
   controlledActiveId?: string;
-  /** Called when the editor's "Back to projects" button is pressed.
-   *  When omitted, the button falls back to clearing `activeProject`
-   *  so the internal project list reappears. */
   onBack?: () => void;
 }
 
-export default function NoteEntryMode({ controlledActiveId, onBack }: NoteEntryModeProps = {}) {
+export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNotationModeProps = {}) {
   const [projects, setProjectsState] = useState<NoteEntryProject[]>(loadProjects);
   const [activeProject, setActiveProject] = useState<NoteEntryProject | null>(null);
   const [showSetup, setShowSetup] = useState(false);
@@ -1115,6 +1237,14 @@ export default function NoteEntryMode({ controlledActiveId, onBack }: NoteEntryM
   const _denseGrid = duration === "16" || duration === "32"
     || notes.some(n => n.duration === "16" || n.duration === "32");
   const [accidental, setAccidental] = useState<AccidentalType | null>(null);
+  // Active notehead for newly-placed notes (drum mode).  "default" =
+  // round drumhead.  Selecting a notehead here makes subsequent
+  // placements use it; pressing a notehead key with notes selected
+  // re-skins those instead.
+  const [notehead, setNotehead] = useState<NoteheadType>("default");
+  // Active tuplet for new placements (3 / 5 / 6 / 7).  null = no
+  // tuplet.  Set by Aered subdivision keys 3/5/6/7 and reset by 1/2/4/8.
+  const [activeTuplet, setActiveTuplet] = useState<3 | 5 | 6 | 7 | null>(null);
   const [isRest, setIsRest] = useState(false);
   const [hoverPos, setHoverPos] = useState<HoverPos | null>(null);
   const [dragRect, setDragRect] = useState<{ x1:number; y1:number; x2:number; y2:number } | null>(null);
@@ -1310,10 +1440,57 @@ export default function NoteEntryMode({ controlledActiveId, onBack }: NoteEntryM
       }
       if (e.ctrlKey && e.key === "z") { e.preventDefault(); undo(); return; }
 
-      const durKeys: Record<string, Duration> = {
-        "1": "w", "2": "h", "3": "q", "4": "8", "5": "16", "6": "32",
-      };
-      if (durKeys[e.key]) { setDuration(durKeys[e.key]); return; }
+      // ── Aered bar-manipulation keybinds ──────────────────────────
+      // I  → insert empty bar after the active project's last bar
+      // Shift+B → duplicate the last bar
+      // Shift+R → remove the last bar (kept Shift to avoid collision
+      //           with `r` for rest toggle and `R` for sticking)
+      if (e.key === "I" && activeProject) {
+        e.preventDefault();
+        setActiveProject({
+          ...activeProject,
+          setup: { ...activeProject.setup, barCount: activeProject.setup.barCount + 1 },
+        });
+        return;
+      }
+      if (e.key === "B" && e.shiftKey && activeProject) {
+        e.preventDefault();
+        const lastIdx = activeProject.setup.barCount - 1;
+        const dupNotes = notes
+          .filter(n => n.measure === lastIdx)
+          .map(n => ({ ...n, id: crypto.randomUUID(), measure: lastIdx + 1 }));
+        setNotes(prev => [...prev, ...dupNotes]);
+        setActiveProject({
+          ...activeProject,
+          setup: { ...activeProject.setup, barCount: activeProject.setup.barCount + 1 },
+        });
+        return;
+      }
+      if (e.key === "R" && e.shiftKey && activeProject && activeProject.setup.barCount > 1) {
+        e.preventDefault();
+        const lastIdx = activeProject.setup.barCount - 1;
+        setNotes(prev => prev.filter(n => n.measure !== lastIdx));
+        setActiveProject({
+          ...activeProject,
+          setup: { ...activeProject.setup, barCount: activeProject.setup.barCount - 1 },
+        });
+        return;
+      }
+
+      // Aered-style subdivision keys (drum mode):
+      //   1 = quarter, 2 = 8th, 3 = quarter triplet, 4 = 16th,
+      //   5 = quintuplet (16ths in 5:4), 6 = 8th triplet,
+      //   7 = septuplet, 8 = 32nd
+      // Non-tuplet keys (1/2/4/8) clear the active tuplet so the
+      // next click places a regular note.
+      if (e.key === "1") { setDuration("q"); setActiveTuplet(null); return; }
+      if (e.key === "2") { setDuration("8"); setActiveTuplet(null); return; }
+      if (e.key === "3") { setDuration("q"); setActiveTuplet(3); return; }
+      if (e.key === "4") { setDuration("16"); setActiveTuplet(null); return; }
+      if (e.key === "5") { setDuration("16"); setActiveTuplet(5); return; }
+      if (e.key === "6") { setDuration("8"); setActiveTuplet(6); return; }
+      if (e.key === "7") { setDuration("16"); setActiveTuplet(7); return; }
+      if (e.key === "8") { setDuration("32"); setActiveTuplet(null); return; }
       if (e.key === "0" || e.key === "r") { setIsRest(r => !r); return; }
 
       // Arrow keys move primary selected note pitch
@@ -1333,7 +1510,50 @@ export default function NoteEntryMode({ controlledActiveId, onBack }: NoteEntryM
       if (selectedIds.length > 0) {
         if (e.key === "#") setNotes(prev => prev.map(n => selectedIds.includes(n.id) ? { ...n, accidental: "#" as AccidentalType } : n));
         if (e.key === "b") setNotes(prev => prev.map(n => selectedIds.includes(n.id) ? { ...n, accidental: "b" as AccidentalType } : n));
-        if (e.key === "n") setNotes(prev => prev.map(n => selectedIds.includes(n.id) ? { ...n, accidental: "n" as AccidentalType } : n));
+        // n = natural collides with Aered's "normal" articulation — in
+        // drum mode we treat lowercase n as articulation-normal.
+
+        // Aered-style articulation keys (drum mode).  Apply to selected
+        // notes; clear with "n" or by re-pressing the same key.
+        if (e.key === "a" || e.key === "A") {
+          e.preventDefault();
+          setNotes(prev => prev.map(n => selectedIds.includes(n.id) && !n.isRest
+            ? { ...n, articulation: n.articulation === "accent" ? "normal" : "accent" } : n));
+        }
+        if (e.key === "g" || e.key === "G") {
+          e.preventDefault();
+          setNotes(prev => prev.map(n => selectedIds.includes(n.id) && !n.isRest
+            ? { ...n, articulation: n.articulation === "ghost" ? "normal" : "ghost" } : n));
+        }
+        if (e.key === "f" || e.key === "F") {
+          e.preventDefault();
+          setNotes(prev => prev.map(n => selectedIds.includes(n.id) && !n.isRest
+            ? { ...n, articulation: n.articulation === "flam" ? "normal" : "flam" } : n));
+        }
+        if (e.key === "d" || e.key === "D") {
+          e.preventDefault();
+          setNotes(prev => prev.map(n => selectedIds.includes(n.id) && !n.isRest
+            ? { ...n, articulation: n.articulation === "drag" ? "normal" : "drag" } : n));
+        }
+        if (e.key === "n" || e.key === "N") {
+          // Drum: clear articulation back to normal.  Harmonic users
+          // already have "n" mapped to natural via the row above; this
+          // additional clear is harmless when accidental is "n".
+          setNotes(prev => prev.map(n => selectedIds.includes(n.id) && !n.isRest
+            ? { ...n, articulation: "normal", accidental: "n" as AccidentalType } : n));
+        }
+        // Sticking: R / L (uppercase only so it doesn't fight with
+        // common single-letter shortcuts on harmonic side).
+        if (e.key === "R") {
+          e.preventDefault();
+          setNotes(prev => prev.map(n => selectedIds.includes(n.id) && !n.isRest
+            ? { ...n, stick: n.stick === "R" ? undefined : "R" } : n));
+        }
+        if (e.key === "L") {
+          e.preventDefault();
+          setNotes(prev => prev.map(n => selectedIds.includes(n.id) && !n.isRest
+            ? { ...n, stick: n.stick === "L" ? undefined : "L" } : n));
+        }
       }
     };
     window.addEventListener("keydown", handler);
@@ -1536,6 +1756,8 @@ export default function NoteEntryMode({ controlledActiveId, onBack }: NoteEntryM
       duration,
       pitch: isRest ? "b/4" : hp.pitch,
       accidental: accidental ?? undefined,
+      notehead: notehead === "default" ? undefined : notehead,
+      tuplet: activeTuplet ?? undefined,
       isRest,
     };
     setNotes(prev => {
@@ -1551,7 +1773,7 @@ export default function NoteEntryMode({ controlledActiveId, onBack }: NoteEntryM
       );
     });
     setSelectedIds([]);
-  }, [activeProject, notes, duration, accidental, isRest, selectedIds, getOverlayPos, showYT, syncPoints]);
+  }, [activeProject, notes, duration, accidental, notehead, activeTuplet, isRest, selectedIds, getOverlayPos, showYT, syncPoints]);
 
   // ── Project actions ──────────────────────────────────────────────────────
 
@@ -1564,9 +1786,6 @@ export default function NoteEntryMode({ controlledActiveId, onBack }: NoteEntryM
     historyRef.current = [];
   }
 
-  // Auto-open the project specified by the parent (ScoringMode) when
-  // running in controlled mode.  Re-runs on id change so the parent
-  // can hot-swap projects without remounting.
   useEffect(() => {
     if (!controlledActiveId) return;
     const p = projects.find(pp => pp.id === controlledActiveId);
@@ -1666,6 +1885,301 @@ export default function NoteEntryMode({ controlledActiveId, onBack }: NoteEntryM
       activeProject.title.replace(/\s+/g, "_"),
       { showTitles: true, splitSections: false },
     );
+  }
+
+  // ── Drum playback (Web Audio synthesis) ──────────────────────────
+  // Maps each placed note to a drum-sample type using its (pitch,
+  // notehead) pair, then schedules a synthesized hit at the right
+  // time in the AudioContext.  No external samples — kicks/snares/
+  // cymbals are generated from oscillators + noise so the editor
+  // works offline and adds zero asset weight.
+  type DrumSound = "kick" | "snare" | "hihat" | "hihat-open" | "ride" | "crash" | "tom-high" | "tom-mid" | "tom-floor" | "hihat-foot";
+
+  function pitchToDrum(pitch: string, notehead?: NoteheadType): DrumSound {
+    const isCymbalHead = notehead === "x" || notehead === "circle-x";
+    if (isCymbalHead) {
+      if (pitch.startsWith("a/5")) return "crash";
+      if (pitch.startsWith("g/5")) return "hihat";
+      if (pitch.startsWith("f/5")) return "ride";
+      if (pitch.startsWith("d/4")) return "hihat-foot";
+      return "hihat";
+    }
+    // Regular notehead — drum body.  Map by Y position.
+    if (pitch.startsWith("f/4") || pitch.startsWith("e/4")) return "kick";
+    if (pitch.startsWith("c/5")) return "snare";
+    if (pitch.startsWith("e/5") || pitch.startsWith("f/5")) return "tom-high";
+    if (pitch.startsWith("d/5")) return "tom-mid";
+    if (pitch.startsWith("a/4") || pitch.startsWith("b/4")) return "tom-floor";
+    return "snare";
+  }
+
+  function noiseBuffer(ctx: AudioContext, durSec: number): AudioBuffer {
+    const sr = ctx.sampleRate;
+    const buf = ctx.createBuffer(1, Math.floor(sr * durSec), sr);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * 0.6;
+    return buf;
+  }
+
+  function playDrumHit(ctx: AudioContext, t: number, kind: DrumSound, accent: boolean = false) {
+    const dest = ctx.destination;
+    const vol = accent ? 1.0 : 0.75;
+
+    if (kind === "kick") {
+      // Three-component kick: thump (sine pitch sweep) + body (low
+      // triangle sustain) + click (high noise transient).  Sounds
+      // markedly more "drum-like" than a bare sine sweep.
+      const thump = ctx.createOscillator();
+      const thumpG = ctx.createGain();
+      thump.type = "sine";
+      thump.frequency.setValueAtTime(150, t);
+      thump.frequency.exponentialRampToValueAtTime(40, t + 0.10);
+      thumpG.gain.setValueAtTime(vol * 1.0, t);
+      thumpG.gain.exponentialRampToValueAtTime(0.001, t + 0.20);
+      thump.connect(thumpG); thumpG.connect(dest);
+      thump.start(t); thump.stop(t + 0.22);
+
+      const sub = ctx.createOscillator();
+      const subG = ctx.createGain();
+      sub.type = "sine";
+      sub.frequency.setValueAtTime(55, t);
+      subG.gain.setValueAtTime(vol * 0.5, t);
+      subG.gain.exponentialRampToValueAtTime(0.001, t + 0.30);
+      sub.connect(subG); subG.connect(dest);
+      sub.start(t); sub.stop(t + 0.32);
+
+      const click = ctx.createBufferSource();
+      click.buffer = noiseBuffer(ctx, 0.005);
+      const cf = ctx.createBiquadFilter();
+      cf.type = "highpass"; cf.frequency.value = 1500;
+      const cg = ctx.createGain();
+      cg.gain.setValueAtTime(vol * 0.35, t);
+      cg.gain.exponentialRampToValueAtTime(0.001, t + 0.008);
+      click.connect(cf); cf.connect(cg); cg.connect(dest);
+      click.start(t); click.stop(t + 0.012);
+
+    } else if (kind === "snare") {
+      // Three-component snare: tonal body (200 Hz triangle), high
+      // rattle noise (HP 1500), low buzz noise (BP 400 with ring).
+      const body = ctx.createOscillator();
+      const bodyG = ctx.createGain();
+      body.type = "triangle";
+      body.frequency.setValueAtTime(200, t);
+      body.frequency.exponentialRampToValueAtTime(170, t + 0.08);
+      bodyG.gain.setValueAtTime(vol * 0.45, t);
+      bodyG.gain.exponentialRampToValueAtTime(0.001, t + 0.10);
+      body.connect(bodyG); bodyG.connect(dest);
+      body.start(t); body.stop(t + 0.12);
+
+      const rattle = ctx.createBufferSource();
+      rattle.buffer = noiseBuffer(ctx, 0.18);
+      const rf = ctx.createBiquadFilter();
+      rf.type = "highpass"; rf.frequency.value = 1500;
+      const rg = ctx.createGain();
+      rg.gain.setValueAtTime(vol * 0.85, t);
+      rg.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+      rattle.connect(rf); rf.connect(rg); rg.connect(dest);
+      rattle.start(t); rattle.stop(t + 0.20);
+
+      const buzz = ctx.createBufferSource();
+      buzz.buffer = noiseBuffer(ctx, 0.10);
+      const bf = ctx.createBiquadFilter();
+      bf.type = "bandpass"; bf.frequency.value = 400; bf.Q.value = 1.5;
+      const bg = ctx.createGain();
+      bg.gain.setValueAtTime(vol * 0.4, t);
+      bg.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+      buzz.connect(bf); bf.connect(bg); bg.connect(dest);
+      buzz.start(t); buzz.stop(t + 0.14);
+
+    } else if (kind === "hihat" || kind === "hihat-foot") {
+      // Metallic hi-hat: square-wave summed at non-harmonic ratios,
+      // bandpassed and HP-filtered for that "ssch" character.
+      const fund = 320;
+      const ratios = [2, 3, 4.16, 5.43, 6.79, 8.21];
+      const hg = ctx.createGain();
+      const dur = kind === "hihat-foot" ? 0.04 : 0.07;
+      hg.gain.setValueAtTime(vol * (kind === "hihat-foot" ? 0.35 : 0.45), t);
+      hg.gain.exponentialRampToValueAtTime(0.001, t + dur);
+
+      const hpf = ctx.createBiquadFilter();
+      hpf.type = "highpass"; hpf.frequency.value = 7000;
+      const bpf = ctx.createBiquadFilter();
+      bpf.type = "bandpass"; bpf.frequency.value = 10000;
+
+      ratios.forEach(r => {
+        const o = ctx.createOscillator();
+        o.type = "square";
+        o.frequency.value = fund * r;
+        o.connect(hpf);
+        o.start(t); o.stop(t + dur + 0.01);
+      });
+      hpf.connect(bpf); bpf.connect(hg); hg.connect(dest);
+
+    } else if (kind === "hihat-open") {
+      const fund = 320;
+      const ratios = [2, 3, 4.16, 5.43, 6.79, 8.21];
+      const hg = ctx.createGain();
+      hg.gain.setValueAtTime(vol * 0.5, t);
+      hg.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+      const hpf = ctx.createBiquadFilter();
+      hpf.type = "highpass"; hpf.frequency.value = 5000;
+      ratios.forEach(r => {
+        const o = ctx.createOscillator();
+        o.type = "square";
+        o.frequency.value = fund * r;
+        o.connect(hpf);
+        o.start(t); o.stop(t + 0.4);
+      });
+      hpf.connect(hg); hg.connect(dest);
+
+    } else if (kind === "ride") {
+      // Pinged ride: pitched bell tone + bandpassed noise wash.
+      const ping = ctx.createOscillator();
+      const pingG = ctx.createGain();
+      ping.type = "triangle";
+      ping.frequency.setValueAtTime(2400, t);
+      pingG.gain.setValueAtTime(vol * 0.3, t);
+      pingG.gain.exponentialRampToValueAtTime(0.001, t + 0.20);
+      ping.connect(pingG); pingG.connect(dest);
+      ping.start(t); ping.stop(t + 0.22);
+
+      const wash = ctx.createBufferSource();
+      wash.buffer = noiseBuffer(ctx, 0.30);
+      const wf = ctx.createBiquadFilter();
+      wf.type = "bandpass"; wf.frequency.value = 4500; wf.Q.value = 0.6;
+      const wg = ctx.createGain();
+      wg.gain.setValueAtTime(vol * 0.35, t);
+      wg.gain.exponentialRampToValueAtTime(0.001, t + 0.30);
+      wash.connect(wf); wf.connect(wg); wg.connect(dest);
+      wash.start(t); wash.stop(t + 0.32);
+
+    } else if (kind === "crash") {
+      // Crash: layered noise with two filter bands + slow decay.
+      const dur = 1.2;
+      const layers = [
+        { hp: 3500, gain: 0.55, dur },
+        { hp: 6000, gain: 0.40, dur: dur * 0.8 },
+      ];
+      for (const l of layers) {
+        const n = ctx.createBufferSource();
+        n.buffer = noiseBuffer(ctx, l.dur);
+        const f = ctx.createBiquadFilter();
+        f.type = "highpass"; f.frequency.value = l.hp;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(vol * l.gain, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + l.dur);
+        n.connect(f); f.connect(g); g.connect(dest);
+        n.start(t); n.stop(t + l.dur + 0.05);
+      }
+
+    } else if (kind === "tom-high" || kind === "tom-mid" || kind === "tom-floor") {
+      // Pitched tom: sine sweep + body resonance via parallel
+      // triangle one octave below.  Decay length scales with size.
+      const f0 = kind === "tom-high" ? 240 : kind === "tom-mid" ? 170 : 110;
+      const decay = kind === "tom-high" ? 0.20 : kind === "tom-mid" ? 0.28 : 0.40;
+      const o = ctx.createOscillator();
+      const og = ctx.createGain();
+      o.type = "sine";
+      o.frequency.setValueAtTime(f0, t);
+      o.frequency.exponentialRampToValueAtTime(f0 * 0.55, t + decay * 0.7);
+      og.gain.setValueAtTime(vol * 0.85, t);
+      og.gain.exponentialRampToValueAtTime(0.001, t + decay);
+      o.connect(og); og.connect(dest);
+      o.start(t); o.stop(t + decay + 0.02);
+
+      const body = ctx.createOscillator();
+      const bg = ctx.createGain();
+      body.type = "triangle";
+      body.frequency.setValueAtTime(f0 * 0.5, t);
+      bg.gain.setValueAtTime(vol * 0.30, t);
+      bg.gain.exponentialRampToValueAtTime(0.001, t + decay * 1.1);
+      body.connect(bg); bg.connect(dest);
+      body.start(t); body.stop(t + decay * 1.15);
+    }
+  }
+
+  const playCtxRef = useRef<AudioContext | null>(null);
+  const [drumPlaying, setDrumPlaying] = useState(false);
+  const drumStopAtRef = useRef<number>(0);
+
+  // Refs / timers for the playhead — populated during drum playback.
+  const drumHighlightTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  async function handlePlayDrums() {
+    if (!activeProject) return;
+    if (drumPlaying) {
+      // Stop
+      try { playCtxRef.current?.close(); } catch { /* */ }
+      playCtxRef.current = null;
+      drumHighlightTimeoutsRef.current.forEach(clearTimeout);
+      drumHighlightTimeoutsRef.current = [];
+      setPlayingNoteIds([]);
+      setDrumPlaying(false);
+      return;
+    }
+    const Ctx = (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext);
+    const ctx = new Ctx();
+    playCtxRef.current = ctx;
+
+    // Tempo lives on activeProject's title field for now (no tempo
+    // ScoreSetup field yet); accept either project.title-derived
+    // tempo or the constant default.  Future: add a tempo input.
+    const tempo = 100;
+    const slotsPerQuarter = 8;
+    const secondsPerSlot = 60 / tempo / slotsPerQuarter;
+    const startTime = ctx.currentTime + 0.1;
+
+    // Walk every measure, scheduling drum hits AND playhead-highlight
+    // timeouts.  Playhead highlight = the existing `playingNoteIds`
+    // state which the renderer already colors cyan during playback;
+    // we set it to the bar-slot's note ids when each hit fires and
+    // clear ~150 ms later.
+    let elapsedSlots = 0;
+    drumHighlightTimeoutsRef.current.forEach(clearTimeout);
+    drumHighlightTimeoutsRef.current = [];
+
+    for (let m = 0; m < activeProject.setup.barCount; m++) {
+      const ts = activeProject.setup.perBarTimeSig?.[m] ?? activeProject.setup.defaultTimeSig;
+      const mSlots = measureSlots(ts);
+      const measureNotes = notes.filter(n => n.measure === m && !n.isRest);
+
+      // Group by startSlot so highlights stay in sync for chords.
+      const bySlot = new Map<number, NoteData[]>();
+      for (const n of measureNotes) {
+        if (!bySlot.has(n.startSlot)) bySlot.set(n.startSlot, []);
+        bySlot.get(n.startSlot)!.push(n);
+      }
+
+      for (const [slot, group] of bySlot) {
+        const t = startTime + (elapsedSlots + slot) * secondsPerSlot;
+        for (const n of group) {
+          const sound = pitchToDrum(n.pitch, n.notehead);
+          const accent = n.articulation === "accent";
+          playDrumHit(ctx, t, sound, accent);
+        }
+        // Highlight the chord's notes in sync with the audio.  Delay
+        // is computed from real wall-clock time so it stays aligned
+        // with the AudioContext schedule.
+        const ids = group.map(n => n.id);
+        const highlightDelayMs = (t - ctx.currentTime) * 1000;
+        const onMs = setTimeout(() => setPlayingNoteIds(ids), Math.max(0, highlightDelayMs));
+        const offMs = setTimeout(() => setPlayingNoteIds([]), Math.max(0, highlightDelayMs + 160));
+        drumHighlightTimeoutsRef.current.push(onMs, offMs);
+      }
+      elapsedSlots += mSlots;
+    }
+
+    drumStopAtRef.current = startTime + elapsedSlots * secondsPerSlot + 0.5;
+    setDrumPlaying(true);
+
+    // Auto-clear at end of schedule.
+    const stopT = setTimeout(() => {
+      try { ctx.close(); } catch { /* */ }
+      if (playCtxRef.current === ctx) playCtxRef.current = null;
+      setPlayingNoteIds([]);
+      setDrumPlaying(false);
+    }, (drumStopAtRef.current - ctx.currentTime) * 1000);
+    drumHighlightTimeoutsRef.current.push(stopT);
   }
 
   function handleSendToPhraseDecomp() {
@@ -1830,9 +2344,6 @@ export default function NoteEntryMode({ controlledActiveId, onBack }: NoteEntryM
 
   // ── Render ───────────────────────────────────────────────────────────────
 
-  // Controlled mode (parent ScoringMode supplies the active project):
-  // suppress the internal project list entirely.  Render a brief
-  // placeholder while the auto-open effect resolves.
   if (controlledActiveId && !activeProject) {
     return <div className="text-xs text-[#666] p-6">Loading score…</div>;
   }
@@ -1935,8 +2446,41 @@ export default function NoteEntryMode({ controlledActiveId, onBack }: NoteEntryM
             ))}
           </div>
           <div className="w-px h-4 bg-[#2a2a2a]" />
+          {/* Notehead picker (drum mode) — selecting a head sets it as
+              the active head for new notes; with a selection, also
+              re-skins the selected notes immediately. */}
+          <div className="flex gap-1">
+            {NOTEHEAD_ORDER.map(h => (
+              <button
+                key={h}
+                onClick={() => {
+                  setNotehead(h);
+                  if (selectedIds.length > 0) {
+                    setNotes(prev => prev.map(n =>
+                      selectedIds.includes(n.id) && !n.isRest
+                        ? { ...n, notehead: h === "default" ? undefined : h }
+                        : n,
+                    ));
+                  }
+                }}
+                className={toolBtn(notehead === h)}
+                title={NOTEHEAD_LABELS[h]}
+              >
+                {h === "default" ? "●" : h === "x" ? "✕" : h === "circle-x" ? "⊗" : h === "diamond" ? "◇" : "△"}
+              </button>
+            ))}
+          </div>
+          <div className="w-px h-4 bg-[#2a2a2a]" />
           <button onClick={undo} className={toolBtn(false)} title="Undo (Ctrl+Z)">↩ Undo</button>
           <button onClick={handleFillRests} className={toolBtn(false)} title="Fill all empty gaps with rests">𝄼 Fill Rests</button>
+          <div className="w-px h-4 bg-[#2a2a2a]" />
+          <button
+            onClick={handlePlayDrums}
+            className={`${toolBtn(drumPlaying)} ${drumPlaying ? "bg-[#3a1a1a] border-[#6a3a3a] text-[#e08080]" : "bg-[#1a3a1a] border-[#3a6a3a] text-[#6abf6a]"}`}
+            title="Play the score with synthesized drum sounds"
+          >
+            {drumPlaying ? "■ Stop" : "▶ Play Drums"}
+          </button>
         </div>
 
         {/* Export */}

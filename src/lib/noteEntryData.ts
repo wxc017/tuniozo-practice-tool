@@ -4,6 +4,52 @@ export type ClefType = "treble" | "bass";
 export type Duration = "w" | "h" | "q" | "8" | "16" | "32";
 export type AccidentalType = "n" | "b" | "#";
 
+/** Notehead glyph variants supported by VexFlow.  Used in drum mode
+ *  to distinguish drums (default round head), cymbals (X), bells /
+ *  cross-sticks (circle-X), rim shots (diamond), etc.  Harmonic mode
+ *  ignores this field. */
+export type NoteheadType = "default" | "x" | "circle-x" | "diamond" | "triangle";
+
+/** VexFlow key suffix for a notehead.  Append directly to the pitch
+ *  string (e.g. `"c/5" + NOTEHEAD_SUFFIX.x`  →  `"c/5/x2"`). */
+export const NOTEHEAD_SUFFIX: Record<NoteheadType, string> = {
+  "default":  "",
+  "x":        "/x2",
+  "circle-x": "/x3",
+  "diamond":  "/d0",
+  "triangle": "/t1",
+};
+
+export const NOTEHEAD_LABELS: Record<NoteheadType, string> = {
+  "default":  "Drum",
+  "x":        "X (Cymbal)",
+  "circle-x": "Ø (Bell / Cross-stick)",
+  "diamond":  "◇ (Rim-shot)",
+  "triangle": "△ (Variant)",
+};
+
+export const NOTEHEAD_ORDER: NoteheadType[] = ["default", "x", "circle-x", "diamond", "triangle"];
+
+// ── Drum-mode articulations & stickings ─────────────────────────────
+// Mirrors the semantics of `accentData.ts` (used by AccentStudy /
+// VexDrumNotation) so the rendering style is consistent across the
+// app: accent = ">"  ghost = parens  flam = 1 grace note  drag = 2.
+export type DrumArticulation = "normal" | "accent" | "ghost" | "flam" | "drag";
+
+export const DRUM_ARTIC_LABELS: Record<DrumArticulation, string> = {
+  normal: "Normal",
+  accent: "Accent (>)",
+  ghost:  "Ghost ( )",
+  flam:   "Flam",
+  drag:   "Drag",
+};
+
+export const DRUM_ARTIC_ORDER: DrumArticulation[] = ["normal", "accent", "ghost", "flam", "drag"];
+
+/** Stick assignment shown above a note (R = right, L = left).  Same
+ *  letter convention as `accentData.Sticking` derivations. */
+export type DrumStick = "R" | "L";
+
 export const DURATION_SLOTS: Record<Duration, number> = {
   w: 32, h: 16, q: 8, "8": 4, "16": 2, "32": 1,
 };
@@ -34,6 +80,19 @@ export interface NoteData {
   isTieEnd?: boolean;
   bendSteps?: number;
   isRest: boolean;
+  /** Optional notehead glyph (drum mode).  Falls back to "default"
+   *  when absent — harmonic mode never sets this so its rendering is
+   *  unchanged. */
+  notehead?: NoteheadType;
+  /** Drum-mode articulation: accent / ghost / flam / drag.  Absent or
+   *  "normal" → no extra modifier.  Harmonic mode ignores this. */
+  articulation?: DrumArticulation;
+  /** Drum-mode stick assignment ("R" / "L") shown above the note. */
+  stick?: DrumStick;
+  /** Drum-mode tuplet number (3 = triplet, 5 = quintuplet, 6 = sextuplet,
+   *  7 = septuplet).  Consecutive notes sharing the same tuplet value
+   *  get wrapped in a single VexFlow Tuplet bracket at render time. */
+  tuplet?: 3 | 5 | 6 | 7;
 }
 
 /** Actual slot count occupied by a note, accounting for the dot (1.5×). */
@@ -53,12 +112,19 @@ export interface ScoreSetup {
   defaultTimeSig: MeasureTimeSig;
   barCount: number;
   perBarTimeSig?: Record<number, MeasureTimeSig>;
+  /** Per-bar Volta label ("A", "B", "C", "1.", "2.", etc.).  Drum
+   *  mode renders this as a 1st/2nd/3rd-ending bracket above the
+   *  bar.  Multi-bar voltas are inferred by adjacent bars sharing
+   *  the same label. */
+  perBarVolta?: Record<number, string>;
 }
 
 export interface SyncPoint {
   measure: number;
   timestamp: number;
 }
+
+export type Instrument = "harmonic" | "drum";
 
 export interface NoteEntryProject {
   id: string;
@@ -68,6 +134,9 @@ export interface NoteEntryProject {
   syncPoints: SyncPoint[];
   youtubeUrl: string;
   createdAt: number;
+  /** Instrument family — picked at score creation.  Legacy projects
+   *  without this field are treated as "harmonic". */
+  instrument?: Instrument;
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────────────

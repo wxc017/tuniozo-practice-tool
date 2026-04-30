@@ -22,7 +22,7 @@ import ChordChart from "@/components/ChordChart";
 import Konnakol from "@/components/Konnakol";
 import VocalPercussion from "@/components/VocalPercussion";
 import MixedGroups from "@/components/MixedGroups";
-import NoteEntryMode from "@/components/NoteEntryMode";
+import ScoringMode from "@/components/ScoringMode";
 import PhraseDecomposition from "@/components/PhraseDecomposition";
 // Academic mode components — gitignored, only present in local dev
 const academicModules = import.meta.glob([
@@ -598,13 +598,13 @@ export default function App() {
                   { id: "harmony-workshop",     label: "Harmony Workshop" },
                   { id: "chord-chart",          label: "Chord Chart" },
                   { id: "lattice",              label: "Harmonic Lattice" },
+                  { id: "note-entry",           label: "Scoring" },
                   // Beta-gated
                   { id: "vocal-percussion",     label: "Vocal Percussion",     beta: true },
                   { id: "mixed-groups",         label: "Mixed Groups",         beta: true },
                   { id: "drill-response",       label: "Drill & Response",     beta: true },
                   { id: "uncommon-meters",      label: "Uncommon Meters",      beta: true },
                   { id: "konnakol",             label: "Solkattu",             beta: true },
-                  { id: "note-entry",           label: "Quick Transcriptions", beta: true },
                   { id: "phrase-decomposition", label: "Phrase Decomposition", beta: true },
                   { id: "interval-browser",     label: "Interval Browser",     beta: true },
                   { id: "microwave",            label: "Microwave",            beta: true },
@@ -923,10 +923,10 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Note Entry ── */}
+      {/* ── Scoring (Quick Transcriptions: Harmonic + Drum) ── */}
       {section === "note-entry" && (
-        <div className="flex-1 flex flex-col overflow-hidden px-4">
-          <NoteEntryMode />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <ScoringMode />
         </div>
       )}
 
@@ -1489,7 +1489,7 @@ export default function App() {
             if (!v) {
               const BETA_SECTIONS = new Set([
                 "vocal-percussion","mixed-groups","drill-response","uncommon-meters",
-                "konnakol","note-entry","phrase-decomposition","interval-browser",
+                "konnakol","phrase-decomposition","interval-browser",
                 "microwave","temperament-explorer",
               ]);
               if (BETA_SECTIONS.has(section)) setSection("ear-trainer");
