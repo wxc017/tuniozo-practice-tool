@@ -1374,14 +1374,13 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
       // Render the editing bar at a larger natural size so it fills
       // the bottom pane.  Override geometry, then restore.
       const containerW = editPaneRef.current.parentElement?.clientWidth ?? 900;
-      // Reserve ~30 px for the header + padding above the staff.
-      const targetStaveH = Math.max(280, editPaneH - 30);
-      // LINE_SPACING controls the visual height of the staff itself
-      // (4 line-spacings between the 5 staff lines).  Floor of 50
-      // means the staff is at minimum ~5× the size of a preview-pane
-      // bar (LS=10), so the editing bar reads as much bigger and
-      // easier to interact with even on small screens.
-      const targetLS = Math.max(50, Math.floor(targetStaveH / 4.5));
+      // Fixed staff dimensions so the edit-pane render doesn't
+      // depend on the container height — that dependency caused a
+      // layout-resize feedback loop where the bar kept growing.
+      // The container itself stays at its 70 % flex height; the
+      // SVG sits inside at this fixed natural size.
+      const targetStaveH = 360;
+      const targetLS = 80; // ~8× the preview's LINE_SPACING
       const savedMW    = MEASURE_W;
       const savedMPR   = MEASURES_PER_ROW;
       const savedSAH   = STAVE_AREA_H;
@@ -1428,7 +1427,7 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
     } catch (e) {
       console.warn("Edit-pane render error:", e);
     }
-  }, [notes, selectedIds, activeProject, playingNoteIds, editingBarIdx, containerW, editPaneH]);
+  }, [notes, selectedIds, activeProject, playingNoteIds, editingBarIdx, containerW]);
 
   // Auto-save
   useEffect(() => {
