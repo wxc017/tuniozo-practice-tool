@@ -336,6 +336,10 @@ function renderScore(
   notes: NoteData[],
   selectedIds: string[],
   playingIds: string[] = [],
+  /** When true, skip the clef / key sig / time sig on the first
+   *  measure of every row.  Used by the edit pane so the entire bar
+   *  width goes to the 16th-note grid. */
+  hideStaveDecorations: boolean = false,
 ): { positions: NotePixelPos[]; layouts: MeasureLayout[] } {
   el.innerHTML = "";
   const { barCount, defaultTimeSig, clef, keySignature } = setup;
@@ -371,7 +375,7 @@ function renderScore(
       const y = rowY + STAVE_TOP_Y;
 
       const stave = new Stave(x, y, w);
-      if (mInRow === 0) {
+      if (mInRow === 0 && !hideStaveDecorations) {
         stave.addClef(vfClef);
         const keyName = KEY_NAMES[keySignature as keyof typeof KEY_NAMES] ?? "C";
         stave.addKeySignature(keyName);
@@ -1421,6 +1425,7 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
           synthNotes,
           selectedIds,
           playingNoteIds,
+          /* hideStaveDecorations = */ true,
         );
         editPaneLayoutsRef.current = layouts;
         editPaneNotePosRef.current = positions;
@@ -3440,9 +3445,9 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
              Container height is sized to the scaled SVG (~ STAVE_AREA_H
              × scale + header + padding) so there's no extra dead
              space below it. */}
-        <div ref={editPaneContainerRef} className="flex-shrink-0 bg-[#070707] border-t border-[#222] px-3 pt-1 pb-2 overflow-hidden"
-             style={{ height: STAVE_AREA_H * EDIT_PANE_SCALE + 60 }}>
-          <div className="flex items-center gap-2 mb-2 text-[10px] text-[#666] uppercase tracking-wider">
+        <div ref={editPaneContainerRef} className="flex-shrink-0 bg-[#070707] border-t border-[#222] px-0 pt-1 pb-0 overflow-hidden"
+             style={{ height: STAVE_AREA_H * EDIT_PANE_SCALE + 38 }}>
+          <div className="flex items-center gap-2 mb-1 px-3 text-[10px] text-[#666] uppercase tracking-wider">
             <span>Editing bar</span>
             <span className="text-white font-mono">{editingBarIdx + 1}</span>
             <span>of</span>
