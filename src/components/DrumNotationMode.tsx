@@ -1835,12 +1835,18 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
     if (!layout || !start) return;
 
     const rect = editPaneRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / EDIT_PANE_SCALE;
-    const y = (e.clientY - rect.top) / EDIT_PANE_SCALE;
+    const upX = (e.clientX - rect.left) / EDIT_PANE_SCALE;
+    const upY = (e.clientY - rect.top) / EDIT_PANE_SCALE;
 
-    const dx = x - start.x;
-    const dy = y - start.y;
+    const dx = upX - start.x;
+    const dy = upY - start.y;
     const isDrag = Math.abs(dx) > 5 || Math.abs(dy) > 5;
+    // For a click (not a drag) use the *down* coordinates for the
+    // snap — that's where the user actually pressed.  Without this,
+    // a few pixels of finger jitter between down and up can cross a
+    // snap boundary and the note lands on the next grid cell over.
+    const x = isDrag ? upX : start.x;
+    const y = isDrag ? upY : start.y;
 
     // Drag → mass-select notes inside the rectangle.
     if (isDrag) {
