@@ -1374,12 +1374,14 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
       // Render the editing bar at a larger natural size so it fills
       // the bottom pane.  Override geometry, then restore.
       const containerW = editPaneRef.current.parentElement?.clientWidth ?? 900;
-      // Reserve ~50 px for the header + padding inside the pane.
-      const targetStaveH = Math.max(180, editPaneH - 50);
-      // Staff = 4 line-spacings tall.  Use a tighter top margin so
-      // most of the available height goes into the staff itself —
-      // LS = staveH / 5 puts the 4-line staff at ~80 % of the pane.
-      const targetLS = Math.max(18, Math.floor(targetStaveH / 5));
+      // Reserve ~30 px for the header + padding above the staff.
+      const targetStaveH = Math.max(280, editPaneH - 30);
+      // LINE_SPACING controls the visual height of the staff itself
+      // (4 line-spacings between the 5 staff lines).  Floor of 50
+      // means the staff is at minimum ~5× the size of a preview-pane
+      // bar (LS=10), so the editing bar reads as much bigger and
+      // easier to interact with even on small screens.
+      const targetLS = Math.max(50, Math.floor(targetStaveH / 4.5));
       const savedMW    = MEASURE_W;
       const savedMPR   = MEASURES_PER_ROW;
       const savedSAH   = STAVE_AREA_H;
@@ -1391,7 +1393,7 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
       STAVE_AREA_H     = targetStaveH;
       // Small top margin so ledger lines for crash / hh fit above
       // the top staff line.
-      STAVE_TOP_Y      = Math.max(20, Math.floor(targetStaveH * 0.12));
+      STAVE_TOP_Y      = Math.max(14, Math.floor(targetStaveH * 0.06));
       try {
         const synthSetup: ScoreSetup = {
           ...activeProject.setup,
@@ -1779,7 +1781,10 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
     const ts = activeProject.setup.perBarTimeSig?.[editingBarIdx]
       ?? activeProject.setup.defaultTimeSig;
     const totalSlots = measureSlots(ts);
-    const gridSnap = DURATION_SLOTS[duration];
+    // Click grid always snaps to 16th-note positions, independent of
+    // the active placement duration.  The duration picker only
+    // controls what *value* gets placed at the snapped slot.
+    const gridSnap = DURATION_SLOTS["16"];
     const anchors = layout.slotAnchors;
     if (!anchors || anchors.length < 2) { setEditHover(null); return; }
     const slot = xToSlot(x, anchors, gridSnap, totalSlots);
