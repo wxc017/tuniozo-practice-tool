@@ -2620,7 +2620,7 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
   }
 
   return (
-    <div className="flex flex-col h-full w-full" onKeyDown={() => {}}>
+    <div className="flex flex-col h-full max-w-6xl mx-auto w-full" onKeyDown={() => {}}>
       {/* ── Toolbar rows ── */}
       <div className="flex flex-wrap items-center gap-2 py-2">
         {/* Projects + Duration + Rest + Accidentals */}
@@ -3431,7 +3431,7 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
              Container height is sized to the scaled SVG (~ STAVE_AREA_H
              × scale + header + padding) so there's no extra dead
              space below it. */}
-        <div ref={editPaneContainerRef} className="flex-shrink-0 bg-[#070707] border-t border-[#222] px-0 pt-1 pb-0 overflow-hidden"
+        <div ref={editPaneContainerRef} className="flex-shrink-0 bg-[#070707] border-t border-[#222] px-12 pt-1 pb-0 overflow-hidden"
              style={{ height: 120 * EDIT_PANE_SCALE + 50 }}>
           <div className="flex items-center gap-2 mb-1 px-3 text-[10px] text-[#666] uppercase tracking-wider">
             <span>Editing bar</span>
