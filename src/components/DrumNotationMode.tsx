@@ -1405,7 +1405,7 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
       MEASURE_W        = Math.max(280, preScaleW - CLEF_EXTRA_W - 6);
       LINE_SPACING     = targetLS;
       STAVE_AREA_H     = targetStaveH;
-      STAVE_TOP_Y      = 40;  // staff at y=40..80 sits centered in 120-tall SVG
+      STAVE_TOP_Y      = 8;  // staff sits as high as possible in the pane (small margin for ledger lines)
       try {
         const synthSetup: ScoreSetup = {
           ...activeProject.setup,
