@@ -49,14 +49,14 @@ interface YTPlayerAPI {
 }
 
 // ── Layout constants ────────────────────────────────────────────────────────
-const STAVE_TOP_Y      = 38;
-const LINE_SPACING     = 10;
-const STAVE_AREA_H     = 160;
+// `let` (not const) so the edit-pane render can temporarily override
+// them to draw the editing measure at a larger natural size.  Each
+// override is paired with a finally-restore so the preview render
+// keeps the standard scale.
+let STAVE_TOP_Y      = 38;
+let LINE_SPACING     = 10;
+let STAVE_AREA_H     = 160;
 const DEFAULT_MEASURE_W = 220;
-/** CSS-scale factor applied to the edit-pane SVG so the editing bar
- *  is visibly larger than the preview bars.  Click coordinates are
- *  divided by this factor before being mapped back to slot/pitch. */
-const EDIT_PANE_SCALE = 1.7;
 const CLEF_EXTRA_W      = 78;
 const DEFAULT_MPR       = 4;
 // Active layout — updated per render for dense grids (16th/32nd)
@@ -1314,11 +1314,21 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
   useEffect(() => {
     if (!editPaneRef.current || !activeProject) return;
     try {
-      const w = editPaneRef.current.clientWidth || 900;
-      const savedMW = MEASURE_W;
-      const savedMPR = MEASURES_PER_ROW;
-      MEASURE_W = Math.max(400, w - CLEF_EXTRA_W - 30);
+      // Render the editing bar at a larger natural size so it's
+      // visibly bigger than preview bars without resorting to CSS
+      // transforms (which collapse the layout box and clip the
+      // staff).  Override geometry, then restore.
+      const containerW = editPaneRef.current.parentElement?.clientWidth ?? 900;
+      const savedMW    = MEASURE_W;
+      const savedMPR   = MEASURES_PER_ROW;
+      const savedSAH   = STAVE_AREA_H;
+      const savedLS    = LINE_SPACING;
+      const savedSTY   = STAVE_TOP_Y;
       MEASURES_PER_ROW = 1;
+      MEASURE_W        = Math.max(280, containerW - CLEF_EXTRA_W - 30);
+      LINE_SPACING     = 16;   // up from 10
+      STAVE_AREA_H     = 220;  // up from 160 — gives room for the taller staff
+      STAVE_TOP_Y      = 28;
       try {
         const synthSetup: ScoreSetup = {
           ...activeProject.setup,
@@ -1341,8 +1351,11 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
         );
         editPaneLayoutsRef.current = layouts;
       } finally {
-        MEASURE_W = savedMW;
+        MEASURE_W        = savedMW;
         MEASURES_PER_ROW = savedMPR;
+        STAVE_AREA_H     = savedSAH;
+        LINE_SPACING     = savedLS;
+        STAVE_TOP_Y      = savedSTY;
       }
     } catch (e) {
       console.warn("Edit-pane render error:", e);
@@ -1675,8 +1688,8 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
     const layout = editPaneLayoutsRef.current[0];
     if (!layout) { setEditHover(null); return; }
     const rect = editPaneRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / EDIT_PANE_SCALE;
-    const y = (e.clientY - rect.top) / EDIT_PANE_SCALE;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
     const ts = activeProject.setup.perBarTimeSig?.[editingBarIdx]
       ?? activeProject.setup.defaultTimeSig;
     const totalSlots = measureSlots(ts);
@@ -1703,10 +1716,8 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
     if (!layout) return;
 
     const rect = editPaneRef.current.getBoundingClientRect();
-    // Un-scale the click position so it lines up with the underlying
-    // (unscaled) VexFlow render.
-    const x = (e.clientX - rect.left) / EDIT_PANE_SCALE;
-    const y = (e.clientY - rect.top) / EDIT_PANE_SCALE;
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
 
     const ts = activeProject.setup.perBarTimeSig?.[editingBarIdx]
       ?? activeProject.setup.defaultTimeSig;
@@ -2600,16 +2611,10 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
           </button>
         </div>
 
-        {/* Setup / YouTube / X-Ray */}
+        {/* Setup / YouTube */}
         <div className="flex items-center gap-1 bg-[#111] border border-[#1e1e1e] rounded-lg px-3 py-2">
           <button onClick={() => setShowSetup(true)} className={toolBtn(false)}>⚙ Setup</button>
           <button onClick={() => setShowYT(v => !v)} className={toolBtn(showYT)}>▶ YouTube</button>
-          <button onClick={() => setShowXRay(v => !v)} className={toolBtn(showXRay)} title="Toggle X-Ray mode: beat grid + empty space">⊡ X-Ray</button>
-        </div>
-
-        {/* Practice Log */}
-        <div className="flex items-center gap-2 bg-[#111] border border-[#1e1e1e] rounded-lg px-3 py-2">
-          <NoteEntryLogBar activeProject={activeProject} />
         </div>
       </div>
 
@@ -2641,14 +2646,16 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
 
       {/* ── Main content ── */}
       <div className="flex flex-col flex-1 overflow-hidden">
-        {/* Score area (preview) — top half, all bars visible at compact
-             size.  Scrollable so long pieces stay reachable. */}
-        <div ref={scoreAreaRef} className="flex-shrink-0 max-h-[42vh] overflow-auto py-2 border-b border-[#1a1a1a] flex items-start gap-3 pr-3">
+        {/* Preview — fills the remaining vertical space and scrolls
+             freely (only place in the editor that scrolls). */}
+        <div ref={scoreAreaRef} className="flex-1 overflow-auto py-2 border-b border-[#1a1a1a] flex items-start gap-3 pr-3">
           <div style={{ position: "relative", display: "inline-block" }}>
             {/* VexFlow rendering target — lineHeight:0 prevents baseline gap under the SVG */}
             <div ref={scoreRef} style={{ display: "block", lineHeight: 0 }} />
 
-            {/* Interactive overlay */}
+            {/* Preview overlay — click-to-select-bar only.  No
+                pointer move (no hover ghost), no drag-rect, no note
+                placement.  All editing happens in the edit pane. */}
             <div
               ref={overlayRef}
               style={{
@@ -2656,12 +2663,17 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
                 top: 0, left: 0,
                 width: scoreDims.w,
                 height: scoreDims.h,
-                cursor: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Ccircle cx='5' cy='5' r='3' fill='white' fill-opacity='.85'/%3E%3C/svg%3E") 5 5, auto`,
+                cursor: "pointer",
               }}
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onPointerLeave={handlePointerLeave}
+              onClick={(e) => {
+                if (!activeProject || !overlayRef.current) return;
+                const rect = overlayRef.current.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const hp = computeHover(x, y, activeProject.setup, duration, measureLayoutsRef.current);
+                if (!hp) return;
+                if (hp.mIdx !== editingBarIdx) setEditingBarIdx(hp.mIdx);
+              }}
             />
 
             {/* Ghost note + drag-select rect + sync cursor SVG */}
@@ -3218,58 +3230,57 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
                 </div>
               </div>
             )}
-            {/* Per-row "+" button — anchored to the right edge of
-                each rendered preview line.  When the last line has
-                room, the + is at the end of that line (adds a bar
-                inline).  When the last line is full, an extra +
-                appears below it as a "start a new line" affordance.
-                Positions are read from measureLayoutsRef and rendered
-                as absolutely-placed buttons over the score wrapper. */}
+            {/* Single green "+" button for adding a bar.  Lives at
+                the spot where the next bar would render:
+                  - last row has < 4 bars  →  + at end of that row
+                  - last row has exactly 4 →  + on a new line below
+                Full intermediate rows DON'T get a +. */}
             {(() => {
+              void renderTick;
               const layouts = measureLayoutsRef.current;
               if (!layouts.length) return null;
-              // Group by row, find the last bar per row, and compute
-              // the right-edge x and a Y centered on the staff.
-              const rowsMap = new Map<number, { lastMIdx: number; rightX: number; y: number }>();
-              for (const l of layouts) {
-                const rightX = l.noteStartX + l.justifyWidth + 6;
-                const cur = rowsMap.get(l.rowIdx);
-                if (!cur || l.mIdx > cur.lastMIdx) {
-                  rowsMap.set(l.rowIdx, { lastMIdx: l.mIdx, rightX, y: l.staveTopLineY + 2 * l.lineSpacing });
-                }
+              const maxRow = Math.max(...layouts.map(l => l.rowIdx));
+              const lastRow = layouts.filter(l => l.rowIdx === maxRow);
+              const lastInRow = lastRow.reduce((a, b) => a.mIdx > b.mIdx ? a : b);
+              const rowFull = lastRow.length >= MEASURES_PER_ROW;
+
+              let x: number, y: number, hint: string;
+              if (rowFull) {
+                // Start a new row: + goes below the current row at
+                // the very left where the new row would begin.
+                x = 8;
+                y = lastInRow.staveTopLineY + STAVE_AREA_H + 2 * lastInRow.lineSpacing;
+                hint = "Start a new line with another bar";
+              } else {
+                // Append to current row: + at right edge of last bar.
+                x = lastInRow.noteStartX + lastInRow.justifyWidth + 8;
+                y = lastInRow.staveTopLineY + 2 * lastInRow.lineSpacing;
+                hint = "Add a bar to this line";
               }
-              const buttons: ReactNode[] = [];
-              for (const [rowIdx, info] of rowsMap) {
-                const lastInRow = (info.lastMIdx + 1) % MEASURES_PER_ROW === 0;
-                buttons.push(
-                  <button
-                    key={`add-${rowIdx}`}
-                    onClick={() => {
-                      void renderTick;
-                      setActiveProject({
-                        ...activeProject,
-                        setup: { ...activeProject.setup, barCount: activeProject.setup.barCount + 1 },
-                      });
-                    }}
-                    className="absolute w-7 h-7 rounded-full bg-[#1a3a1a] border-2 border-[#3a8a3a] text-[#7adf7a] text-sm font-bold hover:bg-[#1a4a1a] hover:border-[#5acf5a] hover:text-[#9aff9a] transition-colors flex items-center justify-center"
-                    style={{ left: info.rightX, top: info.y - 14 }}
-                    title={lastInRow ? "Start a new line with another bar" : "Add a bar to this line"}
-                  >
-                    +
-                  </button>,
-                );
-              }
-              return buttons;
+              return (
+                <button
+                  onClick={() => {
+                    setActiveProject({
+                      ...activeProject,
+                      setup: { ...activeProject.setup, barCount: activeProject.setup.barCount + 1 },
+                    });
+                  }}
+                  className="absolute w-7 h-7 rounded-full bg-[#1a3a1a] border-2 border-[#3a8a3a] text-[#7adf7a] text-sm font-bold hover:bg-[#1a4a1a] hover:border-[#5acf5a] hover:text-[#9aff9a] transition-colors flex items-center justify-center"
+                  style={{ left: x, top: y - 14 }}
+                  title={hint}
+                >
+                  +
+                </button>
+              );
             })()}
           </div>
         </div>
 
         {/* ── Edit pane (Aered-style "current measure"): the bar at
-             editingBarIdx, rendered large.  All note placement
-             happens in here; the preview above is read-only and
-             clicking a preview bar just switches the editing
-             target. */}
-        <div className="flex-1 overflow-auto bg-[#070707] border-t border-[#222] p-3">
+             editingBarIdx, rendered large.  Sized to its content and
+             stuck to the bottom edge — no scroll on this pane; the
+             preview above takes any overflow. */}
+        <div className="flex-shrink-0 bg-[#070707] border-t border-[#222] px-3 pt-1 pb-2 overflow-hidden">
           <div className="flex items-center gap-2 mb-2 text-[10px] text-[#666] uppercase tracking-wider">
             <span>Editing bar</span>
             <span className="text-white font-mono">{editingBarIdx + 1}</span>
@@ -3328,22 +3339,15 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
               style={{
                 display: "block",
                 lineHeight: 0,
-                // Scale the rendered SVG so the editing bar is
-                // visibly larger than the preview bars.  Click
-                // handlers undo this scale before computing slot.
-                transform: `scale(${EDIT_PANE_SCALE})`,
-                transformOrigin: "top left",
                 cursor: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Ccircle cx='5' cy='5' r='3' fill='white' fill-opacity='.85'/%3E%3C/svg%3E") 5 5, auto`,
               }}
             />
-            {/* Hover ghost dot — multiplied by EDIT_PANE_SCALE so its
-                position lines up visually with the scaled SVG. */}
             {editHover && (
               <div
                 style={{
                   position: "absolute",
-                  left: editHover.x * EDIT_PANE_SCALE - 5,
-                  top:  editHover.y * EDIT_PANE_SCALE - 5,
+                  left: editHover.x - 5,
+                  top:  editHover.y - 5,
                   width: 10, height: 10,
                   borderRadius: 5,
                   background: "rgba(106, 207, 138, 0.7)",
