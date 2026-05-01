@@ -117,6 +117,13 @@ export interface ScoreSetup {
    *  bar.  Multi-bar voltas are inferred by adjacent bars sharing
    *  the same label. */
   perBarVolta?: Record<number, string>;
+  /** Per-bar section title (e.g. "Verse", "Chorus", "Bridge").
+   *  Drum mode renders this as a boxed text section above the bar. */
+  perBarTitle?: Record<number, string>;
+  /** Per-bar manual line break.  When true, the bar starts a new
+   *  row regardless of MEASURES_PER_ROW.  Bar 0 is always a row
+   *  start so this flag is ignored on it. */
+  perBarBreakBefore?: Record<number, boolean>;
 }
 
 export interface SyncPoint {

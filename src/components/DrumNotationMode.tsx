@@ -64,6 +64,15 @@ const DEFAULT_MEASURE_W = 220;
  *  by this factor before mapping to slot/pitch. */
 const EDIT_PANE_SCALE = 2.4;
 
+/** Edit-pane SVG geometry.  Sized so the highest playable line
+ *  (Crash on G5 with stem-up) AND a row of beat-count labels (1 + 2 + …)
+ *  fit above the staff, and the hh-foot ledger line fits below.
+ *   - top: ~28 SVG units (8 for beat labels + 20 for crash + stem)
+ *   - staff: 40 SVG units (5 lines × 10 spacing)
+ *   - bottom: ~52 SVG units (room for hh-foot at lineIdx 4.5 + clearance) */
+const EDIT_STAVE_TOP_Y = 28;
+const EDIT_STAVE_AREA_H = 120;
+
 /** The 8 valid drum lines.  Click placement on the edit pane snaps
  *  the cursor's lineIdx to whichever of these is closest; clicks
  *  too far from any are rejected (no note placed).  lineIdx values
@@ -71,8 +80,12 @@ const EDIT_PANE_SCALE = 2.4;
  *  staff line F5). */
 const DRUM_LINES: { name: string; lineIdx: number; pitch: string; defaultHead?: "x" }[] = [
   // Cymbals → X notehead by default.  Drums → regular round head.
-  { name: "Crash",   lineIdx: -2,   pitch: "a/5", defaultHead: "x" },
-  { name: "Hi-Hat",  lineIdx: -1,   pitch: "g/5", defaultHead: "x" },
+  // lineIdx must match the actual VexFlow render position of the pitch
+  // (lineIdx 0 = top staff line F5, +0.5 = next space below, etc.).
+  // The hover-dot Y is computed from lineIdx, so any mismatch puts the
+  // dot in the wrong place relative to where the note actually draws.
+  { name: "Crash",   lineIdx: -1,   pitch: "a/5", defaultHead: "x" },
+  { name: "Hi-Hat",  lineIdx: 0,    pitch: "f/5", defaultHead: "x" },
   { name: "Tom 1",   lineIdx: 0.5,  pitch: "e/5" },
   { name: "Tom 2",   lineIdx: 1,    pitch: "d/5" },
   { name: "Snare",   lineIdx: 1.5,  pitch: "c/5" },
@@ -99,8 +112,11 @@ function xToSlotEven(x: number, totalSlots: number, gridSnap: number, layout: Me
   return Math.max(0, Math.min(totalSlots - gridSnap, snapped));
 }
 
-/** Snap a clicked lineIdx to the nearest drum line within tolerance. */
-const DRUM_SNAP_TOLERANCE = 0.7;
+/** Snap a clicked lineIdx to the nearest drum line within tolerance.
+ *  Tolerance is half a staff-space + a bit, so even clicks that drift
+ *  above the topmost drum (Crash) or below the bottommost (HH Foot)
+ *  still snap rather than being silently rejected. */
+const DRUM_SNAP_TOLERANCE = 1.5;
 function snapToDrumLine(lineIdx: number): { lineIdx: number; pitch: string; defaultHead?: "x" } | null {
   let best: typeof DRUM_LINES[number] | null = null;
   let bestDist = Infinity;
@@ -133,6 +149,39 @@ function usableWidth(): number {
 }
 function rowSvgW(count: number): number {
   return CLEF_EXTRA_W + count * MEASURE_W + 10;
+}
+
+/** Row layout for the score.  Honours perBarBreakBefore: a `true` flag
+ *  on bar N forces N to start a new row.  Otherwise rows wrap at
+ *  MEASURES_PER_ROW.  Returns parallel arrays so per-bar lookups are O(1). */
+interface RowLayout {
+  /** rows[r] = list of bar indices on row r */
+  rows: number[][];
+  /** rowOf[m] = which row bar m lives on */
+  rowOf: number[];
+  /** mInRowOf[m] = position within its row (0-based) */
+  mInRowOf: number[];
+}
+function computeRowLayout(
+  barCount: number,
+  perBarBreakBefore?: Record<number, boolean>,
+): RowLayout {
+  const rows: number[][] = [];
+  const rowOf: number[] = new Array(barCount).fill(0);
+  const mInRowOf: number[] = new Array(barCount).fill(0);
+  let cur: number[] = [];
+  for (let m = 0; m < barCount; m++) {
+    const forceBreak = m > 0 && !!perBarBreakBefore?.[m];
+    if (forceBreak || cur.length >= MEASURES_PER_ROW) {
+      if (cur.length > 0) rows.push(cur);
+      cur = [];
+    }
+    rowOf[m] = rows.length;
+    mInRowOf[m] = cur.length;
+    cur.push(m);
+  }
+  if (cur.length > 0) rows.push(cur);
+  return { rows, rowOf, mInRowOf };
 }
 
 // Append the notehead glyph suffix to a VexFlow pitch key.  Drum mode
@@ -343,6 +392,7 @@ interface MeasureLayout {
   noteStartX: number;
   justifyWidth: number;
   rowIdx: number;
+  mInRow: number;          // position of this bar within its row (0-based)
   staveTopLineY: number;   // actual y of top staff line from VexFlow
   lineSpacing: number;     // actual px between lines from VexFlow
   slotAnchors: SlotAnchor[]; // sorted (slot→x) for accurate ghost-note positioning
@@ -361,9 +411,13 @@ function renderScore(
 ): { positions: NotePixelPos[]; layouts: MeasureLayout[] } {
   el.innerHTML = "";
   const { barCount, defaultTimeSig, clef, keySignature } = setup;
-  const numRows = Math.ceil(barCount / MEASURES_PER_ROW);
+  const rowLayout = computeRowLayout(barCount, setup.perBarBreakBefore);
+  const numRows = Math.max(1, rowLayout.rows.length);
   const totalH = numRows * STAVE_AREA_H;
-  const totalW = rowSvgW(MEASURES_PER_ROW);
+  // Width must accommodate the LONGEST row when manual breaks produce
+  // unequal rows.  Shorter rows just leave empty space on the right.
+  const longestRow = rowLayout.rows.reduce((max, r) => Math.max(max, r.length), MEASURES_PER_ROW);
+  const totalW = rowSvgW(longestRow);
 
   const renderer = new Renderer(el, Renderer.Backends.SVG);
   renderer.resize(totalW, totalH);
@@ -380,13 +434,12 @@ function renderScore(
   const positions: NotePixelPos[] = [];
   const layouts: MeasureLayout[] = [];
 
-  for (let rowIdx = 0; rowIdx < numRows; rowIdx++) {
+  for (let rowIdx = 0; rowIdx < rowLayout.rows.length; rowIdx++) {
     const rowY = rowIdx * STAVE_AREA_H;
-    const rowStart = rowIdx * MEASURES_PER_ROW;
-    const rowEnd = Math.min(rowStart + MEASURES_PER_ROW, barCount);
+    const rowBars = rowLayout.rows[rowIdx];
 
-    for (let mInRow = 0; mInRow < rowEnd - rowStart; mInRow++) {
-      const mIdx = rowStart + mInRow;
+    for (let mInRow = 0; mInRow < rowBars.length; mInRow++) {
+      const mIdx = rowBars[mInRow];
       const isLast = mIdx === barCount - 1;
       const x = measureX(mInRow);
       const w = measureW(mInRow);
@@ -401,6 +454,18 @@ function renderScore(
         stave.addTimeSignature(`${ts.num}/${ts.den}`);
       }
       if (isLast) stave.setEndBarType(Barline.type.END);
+
+      // Per-bar section title ("Verse", "Chorus", etc.) — drawn in a
+      // boxed label above the staff.  Added BEFORE draw so VexFlow
+      // reserves space for it.
+      const titleLabel = setup.perBarTitle?.[mIdx];
+      if (titleLabel && !hideStaveDecorations) {
+        try {
+          (stave as unknown as {
+            setSection(s: string, y: number, xOffset?: number, fontSize?: number, drawRect?: boolean): void;
+          }).setSection(titleLabel, -16, 0, 12, false);
+        } catch { /* skip section errors */ }
+      }
 
       // First / second / third ending bracket (Volta) — added BEFORE
       // draw so VexFlow places the bracket correctly above the stave.
@@ -430,7 +495,10 @@ function renderScore(
       // Using x + w - noteStartX - 14 correctly accounts for clef/key/time sig overhead
       // in measure 0 and the small barline margin in subsequent measures.
       const noteStartX = (stave as unknown as { getNoteStartX(): number }).getNoteStartX();
-      const justifyWidth = Math.max(60, x + w - noteStartX - 14);
+      // Right-margin = 26px so the last 8th/16th-note flag and beams
+      // don't poke past the barline (a beamed group's right beam end
+      // sits ~10-14px to the right of the rightmost notehead).
+      const justifyWidth = Math.max(60, x + w - noteStartX - 26);
       const staveTopLineY = (stave as unknown as { getYForLine(n: number): number }).getYForLine(0);
       const lineSpacing = (stave as unknown as { getSpacingBetweenLines(): number }).getSpacingBetweenLines();
       const ts = setup.perBarTimeSig?.[mIdx] ?? defaultTimeSig;
@@ -438,9 +506,46 @@ function renderScore(
       const mNotes = notes
         .filter(n => n.measure === mIdx)
         .sort((a, b) => a.startSlot - b.startSlot);
-      // Slot anchor map — built from actual rendered positions so the hover
-      // grid always matches what VexFlow drew.  Recalculated every render.
+      // Slot anchor map — built from a SEPARATE pure-16th-note ghost
+      // format pass so the X-ray grid X positions are identical every
+      // render regardless of what's in the notes voice.  This guarantees
+      // the grid never shifts when notes are placed, deleted, or modified.
+      //
+      // CRUCIAL: we attach the stave to each ghost AFTER format so that
+      // tk.getAbsoluteX() returns SVG-absolute coordinates
+      // (= tickContext.x + stave.getNoteStartX() + Stave.padding (= 12)).
+      // Without a stave attached, getAbsoluteX returns just tickContext.x,
+      // which is in formatter-relative space starting at 0 — that mismatch
+      // is why the grid was rendering offset from the actual notes.
       const slotAnchorMap = new Map<number, number>();
+      {
+        const sxSlots = DURATION_SLOTS["16"]; // = 2
+        const numSixteenths = Math.max(1, Math.round(totalSlots / sxSlots));
+        const gridTickables: VFGhostNote[] = [];
+        for (let i = 0; i < numSixteenths; i++) {
+          gridTickables.push(new VFGhostNote({ duration: "16" }));
+        }
+        const gridVoice = new Voice({ numBeats: ts.num, beatValue: ts.den });
+        (gridVoice as unknown as { setMode(m: number): void }).setMode(2);
+        gridVoice.addTickables(gridTickables);
+        try {
+          const gFmt = new Formatter();
+          gFmt.joinVoices([gridVoice]);
+          gFmt.format([gridVoice], justifyWidth);
+          gridTickables.forEach(tk => {
+            try {
+              (tk as unknown as { setStave(s: Stave): void }).setStave(stave);
+            } catch { /* skip */ }
+          });
+          gridTickables.forEach((tk, i) => {
+            try {
+              const ax = (tk as unknown as { getAbsoluteX(): number }).getAbsoluteX();
+              slotAnchorMap.set(i * sxSlots, ax);
+            } catch { /* skip */ }
+          });
+          slotAnchorMap.set(totalSlots, noteStartX + justifyWidth);
+        } catch { /* skip */ }
+      }
 
       if (mNotes.length > 0) {
         const { vfNotes, idGroups, slotMap } = buildVFNotes(mIdx, mNotes, totalSlots, vfClef, selectedIds, playingIds);
@@ -448,28 +553,18 @@ function renderScore(
 
         // Fill empty slots with VexFlow GhostNotes so the formatter distributes
         // notes across the full measure width (prevents "squishing").
-        // Track the start slot of every tickable so we can build the anchor map.
         const allTickables: (StaveNote | VFGhostNote)[] = [];
-        const allTickableSlots: number[] = [];
         let cursor = 0;
         const addGhosts = (upTo: number) => {
           if (upTo <= cursor) return;
-          // Pad with 16th-note ghosts (2 slots each) so VexFlow
-          // produces an evenly-spaced 16th-note grid.  This makes
-          // the X-ray dashed lines align perfectly to the visible
-          // beat positions whether the bar is empty, sparse, or
-          // fully populated.  Trailing < 2-slot remainder gets a
-          // 32nd-note ghost to keep the alignment.
           let rem = upTo - cursor;
           while (rem >= 2) {
             allTickables.push(new VFGhostNote({ duration: "16" }));
-            allTickableSlots.push(cursor);
             cursor += 2;
             rem -= 2;
           }
           if (rem >= 1) {
             allTickables.push(new VFGhostNote({ duration: "32" }));
-            allTickableSlots.push(cursor);
             cursor += 1;
             rem -= 1;
           }
@@ -477,7 +572,6 @@ function renderScore(
         for (let ni = 0; ni < vfNotes.length; ni++) {
           addGhosts(slotMap[ni]);
           allTickables.push(vfNotes[ni]);
-          allTickableSlots.push(slotMap[ni]);
           const nd = mNotes.find(n => n.startSlot === slotMap[ni]);
           cursor = slotMap[ni] + (nd ? noteSlots(nd) : 8);
         }
@@ -487,30 +581,70 @@ function renderScore(
         (voice as unknown as { setMode(m: number): void }).setMode(2);
         voice.addTickables(allTickables);
 
-        // Anchor voice — a parallel voice of N invisible 16th-note
-        // ghost rests covering the full bar.  Joining this with the
-        // notes voice makes VexFlow's formatter space columns based
-        // on the 16 even time-points, so the X-ray grid stays
-        // locked at uniform 16th-note positions even when an actual
-        // note (quarter, half, etc.) is placed.
-        const sixteenSlots = DURATION_SLOTS["16"]; // = 2
-        const numSixteenths = Math.max(1, Math.round(totalSlots / sixteenSlots));
-        const anchorTickables: VFGhostNote[] = [];
-        for (let i = 0; i < numSixteenths; i++) {
-          anchorTickables.push(new VFGhostNote({ duration: "16" }));
-        }
-        const anchorVoice = new Voice({ numBeats: ts.num, beatValue: ts.den });
-        (anchorVoice as unknown as { setMode(m: number): void }).setMode(2);
-        anchorVoice.addTickables(anchorTickables);
-
         try {
           const fmt = new Formatter();
-          fmt.joinVoices([voice, anchorVoice]);
-          fmt.format([voice, anchorVoice], justifyWidth);
+          fmt.joinVoices([voice]);
+          fmt.format([voice], justifyWidth);
 
-          // Manual beam grouping: group consecutive beamable notes (8th or
-          // shorter) within the same beat.  This is more reliable than
-          // Beam.generateBeams which can silently fail with mixed tick configs.
+          // Anchors come from the pure-16th-note ghost pass above — they
+          // define where the X-ray grid lines sit.  We use them BOTH for
+          // hit-testing AND to forcibly shift each StaveNote onto its
+          // grid column, so the rendered noteheads always sit on the
+          // dashed grid lines regardless of VexFlow's softmax spacing.
+          const anchors: SlotAnchor[] = Array.from(slotAnchorMap.entries())
+            .map(([slot, ax]) => ({ slot, x: ax }))
+            .sort((a, b) => a.slot - b.slot);
+
+          // Pin every real note to its fixed grid X by mutating the
+          // underlying TickContext's X coordinate.  Note.getAbsoluteX()
+          // returns `tickContext.x + stave.getNoteStartX() + Stave.padding`
+          // (Stave.padding = 12 in VexFlow's default Metrics).  The grid
+          // anchors are already SVG-absolute (we attached a stave to the
+          // grid ghosts above), so to make a note land on grid we set
+          // tickContext.x = gridAbsX - noteStartX - 12.  We also zero
+          // xShift so it doesn't add an extra offset on top.
+          const STAVE_PADDING = 12;
+          // Tighten flam / drag grace-note groups against the main
+          // notehead.  VexFlow's default GraceNoteGroup formatter
+          // leaves a gap that reads as too wide for drum notation
+          // (where a flam visually "leans into" the main note).  We
+          // override AFTER the format pass so our value sticks.
+          vfNotes.forEach(vfn => {
+            try {
+              const mods = (vfn as unknown as {
+                getModifiers(): Array<{
+                  getCategory?(): string;
+                  setSpacingFromNextModifier?(x: number): void;
+                }>;
+              }).getModifiers();
+              mods.forEach(mod => {
+                if (mod.getCategory?.() === "GraceNoteGroup") {
+                  // Larger value = grace sits further RIGHT (closer
+                  // to the main note).  16 is enough to nestle the
+                  // slashed grace right against the notehead.
+                  mod.setSpacingFromNextModifier?.(16);
+                }
+              });
+            } catch { /* skip */ }
+          });
+          vfNotes.forEach((vfn, i) => {
+            try {
+              const desiredAbsX = slotToX(slotMap[i], anchors);
+              const tc = (vfn as unknown as {
+                getTickContext(): { setX(x: number): void };
+              }).getTickContext();
+              tc.setX(desiredAbsX - noteStartX - STAVE_PADDING);
+              (vfn as unknown as { setXShift(x: number): void }).setXShift(0);
+            } catch { /* skip */ }
+          });
+
+          // Manual beam grouping: group consecutive beamable notes
+          // (8th or shorter, non-rest) within the same beat.  Beams
+          // never cross a beat boundary; they always render flat per
+          // user preference.  A rest or a quarter-or-longer note
+          // breaks the beam and starts a new group.  Mixed durations
+          // (e.g. 8th + 16th in the same beat) stay in one beam so
+          // VexFlow can draw the partial secondary beams correctly.
           const beatSlots = 32 / ts.den;
           const beams: Beam[] = [];
           {
@@ -520,12 +654,7 @@ function renderScore(
               if (currentGroup.length > 1) {
                 try {
                   const beam = new Beam(currentGroup);
-                  // Flat beams for mixed-duration groups (e.g. 8th + 32nd)
-                  // so the extra beam lines don't tilt the bar sideways.
-                  const durations = currentGroup.map(n => n.getDuration());
-                  if (!durations.every(d => d === durations[0])) {
-                    beam.renderOptions.flatBeams = true;
-                  }
+                  beam.renderOptions.flatBeams = true;
                   beams.push(beam);
                 } catch { /* skip */ }
               }
@@ -546,29 +675,11 @@ function renderScore(
             flushGroup();
           }
 
-          // Draw — VexFlow handles natural spacing, no manual xShift needed.
           voice.draw(ctx, stave);
 
           ctx.setStrokeStyle("#ffffff");
           ctx.setFillStyle("#ffffff");
           beams.forEach(b => { try { b.setContext(ctx).draw(); } catch { /* skip */ } });
-
-
-
-          // Build anchor map from actual rendered positions of ALL tickables
-          // (both real notes and ghost fills).  This ensures the hover grid
-          // exactly matches the on-screen layout.
-          allTickables.forEach((tk, i) => {
-            try {
-              const ax = (tk as unknown as { getAbsoluteX(): number }).getAbsoluteX();
-              slotAnchorMap.set(allTickableSlots[i], ax);
-            } catch { /* skip */ }
-          });
-          slotAnchorMap.set(totalSlots, noteStartX + justifyWidth);
-
-          const anchors: SlotAnchor[] = Array.from(slotAnchorMap.entries())
-            .map(([slot, ax]) => ({ slot, x: ax }))
-            .sort((a, b) => a.slot - b.slot);
 
           // Collect note pixel positions from actual rendered positions.
           vfNotes.forEach((vfn, i) => {
@@ -609,7 +720,7 @@ function renderScore(
       const slotAnchors: SlotAnchor[] = Array.from(slotAnchorMap.entries())
         .map(([slot, x]) => ({ slot, x }))
         .sort((a, b) => a.slot - b.slot);
-      layouts.push({ mIdx, noteStartX, justifyWidth, rowIdx, staveTopLineY, lineSpacing, slotAnchors });
+      layouts.push({ mIdx, noteStartX, justifyWidth, rowIdx, mInRow, staveTopLineY, lineSpacing, slotAnchors });
     }
   }
   // Post-process the SVG so every element is visible on a dark background.
@@ -668,10 +779,11 @@ function notesInDragRect(
   const y1 = Math.min(rect.y1, rect.y2);
   const y2 = Math.max(rect.y1, rect.y2);
 
+  const layout = computeRowLayout(setup.barCount, setup.perBarBreakBefore);
   return notes
     .filter(n => {
-      const mInRow = n.measure % MEASURES_PER_ROW;
-      const rowIdx = Math.floor(n.measure / MEASURES_PER_ROW);
+      const mInRow = layout.mInRowOf[n.measure] ?? 0;
+      const rowIdx = layout.rowOf[n.measure] ?? 0;
       const ts = setup.perBarTimeSig?.[n.measure] ?? setup.defaultTimeSig;
       const totalSlots = measureSlots(ts);
       const nx = usableStart(mInRow) + (n.startSlot / totalSlots) * usableWidth();
@@ -747,21 +859,22 @@ function computeHover(
   const rowIdx = Math.floor(relY / STAVE_AREA_H);
   const rowY = relY - rowIdx * STAVE_AREA_H;
 
-  const rowStart = rowIdx * MEASURES_PER_ROW;
-  if (rowStart >= setup.barCount) return null;
-  const rowEnd = Math.min(rowStart + MEASURES_PER_ROW, setup.barCount);
+  const rowLayout = computeRowLayout(setup.barCount, setup.perBarBreakBefore);
+  if (rowIdx < 0 || rowIdx >= rowLayout.rows.length) return null;
+  const rowBars = rowLayout.rows[rowIdx];
+  if (rowBars.length === 0) return null;
 
   let mInRow = -1;
-  for (let i = 0; i < rowEnd - rowStart; i++) {
+  for (let i = 0; i < rowBars.length; i++) {
     const left = measureX(i);
     const right = left + measureW(i);
     if (relX >= left && relX < right) { mInRow = i; break; }
   }
   if (mInRow < 0) {
-    mInRow = rowEnd - rowStart - 1;
+    mInRow = rowBars.length - 1;
   }
 
-  const mIdx = rowStart + mInRow;
+  const mIdx = rowBars[mInRow];
   const ts = setup.perBarTimeSig?.[mIdx] ?? setup.defaultTimeSig;
   const totalSlots = measureSlots(ts);
   const gridSnap = DURATION_SLOTS[duration];
@@ -802,9 +915,10 @@ function noteAtClick(
   setup: ScoreSetup,
 ): NoteData | undefined {
   // Prefer exact VexFlow positions when available
+  const layout = knownPositions.length > 0 ? null : computeRowLayout(setup.barCount, setup.perBarBreakBefore);
   const pool = knownPositions.length > 0 ? knownPositions : notes.map(n => {
-    const mInRow = n.measure % MEASURES_PER_ROW;
-    const rowIdx = Math.floor(n.measure / MEASURES_PER_ROW);
+    const mInRow = layout!.mInRowOf[n.measure] ?? 0;
+    const rowIdx = layout!.rowOf[n.measure] ?? 0;
     const ts = setup.perBarTimeSig?.[n.measure] ?? setup.defaultTimeSig;
     const totalSlots = measureSlots(ts);
     const nx = usableStart(mInRow) + (n.startSlot / totalSlots) * usableWidth();
@@ -1359,21 +1473,17 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
   }, [activeProject]);
 
   {
+    // Preview always shows DEFAULT_MPR (4) bars per line.  Bar width
+    // fits the container so the row never overflows horizontally
+    // (no left-right scroll), regardless of duration density.
+    const mpr = DEFAULT_MPR;
     if (containerW > 0) {
-      // Fit measures to available width, reducing measures-per-row if needed
-      const minMW = 140; // narrowest acceptable measure
-      let mpr = _denseGrid ? 2 : DEFAULT_MPR;
-      let mw = Math.floor((containerW - CLEF_EXTRA_W - 10) / mpr);
-      while (mw < minMW && mpr > 1) {
-        mpr--;
-        mw = Math.floor((containerW - CLEF_EXTRA_W - 10) / mpr);
-      }
-      MEASURES_PER_ROW = mpr;
-      MEASURE_W = Math.max(mw, minMW);
+      const fitMW = Math.floor((containerW - CLEF_EXTRA_W - 10) / mpr);
+      MEASURE_W = Math.max(fitMW, 80);
     } else {
-      MEASURES_PER_ROW = _denseGrid ? 2 : DEFAULT_MPR;
-      MEASURE_W = _denseGrid ? DEFAULT_MEASURE_W * 2 : DEFAULT_MEASURE_W;
+      MEASURE_W = DEFAULT_MEASURE_W;
     }
+    MEASURES_PER_ROW = mpr;
   }
 
   // Render score on changes
@@ -1415,10 +1525,10 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
       // the bottom pane.  Override geometry, then restore.
       const containerW = editPaneRef.current.parentElement?.clientWidth ?? 900;
       // SVG box big enough that VexFlow's stave draw isn't clipped
-      // and the 40 px staff can sit centered with margins above
-      // (cymbal ledger lines) and below (hh-foot).  120 with TOP_Y =
-      // 40 gives staff y=40..80, centered in 120 px.
-      const targetStaveH = 120;
+      // and the 40 px staff can sit with margins above (cymbal ledger
+      // lines + sticking annotations) and below (hh-foot).
+      // EDIT_STAVE_AREA_H matches the wrapper height calc below.
+      const targetStaveH = EDIT_STAVE_AREA_H;
       const targetLS = LINE_SPACING;
       const savedMW    = MEASURE_W;
       const savedMPR   = MEASURES_PER_ROW;
@@ -1435,7 +1545,7 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
       MEASURE_W        = Math.max(280, preScaleW - CLEF_EXTRA_W - 6);
       LINE_SPACING     = targetLS;
       STAVE_AREA_H     = targetStaveH;
-      STAVE_TOP_Y      = 8;  // staff sits as high as possible in the pane (small margin for ledger lines)
+      STAVE_TOP_Y      = EDIT_STAVE_TOP_Y;  // leaves room above staff for sticking annotations + ledger lines
       try {
         const synthSetup: ScoreSetup = {
           ...activeProject.setup,
@@ -1473,20 +1583,18 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
     }
   }, [notes, selectedIds, activeProject, playingNoteIds, editingBarIdx, containerW]);
 
-  // Auto-save
+  // Auto-save — single source of truth.  Persists the merged state
+  // ({...activeProject, notes, syncPoints, youtubeUrl}) on any change.
+  // We previously had a SECOND effect that saved `activeProject` alone
+  // when its setup changed, but `activeProject.notes` is the stale
+  // open-time copy (the live `notes` state is held separately), so
+  // that second save was clobbering the user's edits any time a setup
+  // field (title, break, time-sig, tempo) changed.
   useEffect(() => {
     if (!activeProject) return;
-    const updated = { ...activeProject, notes, syncPoints, youtubeUrl };
-    saveProject(updated);
+    saveProject({ ...activeProject, notes, syncPoints, youtubeUrl });
     setProjectsState(loadProjects());
-  }, [notes, syncPoints, youtubeUrl]);
-
-  // Persist activeProject directly (tempo, perBarVolta, etc. that
-  // live on the project itself, not in notes).
-  useEffect(() => {
-    if (!activeProject) return;
-    saveProject(activeProject);
-  }, [activeProject]);
+  }, [notes, syncPoints, youtubeUrl, activeProject]);
 
   // Playback cursor animation
   useEffect(() => {
@@ -1539,9 +1647,9 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
       const fracMeasure = sp1.measure + fraction * (sp2.measure - sp1.measure);
       const mIdx = Math.min(Math.floor(fracMeasure), (proj?.setup.barCount ?? 1) - 1);
       const mFrac = fracMeasure - mIdx;
-      const mInRow = mIdx % MEASURES_PER_ROW;
-      const rowIdx = Math.floor(mIdx / MEASURES_PER_ROW);
       const layout = measureLayoutsRef.current.find(l => l.mIdx === mIdx);
+      const mInRow = layout?.mInRow ?? 0;
+      const rowIdx = layout?.rowIdx ?? 0;
       const startX = layout ? layout.noteStartX : measureX(mInRow) + (mInRow === 0 ? CLEF_EXTRA_W : 0);
       const endX = measureX(mInRow) + measureW(mInRow);
       const x = startX + mFrac * (endX - startX);
@@ -1580,12 +1688,25 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
       if ((e.target as HTMLElement).tagName === "INPUT" || (e.target as HTMLElement).tagName === "TEXTAREA") return;
 
       if (e.key === "Escape") { setSelectedIds([]); setLoopRange(null); return; }
-      if ((e.key === "Delete" || e.key === "Backspace") && selectedIds.length > 0) {
-        e.preventDefault();
-        pushHistory(notes);
-        setNotes(prev => prev.filter(n => !selectedIds.includes(n.id)));
-        setSelectedIds([]);
-        return;
+      // Delete / Backspace removes the hovered note (if any) first,
+      // otherwise removes the entire selection.
+      if (e.key === "Delete" || e.key === "Backspace") {
+        const hovered = hoveredNoteIdRef.current;
+        if (hovered) {
+          e.preventDefault();
+          pushHistory(notes);
+          setNotes(prev => prev.filter(n => n.id !== hovered));
+          setSelectedIds(prev => prev.filter(id => id !== hovered));
+          hoveredNoteIdRef.current = null;
+          return;
+        }
+        if (selectedIds.length > 0) {
+          e.preventDefault();
+          pushHistory(notes);
+          setNotes(prev => prev.filter(n => !selectedIds.includes(n.id)));
+          setSelectedIds([]);
+          return;
+        }
       }
       if (e.ctrlKey && e.key === "z") { e.preventDefault(); undo(); return; }
 
@@ -1654,10 +1775,26 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
 
       // Subdivision keybinds (drum mode):
       //   1 quarter, 2 8th, 4 16th, 8 32nd.
-      if (e.key === "1") { setDuration("q");  return; }
-      if (e.key === "2") { setDuration("8");  return; }
-      if (e.key === "4") { setDuration("16"); return; }
-      if (e.key === "8") { setDuration("32"); return; }
+      // If a note is hovered, change THAT note's duration (and any
+      // selected notes); otherwise the keys set the placement duration.
+      const numToDur: Record<string, Duration> = { "1": "q", "2": "8", "4": "16", "8": "32" };
+      if (e.key in numToDur) {
+        const newDur = numToDur[e.key];
+        const hoveredIdNum = hoveredNoteIdRef.current;
+        if (hoveredIdNum) {
+          e.preventDefault();
+          pushHistory(notes);
+          setNotes(prev => prev.map(n => n.id === hoveredIdNum ? { ...n, duration: newDur } : n));
+          return;
+        }
+        if (selectedIds.length > 0) {
+          e.preventDefault();
+          updateSelectedDuration(newDur);
+          return;
+        }
+        setDuration(newDur);
+        return;
+      }
       if (e.key === "0" || e.key === "r") { setIsRest(r => !r); return; }
 
       // Arrow keys move primary selected note pitch
@@ -1893,17 +2030,24 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
       return;
     }
 
-    // Hit-test against rendered note pixel positions first.  This
-    // is how clicking an existing note opens the overlay — radius
-    // tolerance is generous so the user doesn't have to be pixel-
-    // perfect on a small notehead.
-    const HIT_R = 14;
+    // Hit-test against rendered note pixel positions.  Clicking on a
+    // notehead opens the overlay; clicking anywhere else (even one
+    // grid column over) places a new note.  We use a tight elliptical
+    // box that approximates the actual notehead glyph (~10 px wide,
+    // ~7 px tall) so neighbouring grid cells don't get swallowed.
+    const HIT_HALF_W = 6;  // half-width: ~one notehead's width on either side
+    const HIT_HALF_H = 7;  // half-height: covers a single staff line
     const hit = editPaneNotePosRef.current.find(p => {
       const dx = p.x - x;
       const dy = p.y - y;
-      return dx * dx + dy * dy < HIT_R * HIT_R;
+      return Math.abs(dx) <= HIT_HALF_W && Math.abs(dy) <= HIT_HALF_H;
     });
     if (hit) { setSelectedIds([hit.id]); return; }
+
+    // Click on empty area — clear any active selection so the popup
+    // dismisses.  Without this, clicking the staff to "click out"
+    // leaves the popup open since selectedIds isn't touched below.
+    if (selectedIds.length > 0) setSelectedIds([]);
 
     // Click → place a note at (slot, drum-line) in editingBarIdx.
     const ts = activeProject.setup.perBarTimeSig?.[editingBarIdx]
@@ -1953,7 +2097,7 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
     });
     // Don't auto-select the freshly-placed note — keeps the selection
     // popup from opening on every placement.
-  }, [activeProject, editingBarIdx, duration, accidental, notehead, isRest, notes]);
+  }, [activeProject, editingBarIdx, duration, accidental, notehead, isRest, notes, selectedIds]);
 
   // Adjust ghost-note x and y to match VexFlow's actual layout for the measure
   const applyLayoutX = useCallback((hp: HoverPos): HoverPos => {
@@ -2477,9 +2621,9 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
     if (!first) return null;
     const ts = activeProject.setup.perBarTimeSig?.[first.measure] ?? activeProject.setup.defaultTimeSig;
     const totalSlots = measureSlots(ts);
-    const mInRow = first.measure % MEASURES_PER_ROW;
-    const rowIdx = Math.floor(first.measure / MEASURES_PER_ROW);
     const layout = measureLayoutsRef.current.find(l => l.mIdx === first.measure);
+    const mInRow = layout?.mInRow ?? 0;
+    const rowIdx = layout?.rowIdx ?? 0;
     const px = layout
       ? layout.noteStartX + (first.startSlot / totalSlots) * layout.justifyWidth
       : usableStart(mInRow) + (first.startSlot / totalSlots) * usableWidth();
@@ -2497,9 +2641,9 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
     // Fallback: use layout-based x + computed y
     const ts = activeProject.setup.perBarTimeSig?.[selectedNote.measure] ?? activeProject.setup.defaultTimeSig;
     const totalSlots = measureSlots(ts);
-    const mInRow = selectedNote.measure % MEASURES_PER_ROW;
-    const rowIdx = Math.floor(selectedNote.measure / MEASURES_PER_ROW);
     const layout = measureLayoutsRef.current.find(l => l.mIdx === selectedNote.measure);
+    const mInRow = layout?.mInRow ?? 0;
+    const rowIdx = layout?.rowIdx ?? 0;
     const px = layout
       ? layout.noteStartX + (selectedNote.startSlot / totalSlots) * layout.justifyWidth
       : usableStart(mInRow) + (selectedNote.startSlot / totalSlots) * usableWidth();
@@ -2519,64 +2663,21 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
   // changing each note's duration in place (which would leave gaps or overlaps).
   const updateSelectedDuration = (d: Duration) => {
     pushHistory(notes);
-    if (selectedIds.length <= 1) {
-      setNotes(prev => prev.map(n => selectedIds.includes(n.id) ? { ...n, duration: d } : n));
-      return;
-    }
-    const slotsPerNote = DURATION_SLOTS[d];
-    const ordered = notes
-      .filter(n => selectedIds.includes(n.id))
-      .sort((a, b) => a.measure !== b.measure ? a.measure - b.measure : a.startSlot - b.startSlot);
-    if (ordered.length === 0) return;
-
-    let curMeasure = ordered[0].measure;
-    let curSlot = ordered[0].startSlot;
-    const patches = new Map<string, { duration: Duration; measure: number; startSlot: number }>();
-
-    for (const n of ordered) {
-      const ts = activeProject!.setup.perBarTimeSig?.[curMeasure] ?? activeProject!.setup.defaultTimeSig;
-      const total = measureSlots(ts);
-      // Advance to next measure when the current one is full
-      while (curSlot + slotsPerNote > total) {
-        curMeasure++;
-        curSlot = 0;
-        if (curMeasure >= activeProject!.setup.barCount) break;
-      }
-      if (curMeasure >= activeProject!.setup.barCount) break;
-      patches.set(n.id, { duration: d, measure: curMeasure, startSlot: curSlot });
-      curSlot += slotsPerNote;
-      const ts2 = activeProject!.setup.perBarTimeSig?.[curMeasure] ?? activeProject!.setup.defaultTimeSig;
-      if (curSlot >= measureSlots(ts2)) { curMeasure++; curSlot = 0; }
-    }
-
-    const newSlots = Array.from(patches.values()).map(p => ({ measure: p.measure, startSlot: p.startSlot }));
-    setNotes(prev =>
-      prev
-        .map(n => {
-          const patch = patches.get(n.id);
-          if (patch) return { ...n, ...patch };
-          // Remove non-selected notes that now collide with repacked positions
-          if (!selectedIds.includes(n.id)) {
-            const collides = newSlots.some(p =>
-              p.measure === n.measure &&
-              Math.abs(p.startSlot - n.startSlot) < slotsPerNote
-            );
-            if (collides) return null;
-          }
-          return n;
-        })
-        .filter(Boolean) as NoteData[]
-    );
+    // Drum mode: just change the duration in place — don't repack
+    // notes consecutively (the user wants their slot positions
+    // preserved when mass-changing duration).
+    setNotes(prev => prev.map(n => selectedIds.includes(n.id) ? { ...n, duration: d } : n));
   };
 
   // ── SVG overlay dimensions ───────────────────────────────────────────────
 
   const scoreDims = useMemo(() => {
     if (!activeProject) return { w: 0, h: 0 };
-    const numRows = Math.ceil(activeProject.setup.barCount / MEASURES_PER_ROW);
+    const layout = computeRowLayout(activeProject.setup.barCount, activeProject.setup.perBarBreakBefore);
+    const longestRow = layout.rows.reduce((mx, r) => Math.max(mx, r.length), MEASURES_PER_ROW);
     return {
-      w: rowSvgW(MEASURES_PER_ROW),
-      h: numRows * STAVE_AREA_H,
+      w: rowSvgW(longestRow),
+      h: Math.max(1, layout.rows.length) * STAVE_AREA_H,
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProject, _denseGrid, containerW]);
@@ -2817,7 +2918,11 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
              freely (only place in the editor that scrolls).  Capped
              at max-w-6xl + mx-auto so the preview keeps the original
              page margins; the edit pane below uses full width. */}
-        <div ref={scoreAreaRef} className="flex-1 overflow-auto py-2 border-b border-[#1a1a1a] flex items-start gap-3 pr-3 max-w-6xl mx-auto w-full">
+        <div
+          ref={scoreAreaRef}
+          className="flex-1 overflow-auto py-2 border-b border-[#1a1a1a] flex items-start gap-3 px-3 w-full"
+          style={{ paddingBottom: EDIT_STAVE_AREA_H * EDIT_PANE_SCALE + 50 + 24 + 32 }}
+        >
           <div style={{ position: "relative", display: "inline-block" }}>
             {/* VexFlow rendering target — lineHeight:0 prevents baseline gap under the SVG */}
             <div ref={scoreRef} style={{ display: "block", lineHeight: 0 }} />
@@ -2925,9 +3030,9 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
               {/* Sync-measure highlight — only visible when YouTube panel is open */}
               {showYT && (() => {
                 const mIdx = currentSyncMeasure;
-                const mInRow = mIdx % MEASURES_PER_ROW;
-                const rowIdx = Math.floor(mIdx / MEASURES_PER_ROW);
                 const layout = measureLayoutsRef.current.find(l => l.mIdx === mIdx);
+                const mInRow = layout?.mInRow ?? 0;
+                const rowIdx = layout?.rowIdx ?? 0;
                 const staffTopY = layout
                   ? layout.staveTopLineY
                   : rowIdx * STAVE_AREA_H + STAVE_TOP_Y;
@@ -2967,8 +3072,8 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
                   const ls = layout.lineSpacing;
                   const padding = ls * 1.2;
                   const staffH = 4 * ls;
-                  const x = measureX(layout.mIdx % MEASURES_PER_ROW);
-                  const w = measureW(layout.mIdx % MEASURES_PER_ROW);
+                  const x = measureX(layout.mInRow);
+                  const w = measureW(layout.mInRow);
                   const y = layout.staveTopLineY - padding;
                   const h = staffH + padding * 2;
                   return (
@@ -2992,8 +3097,8 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
                   const ls = layout.lineSpacing;
                   const padding = ls * 1.2;
                   const staffH = 4 * ls;
-                  const x = measureX(layout.mIdx % MEASURES_PER_ROW);
-                  const w = measureW(layout.mIdx % MEASURES_PER_ROW);
+                  const x = measureX(layout.mInRow);
+                  const w = measureW(layout.mInRow);
                   const y = layout.staveTopLineY - padding;
                   const h = staffH + padding * 2;
                   return (
@@ -3020,8 +3125,8 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
                 const ls = layout.lineSpacing;
                 const padding = ls * 1.5;
                 const staffH = 4 * ls;
-                const x = measureX(layout.mIdx % MEASURES_PER_ROW);
-                const w = measureW(layout.mIdx % MEASURES_PER_ROW);
+                const x = measureX(layout.mInRow);
+                const w = measureW(layout.mInRow);
                 const y = layout.staveTopLineY - padding;
                 const h = staffH + padding * 2;
                 return (
@@ -3043,7 +3148,7 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
                 const lbl = n.bendSteps === 0.25 ? "¼" : n.bendSteps === 0.5 ? "½" : n.bendSteps === 1.5 ? "1½" : n.bendSteps === 2.5 ? "2½" : String(n.bendSteps);
                 const layout = measureLayoutsRef.current.find(l => l.mIdx === n.measure);
                 const ls = layout?.lineSpacing ?? LINE_SPACING;
-                const topY = layout?.staveTopLineY ?? (Math.floor(n.measure / MEASURES_PER_ROW) * STAVE_AREA_H + STAVE_TOP_Y);
+                const topY = layout?.staveTopLineY ?? STAVE_TOP_Y;
                 // Sweep curve: bottom of arrow sits at the far-right edge of the notehead
                 const sx = pos.x + 7, sy = pos.y;
                 const tipX = sx + 10, tipY = sy - 16;
@@ -3463,8 +3568,15 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
              Container height is sized to the scaled SVG (~ STAVE_AREA_H
              × scale + header + padding) so there's no extra dead
              space below it. */}
-        <div ref={editPaneContainerRef} className="flex-shrink-0 bg-[#070707] border-t border-[#222] px-12 pt-1 pb-0 overflow-hidden"
-             style={{ height: 120 * EDIT_PANE_SCALE + 50 }}>
+        <div ref={editPaneContainerRef} className="bg-[#070707] border-t border-[#222] px-12 pt-1 pb-1 overflow-hidden flex flex-col"
+             style={{
+               position: "fixed",
+               bottom: 0,
+               left: 0,
+               right: 0,
+               zIndex: 20,
+               height: EDIT_STAVE_AREA_H * EDIT_PANE_SCALE + 50 + 24,
+             }}>
           <div className="flex items-center gap-2 mb-1 px-3 text-[10px] text-[#666] uppercase tracking-wider">
             <span>Editing bar</span>
             <span className="text-white font-mono">{editingBarIdx + 1}</span>
@@ -3483,9 +3595,25 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
                     .map(n => ({ ...n, id: crypto.randomUUID(), measure: dst }));
                   return [...shifted, ...dup];
                 });
+                // Shift any per-bar maps so titles / breaks stay
+                // attached to the same bar after insertion at `dst`.
+                const shiftMap = <T,>(m?: Record<number, T>): Record<number, T> | undefined => {
+                  if (!m) return undefined;
+                  const out: Record<number, T> = {};
+                  for (const [k, v] of Object.entries(m)) {
+                    const i = +k;
+                    out[i >= dst ? i + 1 : i] = v as T;
+                  }
+                  return out;
+                };
                 setActiveProject({
                   ...activeProject,
-                  setup: { ...activeProject.setup, barCount: activeProject.setup.barCount + 1 },
+                  setup: {
+                    ...activeProject.setup,
+                    barCount: activeProject.setup.barCount + 1,
+                    perBarTitle: shiftMap(activeProject.setup.perBarTitle),
+                    perBarBreakBefore: shiftMap(activeProject.setup.perBarBreakBefore),
+                  },
                 });
                 setEditingBarIdx(dst);
               }}
@@ -3502,9 +3630,25 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
                   .filter(n => n.measure !== removeAt)
                   .map(n => n.measure > removeAt ? { ...n, measure: n.measure - 1 } : n),
                 );
+                // Drop the removed bar's entries and shift later bars down.
+                const shiftMap = <T,>(m?: Record<number, T>): Record<number, T> | undefined => {
+                  if (!m) return undefined;
+                  const out: Record<number, T> = {};
+                  for (const [k, v] of Object.entries(m)) {
+                    const i = +k;
+                    if (i === removeAt) continue;
+                    out[i > removeAt ? i - 1 : i] = v as T;
+                  }
+                  return out;
+                };
                 setActiveProject({
                   ...activeProject,
-                  setup: { ...activeProject.setup, barCount: activeProject.setup.barCount - 1 },
+                  setup: {
+                    ...activeProject.setup,
+                    barCount: activeProject.setup.barCount - 1,
+                    perBarTitle: shiftMap(activeProject.setup.perBarTitle),
+                    perBarBreakBefore: shiftMap(activeProject.setup.perBarBreakBefore),
+                  },
                 });
                 setEditingBarIdx(Math.max(0, removeAt - 1));
               }}
@@ -3513,13 +3657,57 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
             >
               ✕ Remove
             </button>
+
+            {/* Per-bar Title — boxed text rendered above the bar
+                (uses VexFlow's setSection).  Empty string clears it. */}
+            <span className="ml-2 text-[#666]">Title:</span>
+            <input
+              type="text"
+              value={activeProject.setup.perBarTitle?.[editingBarIdx] ?? ""}
+              onChange={e => {
+                const val = e.target.value;
+                const map = { ...(activeProject.setup.perBarTitle ?? {}) };
+                if (val.trim() === "") delete map[editingBarIdx];
+                else map[editingBarIdx] = val;
+                setActiveProject({
+                  ...activeProject,
+                  setup: { ...activeProject.setup, perBarTitle: map },
+                });
+              }}
+              placeholder="(none)"
+              className="w-24 px-1.5 py-0.5 bg-[#1a1a1a] border border-[#2a2a2a] rounded text-[10px] text-white placeholder:text-[#444] focus:outline-none focus:border-[#7173e6] normal-case"
+              title="Section title shown above the bar (e.g. Verse, Chorus)"
+            />
+
+            {/* Manual line-break before this bar.  Disabled on bar 0
+                since it's always the first bar of row 0. */}
+            <button
+              disabled={editingBarIdx === 0}
+              onClick={() => {
+                const map = { ...(activeProject.setup.perBarBreakBefore ?? {}) };
+                if (map[editingBarIdx]) delete map[editingBarIdx];
+                else map[editingBarIdx] = true;
+                setActiveProject({
+                  ...activeProject,
+                  setup: { ...activeProject.setup, perBarBreakBefore: map },
+                });
+              }}
+              className={`px-2 py-0.5 text-[10px] rounded border transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
+                activeProject.setup.perBarBreakBefore?.[editingBarIdx]
+                  ? "border-[#7173e6] bg-[#7173e618] text-[#9999ee]"
+                  : "border-[#2a2a2a] bg-[#1a1a1a] text-[#aaa] hover:text-white hover:border-[#3a3a3a]"
+              }`}
+              title="Force this bar to start a new line"
+            >
+              ↵ Break
+            </button>
           </div>
           <div
             style={{
               position: "relative",
               display: "block",
               width: "100%",
-              height: 120 * EDIT_PANE_SCALE,
+              height: EDIT_STAVE_AREA_H * EDIT_PANE_SCALE,
               userSelect: "none",
               WebkitUserSelect: "none",
             }}
@@ -3547,7 +3735,7 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
                 position: "absolute",
                 left: 0, top: 0,
                 width: 2400,
-                height: 120,
+                height: EDIT_STAVE_AREA_H,
                 transform: `scale(${EDIT_PANE_SCALE})`,
                 transformOrigin: "top left",
                 pointerEvents: "none",
@@ -3578,6 +3766,32 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
                     />,
                   );
                 }
+                // Beat counts above the staff: "1 + 2 + 3 + 4 +" for
+                // 4/4 — one label per 8th-note position.  Number on
+                // the beat, "+" on the off-beat.  Pinned to the very
+                // top of the SVG (text spans ~y=0..8) so it sits clear
+                // above the highest playable cymbal + its stem.
+                const eighthSlots = DURATION_SLOTS["8"]; // = 4
+                const labelY = 8;
+                for (let s = 0; s < totalSlots; s += eighthSlots) {
+                  const eighthIdx = s / eighthSlots;          // 0..7 in 4/4
+                  const onBeat = eighthIdx % 2 === 0;
+                  const label = onBeat ? String(1 + eighthIdx / 2) : "+";
+                  const lx = slotToX(s, layout.slotAnchors);
+                  out.push(
+                    <text
+                      key={`beat-${s}`}
+                      x={lx}
+                      y={labelY}
+                      textAnchor="middle"
+                      fontSize={8}
+                      fontFamily="monospace"
+                      fill={onBeat ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.5)"}
+                    >
+                      {label}
+                    </text>,
+                  );
+                }
                 return out;
               })()}
               {editDragRect && (
@@ -3593,25 +3807,54 @@ export default function DrumNotationMode({ controlledActiveId, onBack }: DrumNot
                 />
               )}
             </svg>
-            {editHover && (
-              <div
-                style={{
-                  position: "absolute",
-                  left: editHover.x * EDIT_PANE_SCALE - 5,
-                  top:  editHover.y * EDIT_PANE_SCALE - 5,
-                  width: 10, height: 10,
-                  borderRadius: 5,
-                  background: "rgba(106, 207, 138, 0.7)",
-                  pointerEvents: "none",
-                }}
-              />
-            )}
+            {editHover && (() => {
+              // Only draw a ledger line when the hovered position is
+              // ON an actual ledger-line position — i.e. an integer
+              // lineIdx outside the staff (lineIdx 0..4).  Spaces just
+              // above / below the staff (e.g. G5 = lineIdx -0.5,
+              // D4 = lineIdx 4.5) don't get a ledger because they sit
+              // between the staff and the first ledger line.
+              const layout = editPaneLayoutsRef.current[0];
+              const ls = layout?.lineSpacing ?? LINE_SPACING;
+              const topLine = layout?.staveTopLineY ?? STAVE_TOP_Y;
+              const lineIdx = (editHover.y - topLine) / ls;
+              const rounded = Math.round(lineIdx);
+              const onLedger = Math.abs(lineIdx - rounded) < 0.1 && (rounded < 0 || rounded > 4);
+              return (
+                <>
+                  {onLedger && (
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: (editHover.x - 14) * EDIT_PANE_SCALE,
+                        top:  editHover.y * EDIT_PANE_SCALE - 1.5,
+                        width: 28 * EDIT_PANE_SCALE,
+                        height: 3,
+                        background: "rgba(255,255,255,0.7)",
+                        pointerEvents: "none",
+                      }}
+                    />
+                  )}
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: editHover.x * EDIT_PANE_SCALE - 9,
+                      top:  editHover.y * EDIT_PANE_SCALE - 9,
+                      width: 18, height: 18,
+                      borderRadius: 9,
+                      background: "rgba(106, 207, 138, 0.85)",
+                      pointerEvents: "none",
+                    }}
+                  />
+                </>
+              );
+            })()}
           </div>
-          {/* Keybind cheat sheet — sits under the editing bar so the
-              user has the controls visible without a popup.  Hover-keys
-              act on the note under the cursor; duration / rest keys
-              act on the next placement. */}
-          <div className="px-3 pt-1 text-[9px] text-[#666] flex flex-wrap gap-x-3 gap-y-0.5 leading-tight">
+          {/* Keybind cheat sheet — pinned to the bottom of the
+              edit-pane wrapper (mt-auto in the parent flex column)
+              so it sits at the viewport bottom instead of floating
+              just under the staff. */}
+          <div className="mt-auto px-3 pt-1 text-[9px] text-[#666] flex flex-wrap gap-x-3 gap-y-0.5 leading-tight">
             <span><span className="text-[#aaa] font-mono">1/2/4/8</span> dur (q/8/16/32)</span>
             <span><span className="text-[#aaa] font-mono">A</span> accent</span>
             <span><span className="text-[#aaa] font-mono">G</span> ghost</span>
