@@ -3,8 +3,9 @@ import { FOLK_SONG_LIBRARY, FOLK_SONG_GROUPS } from "@/lib/folkSongData";
 import {
   Renderer, Stave, StaveNote, StaveNoteStruct, Voice, Formatter, Beam, Barline, Dot, Fraction, StaveTie,
 } from "vexflow";
-import { getBaseChords, getDegreeMap, getPatternScaleMaps, getModeDegreeMap, pcToNoteNameWithEnharmonic, formatHalfAccidentals } from "@/lib/edoData";
+import { getBaseChords, getDegreeMap, getModeDegreeMap, pcToNoteNameWithEnharmonic, formatHalfAccidentals } from "@/lib/edoData";
 import { generateRhythm, melodyPositionStrengths, isTripletStyle, STYLE_INFO, type RhythmStyle, type DensityBias } from "@/lib/rhythmGen";
+import { FUNCTIONAL_WEIGHTS_TABLE } from "@/lib/musicTheory";
 import {
   type ProgressionMode,
   type Tonality,
@@ -17,9 +18,10 @@ import {
 } from "@/lib/tonalityBanks";
 import {
   TONALITY_FAMILIES,
-  generatePoolProgression, getAllPoolChords,
+  generatePoolProgression, getAllPoolChords, voiceLedReharm,
   applicableXenKinds, XEN_LABEL, XEN_COLOR,
-  type XenKind, type PoolProgChord,
+  bankToScaleFamMode,
+  type XenKind, type PoolProgChord, type MelodyEvent,
 } from "@/lib/tonalityChordPool";
 
 // ── Folk song data ──────────────────────────────────────────────────
@@ -45,13 +47,6 @@ export interface FolkSong {
 const FOLK_SONGS: FolkSong[] = [...FOLK_SONG_LIBRARY];
 
 // ── Scale / mode helpers ────────────────────────────────────────────
-const SCALE_FAMILIES = ["Major Family", "Harmonic Minor Family", "Melodic Minor Family"] as const;
-
-function getModesForFamily(family: string, edo: number): string[] {
-  const maps = getPatternScaleMaps(edo);
-  const fam = maps[family];
-  return fam ? Object.keys(fam) : [];
-}
 
 /** Get pitch classes for the 7 scale degrees in the given mode. */
 function getModePcs(edo: number, family: string, mode: string): number[] {
@@ -163,8 +158,12 @@ function beatsPerBar(timeSig: string): number {
 }
 
 /** Metric partition of a bar at the eighth-note level.  Used for beam
- *  grouping and to identify where chord changes can land metrically. */
-function metricPartitionEighths(timeSig: string): number[] {
+ *  grouping and to identify where chord changes can land metrically.
+ *  `override` (in eighths, summing to the bar's eighth count) wins over
+ *  the default — used for additive meters like 7/8 where the user picks
+ *  2+2+3 vs 3+2+2 vs 2+3+2. */
+function metricPartitionEighths(timeSig: string, override?: number[] | null): number[] {
+  if (override && override.length > 0) return override;
   const [top, bot] = timeSig.split("/").map(Number);
   if (bot === 8) {
     switch (top) {
@@ -185,8 +184,8 @@ function metricPartitionEighths(timeSig: string): number[] {
  *  mid-bar chord change can land musically — i.e. the start of each
  *  metric pulse group except the bar downbeat (which always has the
  *  main chord). */
-function candidateMidBarPulses(timeSig: string): number[] {
-  const partition = metricPartitionEighths(timeSig);
+function candidateMidBarPulses(timeSig: string, override?: number[] | null): number[] {
+  const partition = metricPartitionEighths(timeSig, override);
   const positions: number[] = [];
   let cumEighths = 0;
   for (let i = 0; i < partition.length - 1; i++) {
@@ -194,6 +193,22 @@ function candidateMidBarPulses(timeSig: string): number[] {
     positions.push(cumEighths / 2); // eighths → quarters
   }
   return positions;
+}
+
+/** Parse a "2+2+3" partition string into [2,2,3].  Returns null if the
+ *  string is empty, malformed, or doesn't sum to `expectedEighths`. */
+function parsePartition(str: string, expectedEighths: number): number[] | null {
+  if (!str.trim()) return null;
+  const parts = str.split("+").map(s => s.trim());
+  const nums: number[] = [];
+  for (const p of parts) {
+    if (!/^\d+$/.test(p)) return null;
+    const n = parseInt(p, 10);
+    if (n <= 0) return null;
+    nums.push(n);
+  }
+  if (nums.reduce((a, b) => a + b, 0) !== expectedEighths) return null;
+  return nums;
 }
 
 /** Short human label for a pulse position.  For simple meters, a beat
@@ -355,128 +370,255 @@ function tryStage2PulseMap(flat: FlatNote[], fromSig: string, toSig: string): So
   return rebarStream(scaled, beatsPerBar(toSig));
 }
 
-/** Phrase boundary detector — Lerdahl/Jackendoff GPR.  A boundary is
- *  taken at the END of a note that is either:
- *    - significantly longer than the local average (GPR 2b: long IOI), or
- *    - a cadential scale degree (1 or 5) appearing late in a bar.
- *  A new phrase only opens after at least two source bars of music has
- *  accumulated, so short songs aren't fragmented into 1-bar phrases. */
-function detectPhrases(flat: FlatNote[], fromSig: string): FlatNote[][] {
-  if (flat.length <= 4) return [flat];
-  const barLen = beatsPerBar(fromSig);
-  const minPhraseLen = barLen * 2 - 1e-6;
+// ── Stage 3: anchor-preserving bar transform (Bartók × Rothstein × GTTM) ─
+//
+// Combines three pedagogical traditions:
+//
+//   BARTÓK (preface to *Hungarian Folk Music*; *Mikrokosmos*).  In a
+//     melody re-metered into an asymmetric target, the structural
+//     long notes (half notes, dotted quarters) define the phrase's
+//     skeleton and *must* survive the transformation with their
+//     durations intact.  Short connecting notes are the fungible
+//     surface: they get dropped or extended to make the bar fit.
+//
+//   ROTHSTEIN, *Phrase Rhythm in Tonal Music*.  A phrase's identity
+//     lives in its long-note skeleton, not its surface ornaments.
+//     Re-metering preserves the skeleton; phrase length compresses
+//     or expands by adjusting the ornamental fill.
+//
+//   LERDAHL & JACKENDOFF, *GTTM*.  Metric well-formedness: the
+//     notated meter must match the listener's perceived hierarchy.
+//     Long notes anchor that hierarchy at the target's strong
+//     positions; short notes fill weak positions in between.
+//
+// The algorithm operates source-bar by source-bar (preserving chord
+// granularity 1:1):
+//
+//   1. Identify *anchors* — notes whose source duration is ≥ a
+//      quarter.  These are the phrase's structural pitches; their
+//      durations carry over to the target unchanged.
+//
+//   2. Compute the *ornament budget* = target_bar_duration −
+//      Σ anchor_durations.  The bar's short notes (8ths and shorter)
+//      get this much room; everything else is dropped from the tail
+//      end of the ornamental run.
+//
+//   3. Each retained ornament becomes a flat 8th in the target.
+//      This is the meter-transformation move: the source's 16th-note
+//      ornaments don't survive the asymmetric meter cleanly anyway,
+//      and forcing all retained ornaments to 8ths produces clean
+//      group-aligned beaming.
+//
+//   4. If the bar still under-fills the target (e.g. an anacrusis
+//      with no anchors), extend the final retained note's duration
+//      to reach `target_bar`.  If it over-fills (rare — the source
+//      anchors alone exceed target bar), truncate the last anchor.
 
-  const durs = flat.map(f => f.beat.duration);
-  const avg = durs.reduce((a, b) => a + b, 0) / Math.max(1, durs.length);
-  const longThreshold = Math.max(avg * 1.6, barLen * 0.5);
-
-  const phrases: FlatNote[][] = [];
-  let cur: FlatNote[] = [];
-  let curDur = 0;
-
-  for (let i = 0; i < flat.length; i++) {
-    const f = flat[i];
-    cur.push(f);
-    curDur += f.beat.duration;
-
-    const isLast = i === flat.length - 1;
-    if (isLast) { phrases.push(cur); break; }
-
-    const isLong = f.beat.duration >= longThreshold;
-    const isCadenceDeg = f.beat.degree === 1 || f.beat.degree === 5;
-    const enoughMaterial = curDur >= minPhraseLen;
-
-    if (enoughMaterial && (isLong || isCadenceDeg)) {
-      phrases.push(cur);
-      cur = [];
-      curDur = 0;
-    }
-  }
-
-  // Merge a tiny final phrase into its predecessor so the song doesn't
-  // end on an awkward 1-bar tag (Rothstein: hypermetric closure).
-  if (phrases.length >= 2) {
-    const last = phrases[phrases.length - 1];
-    const lastDur = last.reduce((s, f) => s + f.beat.duration, 0);
-    if (lastDur < barLen * 0.75) {
-      phrases[phrases.length - 2].push(...last);
-      phrases.pop();
-    }
-  }
-
-  return phrases;
+/** Mulberry32 — small deterministic PRNG.  Same seed → same sequence,
+ *  so the rendered output is stable across React renders until the
+ *  user explicitly bumps the seed via the randomize button. */
+function mulberry32(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
 }
 
-/** Stage 3 — phrase-aware scaling for incompatible meter pairs.
+function stage3StructuralAnchor(
+  bars: SongBar[],
+  _fromSig: string,
+  toSig: string,
+  toPartition?: number[] | null,
+  seed?: number,
+): SongBar[] {
+  const toBar = beatsPerBar(toSig);
+  const partition = metricPartitionEighths(toSig, toPartition);
+
+  // Operate on the original source bars directly, *without* a flatten
+  // / re-bar pass.  The folk-song data sometimes has bars that don't
+  // sum exactly to `fromBar` (e.g. the half-note "Bo-y" bar in Danny
+  // Boy is 3.5 quarters, with the missing 0.5 implied by phrasing).
+  // A flatten / rebar would smear those bars' chord changes across
+  // adjacent target bars.  Iterating bar-by-bar preserves the
+  // 1-source-bar ↔ 1-target-bar correspondence, so chord changes
+  // land cleanly on each target downbeat.
+  return bars.map((bar, bi) =>
+    transformBarAnchorBased(bar, toBar, partition, seed === undefined ? null : seed * 1000 + bi),
+  );
+}
+
+/** Transform one source bar into one target bar, placing structural
+ *  anchors at target group starts (Bartók) and filling between them
+ *  with 8th ornaments (Rothstein), with the partition driving where
+ *  group starts are (GTTM well-formedness).
  *
- *  For each detected phrase:
- *    1. Compute the natural target-bar count = (phrase total / new bar
- *       length).
- *    2. Snap to the nearest hypermetric-friendly count (1, 2, 4, 8)
- *       when the natural count is reasonably close (Rothstein: tonal
- *       phrases prefer square groupings; out-of-square lengths are
- *       heard as expansion or contraction of an underlying square).
- *    3. Scale every note in the phrase by (target total / source
- *       total) so the phrase fills exactly the chosen bar count.  This
- *       is the GTTM time-span-reduction-lite step: relative durations
- *       (the rhythmic shape) are preserved, only the absolute scale
- *       changes.
- *    4. Quantize note offsets to a 16th-note grid in the target meter
- *       so the rendered notation uses clean values; rounding error
- *       absorbs into the phrase-final note.
- *    5. Pour the result into target bars; `splitAtBeats` adds ties
- *       across bar lines per Gould ch. 2.
+ *  The partition is the unique input that makes this partition-aware:
+ *  changing 7/8 from [2+2+3] to [3+2+2] moves the strong target
+ *  positions from {0, 1, 2} quarters to {0, 1.5, 2.5}, which moves
+ *  every anchor accordingly and produces audibly different output.
  *
- *  Notes are never re-ordered, so phrase contour is preserved exactly.
- *  Phrases are independently rescaled, so the song's overall length in
- *  bars adapts naturally to the new meter. */
-function stage3PhraseAware(flat: FlatNote[], fromSig: string, toSig: string): SongBar[] {
-  const toBarLen = beatsPerBar(toSig);
-  const phrases = detectPhrases(flat, fromSig);
-  const out: SongBar[] = [];
+ *  Seed (optional): when supplied, randomizes *which* ornaments get
+ *  dropped instead of always dropping the tail.  Same seed → same
+ *  output (deterministic for the same bar/partition). */
+function transformBarAnchorBased(
+  bar: SongBar,
+  toBar: number,
+  partition: number[],
+  seed: number | null = null,
+): SongBar {
+  const ANCHOR_THRESHOLD = 1.0 - 1e-9;
+  const grid = 0.5; // 8th-note grid (in quarters)
 
-  for (const phrase of phrases) {
-    if (phrase.length === 0) continue;
-    const totalSrc = phrase.reduce((s, f) => s + f.beat.duration, 0);
-    if (totalSrc < 1e-6) continue;
+  const srcTotal = bar.melody.reduce((s, b) => s + b.duration, 0);
+  if (srcTotal < 1e-9) return { melody: [], chordRoman: bar.chordRoman };
 
-    const naturalBars = totalSrc / toBarLen;
-    let targetBars = Math.max(1, Math.round(naturalBars));
-    // Snap toward the nearest "square" count when within a reasonable window
-    for (const candidate of [1, 2, 4, 8]) {
-      const distCand = Math.abs(naturalBars - candidate);
-      const distCur = Math.abs(naturalBars - targetBars);
-      if (distCand < distCur * 0.85) targetBars = candidate;
-    }
-    targetBars = Math.max(1, targetBars);
-    const targetTotal = targetBars * toBarLen;
-    const scale = targetTotal / totalSrc;
-
-    // Scale + quantize via cumulative-position snapping (so total length
-    // is exact and durations come out as differences of grid points).
-    const grid = 0.25;
-    const scaled: FlatNote[] = [];
-    let cumulSrc = 0;
-    let prevQuant = 0;
-    for (let i = 0; i < phrase.length; i++) {
-      const f = phrase[i];
-      cumulSrc += f.beat.duration;
-      const cumulTgt = cumulSrc * scale;
-      const isLast = i === phrase.length - 1;
-      const snapped = isLast
-        ? targetTotal
-        : Math.max(prevQuant + grid, Math.round(cumulTgt / grid) * grid);
-      const dur = snapped - prevQuant;
-      if (dur > 1e-6) {
-        scaled.push({ ...f, beat: { ...f.beat, duration: dur } });
-      }
-      prevQuant = snapped;
-    }
-
-    out.push(...rebarStream(scaled, toBarLen));
+  // Partial source bars (anacrusis / final tag): pass through.
+  if (srcTotal < toBar * 0.6) {
+    return { melody: bar.melody.map(b => ({ ...b })), chordRoman: bar.chordRoman };
   }
 
-  return out;
+  // Group start positions in target, in quarters.
+  const groupStarts: number[] = [];
+  let cumE = 0;
+  for (const g of partition) {
+    groupStarts.push(cumE / 2);
+    cumE += g;
+  }
+
+  // ── Pre-compute which ornaments to drop ────────────────────────
+  // Walk the bar once to tally ornaments and the room available to
+  // them after anchors are placed.  This is the same accounting the
+  // main loop does, but isolated so we can pre-decide which
+  // ornaments to drop when randomizing.
+  const ornIndices: number[] = [];
+  let totalAnchor = 0;
+  for (let i = 0; i < bar.melody.length; i++) {
+    const b = bar.melody[i];
+    if (b.duration >= ANCHOR_THRESHOLD) totalAnchor += b.duration;
+    else ornIndices.push(i);
+  }
+  // Room for ornaments = toBar minus anchors (capped at 0).  Each
+  // ornament costs 0.5 in target.  Anchor snapping may eat into this
+  // by extending preceding ornaments to fill gaps — modeled below as
+  // each gap-filling extension consuming one ornament-slot.
+  let ornBudgetSlots = Math.max(0, Math.floor((toBar - totalAnchor) / grid + 1e-9));
+  // Reserve slots for gap-filling at anchor moves: each anchor snap
+  // that pushes forward by N×grid consumes N ornament slots from the
+  // preceding ornaments' room.
+  let prevPos = 0;
+  for (const b of bar.melody) {
+    if (b.duration >= ANCHOR_THRESHOLD) {
+      let bestSnap = prevPos;
+      let bestDist = Infinity;
+      for (const sp of groupStarts) {
+        if (sp < prevPos - 1e-9) continue;
+        const d = Math.abs(sp - prevPos);
+        if (d < bestDist) { bestDist = d; bestSnap = sp; }
+      }
+      const gap = bestSnap - prevPos;
+      if (gap > 1e-9) ornBudgetSlots -= Math.round(gap / grid);
+      prevPos = bestSnap + b.duration;
+    } else {
+      prevPos += grid;
+    }
+  }
+  ornBudgetSlots = Math.max(0, ornBudgetSlots);
+
+  const dropCount = Math.max(0, ornIndices.length - ornBudgetSlots);
+  const dropSet = new Set<number>();
+  if (dropCount > 0) {
+    if (seed === null) {
+      // Deterministic: drop from the tail (cadential filler is most
+      // expendable when we don't know which is weakest).
+      for (let k = ornIndices.length - dropCount; k < ornIndices.length; k++) {
+        dropSet.add(ornIndices[k]);
+      }
+    } else {
+      // Randomized: pick `dropCount` ornaments at random.  Uses a
+      // seeded shuffle so the same seed always picks the same
+      // ornaments — output is stable until the user re-rolls.
+      const rng = mulberry32(seed);
+      const shuffled = [...ornIndices];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      }
+      for (let k = 0; k < dropCount; k++) dropSet.add(shuffled[k]);
+    }
+  }
+
+  // ── Main pass: place each (non-dropped) note ────────────────────
+  const out: MelodyBeat[] = [];
+  let pos = 0;
+
+  for (let i = 0; i < bar.melody.length; i++) {
+    if (pos >= toBar - 1e-9) break;
+    if (dropSet.has(i)) continue;
+
+    const b = bar.melody[i];
+    const isAnchor = b.duration >= ANCHOR_THRESHOLD;
+
+    if (isAnchor) {
+      let anchorPos = pos;
+      let bestDist = Infinity;
+      for (const sp of groupStarts) {
+        if (sp < pos - 1e-9) continue;
+        const d = Math.abs(sp - pos);
+        if (d < bestDist) {
+          bestDist = d;
+          anchorPos = sp;
+        }
+      }
+      if (anchorPos > pos + 1e-9) {
+        const gap = anchorPos - pos;
+        if (out.length > 0) {
+          const last = out[out.length - 1];
+          out[out.length - 1] = { ...last, duration: last.duration + gap };
+        } else {
+          out.push({ degree: 0, duration: gap });
+        }
+        pos = anchorPos;
+      }
+      const anchorDur = Math.min(b.duration, toBar - pos);
+      out.push({ degree: b.degree, duration: anchorDur, accidental: b.accidental });
+      pos += anchorDur;
+    } else {
+      if (toBar - pos < grid - 1e-9) break;
+      out.push({ degree: b.degree, duration: grid, accidental: b.accidental });
+      pos += grid;
+    }
+  }
+
+  // Reconcile to target bar length.
+  if (out.length === 0) {
+    out.push({ degree: 0, duration: toBar });
+  } else if (pos < toBar - 1e-9) {
+    // Under-fill: extend the final retained note (last anchor or
+    // ornament) to reach the bar line.
+    const last = out[out.length - 1];
+    out[out.length - 1] = { ...last, duration: last.duration + (toBar - pos) };
+  } else if (pos > toBar + 1e-9) {
+    // Over-fill (anchor's source duration was so long it spilled
+    // past the bar): truncate the tail.  Rare for well-formed source
+    // data.
+    let overflow = pos - toBar;
+    while (overflow > 1e-9 && out.length > 0) {
+      const last = out[out.length - 1];
+      if (last.duration > overflow + 1e-9) {
+        out[out.length - 1] = { ...last, duration: last.duration - overflow };
+        overflow = 0;
+      } else {
+        overflow -= last.duration;
+        out.pop();
+      }
+    }
+  }
+
+  return { melody: out, chordRoman: bar.chordRoman };
 }
 
 /** Musical re-metering dispatcher.
@@ -490,7 +632,13 @@ function stage3PhraseAware(flat: FlatNote[], fromSig: string, toSig: string): So
  *  browser on 6/8 and 7/8 because the grouping enumerator would try to
  *  list ~8M compositions for 24-slot bars.  No stage here calls back
  *  into the rhythm engine for grouping enumeration. */
-function remeterBars(bars: SongBar[], newTimeSig: string, origTimeSig: string): SongBar[] {
+function remeterBars(
+  bars: SongBar[],
+  newTimeSig: string,
+  origTimeSig: string,
+  newPartition?: number[] | null,
+  seed?: number,
+): SongBar[] {
   if (newTimeSig === origTimeSig) return bars;
   if (bars.length === 0) return [];
 
@@ -506,7 +654,7 @@ function remeterBars(bars: SongBar[], newTimeSig: string, origTimeSig: string): 
   const stage2 = tryStage2PulseMap(flat, origTimeSig, newTimeSig);
   if (stage2) return stage2;
 
-  return stage3PhraseAware(flat, origTimeSig, newTimeSig);
+  return stage3StructuralAnchor(bars, origTimeSig, newTimeSig, newPartition, seed);
 }
 
 /** Rerhythm (in-place): keep each bar's phrase (degree order) intact, apply
@@ -777,7 +925,10 @@ function applyWhite(el: HTMLElement) {
 // — 7/8 → 2+2+3, 6/8 → 3+3 — which is what readers rely on to identify
 // the meter at a glance (Read, Music Notation, ch. 6).  In simple
 // meters (bottom = 4) beams run per quarter-note beat.
-function beamGroupsFor(timeSig: string): Fraction[] {
+function beamGroupsFor(timeSig: string, override?: number[] | null): Fraction[] {
+  if (override && override.length > 0) {
+    return override.map(g => new Fraction(g, 8));
+  }
   const [, bot] = timeSig.split("/").map(Number);
   if (bot === 4) return [new Fraction(1, 4)];
   const partition = metricPartitionEighths(timeSig);
@@ -814,6 +965,7 @@ function SnareLineLine({
   chordColorsPerBar,
   chordPositionsPerBar,
   timeSig,
+  partitionOverride,
   showTimeSig,
   lineIndex,
   barWidth,
@@ -828,6 +980,9 @@ function SnareLineLine({
    *  (bar downbeat); the second can be any pulse boundary of the meter. */
   chordPositionsPerBar: number[][];
   timeSig: string;
+  /** User-chosen partition in eighths (e.g. [2,2,3]).  Null ⇒ use the
+   *  meter's default partition. */
+  partitionOverride?: number[] | null;
   showTimeSig: boolean;
   lineIndex: number;
   barWidth: number;
@@ -927,7 +1082,7 @@ function SnareLineLine({
         const beams: Beam[] = [];
         try {
           beams.push(...Beam.generateBeams(notes, {
-            groups: beamGroupsFor(timeSig),
+            groups: beamGroupsFor(timeSig, partitionOverride),
             maintainStemDirections: true,
             flatBeams: true,
             beamRests: false,
@@ -939,6 +1094,69 @@ function SnareLineLine({
         voice.draw(ctx, stave);
         beams.forEach(b => b.setContext(ctx).draw());
         ties.forEach(t => t.setContext(ctx).draw());
+
+        // ── Group-boundary dividers ──
+        // Faint dashed verticals at each metric group's start (excluding
+        // the bar downbeat).  Anchored to a real note's x position so the
+        // divider lines up with the music rather than the bar's geometry,
+        // which would drift when bars have ragged content.
+        //
+        // Drawn only for bot=8 meters (compound/additive) or when the
+        // user has supplied an override — simple */4 is conventionally
+        // read without sub-beat dividers.
+        const partition = metricPartitionEighths(timeSig, partitionOverride);
+        const showDividers =
+          (!!partitionOverride && partitionOverride.length > 1) ||
+          (timeSig.split("/")[1] === "8" && partition.length > 1);
+        if (showDividers) {
+          const boundariesQ: number[] = [];
+          let cumE = 0;
+          for (let i = 0; i < partition.length - 1; i++) {
+            cumE += partition[i];
+            boundariesQ.push(cumE / 2);
+          }
+          // Build (positionInQuarters → x) anchors from the laid-out notes.
+          const anchors: { pos: number; x: number }[] = [];
+          let runPos = 0;
+          for (let pi = 0; pi < notes.length; pi++) {
+            const bb = notes[pi].getBoundingBox();
+            if (bb) anchors.push({ pos: runPos, x: bb.getX() });
+            runPos += pieces[pi].beat.duration;
+          }
+          // Final anchor: end-of-bar at right edge of stave content.
+          anchors.push({ pos: barQuarters, x: stave.getX() + stave.getWidth() - 6 });
+
+          const xForPos = (pos: number): number => {
+            // Exact match
+            for (const a of anchors) if (Math.abs(a.pos - pos) < 1e-6) return a.x;
+            // Otherwise interpolate between the two surrounding anchors
+            for (let i = 0; i < anchors.length - 1; i++) {
+              const a = anchors[i], b = anchors[i + 1];
+              if (a.pos <= pos && pos <= b.pos) {
+                const t = (pos - a.pos) / (b.pos - a.pos || 1);
+                return a.x + t * (b.x - a.x);
+              }
+            }
+            return anchors[anchors.length - 1].x;
+          };
+
+          ctx.save();
+          ctx.setStrokeStyle("#3a3a3a");
+          ctx.setLineWidth(1);
+          const ctxAny = ctx as unknown as { setLineDash?: (d: number[]) => void };
+          ctxAny.setLineDash?.([3, 3]);
+          for (const bq of boundariesQ) {
+            // Push the divider 4px left of the note that starts the next
+            // group, so it sits in the gap before the downbeat of that group.
+            const x = xForPos(bq) - 4;
+            ctx.beginPath();
+            ctx.moveTo(x, STAVE_Y - 6);
+            ctx.lineTo(x, STAVE_Y + 18);
+            ctx.stroke();
+          }
+          ctxAny.setLineDash?.([]);
+          ctx.restore();
+        }
 
         // ── Degree labels: only above the head of each tied run ──
         for (let pi = 0; pi < notes.length; pi++) {
@@ -972,7 +1190,7 @@ function SnareLineLine({
     } catch (err) {
       console.warn("SnareLineLine render error:", err);
     }
-  }, [bars, adaptedBars, chordLabelsPerBar, chordColorsPerBar, timeSig, showTimeSig, totalWidth, barWidth]);
+  }, [bars, adaptedBars, chordLabelsPerBar, chordColorsPerBar, timeSig, partitionOverride, showTimeSig, totalWidth, barWidth]);
 
   const barQuarters = beatsPerBar(timeSig);
   return (
@@ -1026,6 +1244,7 @@ function SnareLineStave({
   chordColorsPerBar,
   chordPositionsPerBar,
   timeSig,
+  partitionOverride,
 }: {
   bars: SongBar[];
   adaptedBars?: MelodyBeat[][];
@@ -1033,6 +1252,7 @@ function SnareLineStave({
   chordColorsPerBar: string[][];
   chordPositionsPerBar: number[][];
   timeSig: string;
+  partitionOverride?: number[] | null;
 }) {
   const outerRef = useRef<HTMLDivElement>(null);
   const [availWidth, setAvailWidth] = useState(900);
@@ -1071,6 +1291,7 @@ function SnareLineStave({
           chordColorsPerBar={lineIndices.map(i => chordColorsPerBar[i] ?? [])}
           chordPositionsPerBar={lineIndices.map(i => chordPositionsPerBar[i] ?? [])}
           timeSig={timeSig}
+          partitionOverride={partitionOverride}
           showTimeSig={li === 0}
           lineIndex={li}
           barWidth={barWidth}
@@ -1110,21 +1331,6 @@ export default function HarmonyWorkshop() {
   // (= beats 2, 3, 4), etc.  Empty = mid-bar chords off.
   const [midBarPulses, setMidBarPulses] = useState<Set<number>>(new Set());
 
-  // ── Mode selection ──────────────────────────────────────────────
-  const [scaleFamily, setScaleFamily] = useState<string>("Major Family");
-  const [modeName, setModeName] = useState<string>("Ionian");
-
-  const modeOptions = useMemo(() => getModesForFamily(scaleFamily, edo), [scaleFamily, edo]);
-  // Reset mode when family changes
-  const prevFamily = useRef(scaleFamily);
-  if (prevFamily.current !== scaleFamily) {
-    prevFamily.current = scaleFamily;
-    const opts = getModesForFamily(scaleFamily, edo);
-    if (!opts.includes(modeName)) setModeName(opts[0] ?? "Ionian");
-  }
-
-  const modePcs = useMemo(() => getModePcs(edo, scaleFamily, modeName), [edo, scaleFamily, modeName]);
-
   // ── Tonality + chord-pool selection (mirrors MelodicPatterns) ──
   const [tonalitySet, setTonalitySet] = useState<Set<string>>(new Set(["Major"]));
   const [checkedByTonality, setCheckedByTonality] = useState<Record<string, string[]>>(
@@ -1133,6 +1339,15 @@ export default function HarmonyWorkshop() {
   const [xenByTonality, setXenByTonality] = useState<Record<string, Record<string, XenKind[]>>>({});
   const tonalityBanks = useMemo<TonalityBank[]>(() => getTonalityBanks(edo), [edo]);
 
+  // Derive scale-family / mode-name from the first selected tonality.  The
+  // tonality picker (HWTonalityChordPicker) is the single source of truth
+  // — we no longer expose a separate SCALE / MODE selector.
+  const [scaleFamily, modeName] = useMemo<[string, string]>(() => {
+    const first = Array.from(tonalitySet)[0] ?? "Major";
+    return bankToScaleFamMode(first);
+  }, [tonalitySet]);
+  const modePcs = useMemo(() => getModePcs(edo, scaleFamily, modeName), [edo, scaleFamily, modeName]);
+
   // ── Song selection ──────────────────────────────────────────────
   const [selectedSongId, setSelectedSongId] = useState(FOLK_SONGS[0].id);
   const rawSong = FOLK_SONGS.find((s) => s.id === selectedSongId) ?? FOLK_SONGS[0];
@@ -1140,6 +1355,24 @@ export default function HarmonyWorkshop() {
   // ── Time signature override ────────────────────────────────────
   const [targetTimeSig, setTargetTimeSig] = useState<string>("");
   const effectiveTimeSig = targetTimeSig || rawSong.timeSignature;
+
+  // ── Beat-grouping override (e.g. "2+2+3" for 7/8) ──────────────
+  // Empty string = use the meter's default partition.  Parsed lazily
+  // — invalid input falls back to default.
+  const [partitionStr, setPartitionStr] = useState<string>("");
+  const partitionOverride = useMemo<number[] | null>(() => {
+    const [top, bot] = effectiveTimeSig.split("/").map(Number);
+    if (!top || !bot) return null;
+    const expectedEighths = (top * 8) / bot;
+    return parsePartition(partitionStr, expectedEighths);
+  }, [partitionStr, effectiveTimeSig]);
+  const partitionInputValid = partitionStr.trim() === "" || partitionOverride !== null;
+
+  // Seed for randomizing which ornaments get dropped during meter
+  // re-mapping.  0 = deterministic (drop tail).  Bumping the seed
+  // re-rolls which ornaments get cut, producing a different rhythm
+  // on the same source/meter.
+  const [remeterSeed, setRemeterSeed] = useState<number>(0);
 
   // ── Rhythm style override ──────────────────────────────────────
   const [rhythmStyle, setRhythmStyle] = useState<RhythmStyle | "">("");
@@ -1152,7 +1385,7 @@ export default function HarmonyWorkshop() {
     try {
       let s = rawSong;
       if (targetTimeSig && targetTimeSig !== rawSong.timeSignature) {
-        s = { ...s, timeSignature: targetTimeSig, bars: remeterBars(s.bars, targetTimeSig, rawSong.timeSignature) };
+        s = { ...s, timeSignature: targetTimeSig, bars: remeterBars(s.bars, targetTimeSig, rawSong.timeSignature, partitionOverride, remeterSeed || undefined) };
       }
       if (rhythmStyle && rhythmApplied) {
         const fn = crossBars ? reshuffleBars : rerhythmBarsInPlace;
@@ -1164,7 +1397,7 @@ export default function HarmonyWorkshop() {
       return rawSong;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawSong, targetTimeSig, rhythmStyle, rhythmApplied, crossBars, densityBias, rhythmSeed]);
+  }, [rawSong, targetTimeSig, partitionOverride, remeterSeed, rhythmStyle, rhythmApplied, crossBars, densityBias, rhythmSeed]);
 
   // ── Reharmonization state ───────────────────────────────────────
   const [result, setResult] = useState<ReharmonizationResult | null>(null);
@@ -1186,7 +1419,25 @@ export default function HarmonyWorkshop() {
   const prevTimeSig = useRef(song.timeSignature);
   if (prevTimeSig.current !== song.timeSignature) {
     prevTimeSig.current = song.timeSignature;
-    const valid = new Set(candidateMidBarPulses(song.timeSignature));
+    const valid = new Set(candidateMidBarPulses(song.timeSignature, partitionOverride));
+    setMidBarPulses(prev => {
+      let changed = false;
+      const next = new Set<number>();
+      for (const p of prev) {
+        if (valid.has(p)) next.add(p);
+        else changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }
+
+  // When the partition override changes, prune any mid-bar pulse that
+  // no longer aligns with a group boundary in the new partition.
+  const prevPartitionKey = useRef(partitionOverride?.join(",") ?? "");
+  const partitionKey = partitionOverride?.join(",") ?? "";
+  if (prevPartitionKey.current !== partitionKey) {
+    prevPartitionKey.current = partitionKey;
+    const valid = new Set(candidateMidBarPulses(song.timeSignature, partitionOverride));
     setMidBarPulses(prev => {
       let changed = false;
       const next = new Set<number>();
@@ -1221,19 +1472,58 @@ export default function HarmonyWorkshop() {
     const t = pickRoundTonality();
     if (!t) return;
 
-    // Main progression: one chord per bar (Markov walk on the pool).
-    const mainChords: ProgChord[] = generatePoolProgression(
-      edo, barCount, t,
-      checkedByTonality[t] ?? [],
-      approachesByTonality[t] ?? {},
-      xenByTonality[t] ?? {},
-      tonicRoot, progMode,
-    );
+    // Convert each bar's melody into (pc, weight) events for the
+    // voice-leading scorer.  Weight = metric strength × (1 + duration·0.5)
+    // so long downbeat notes drive chord choice more than 16th-note
+    // ornaments at weak positions.
+    const ionianRef = edo === 12 ? IONIAN_PCS_12 : modePcs;
+    const melodyByBar: MelodyEvent[][] = song.bars.map(bar => {
+      const events: MelodyEvent[] = [];
+      let pos = 0;
+      for (const b of bar.melody) {
+        if (b.degree === 0) { pos += b.duration; continue; }
+        let raw = degreeToPcModal(b.degree, ionianRef, edo);
+        if (b.accidental === "b") raw -= 1;
+        else if (b.accidental === "#") raw += 1;
+        const pc = ((raw + tonicRoot) % edo + edo) % edo;
+        const beatFrac = pos - Math.floor(pos);
+        const isDownbeat = pos < 1e-6;
+        const onBeat = beatFrac < 1e-6;
+        const onHalf = Math.abs(beatFrac - 0.5) < 1e-6;
+        const metric = isDownbeat ? 1.0 : onBeat ? 0.6 : onHalf ? 0.4 : 0.25;
+        const dur = Math.min(b.duration, 2);
+        events.push({ pc, weight: metric * (1 + dur * 0.5) });
+        pos += b.duration;
+      }
+      return events;
+    });
+
+    // Main progression: voice-leading-optimal DP over the chord pool when
+    // running in functional mode (the default), else fall back to the
+    // Markov walk for the explicit "Random" toggle.
+    let mainChords: ProgChord[];
+    if (progMode === "functional") {
+      mainChords = voiceLedReharm(
+        edo, t,
+        checkedByTonality[t] ?? [],
+        approachesByTonality[t] ?? {},
+        xenByTonality[t] ?? {},
+        tonicRoot, melodyByBar, modePcs,
+      );
+    } else {
+      mainChords = generatePoolProgression(
+        edo, barCount, t,
+        checkedByTonality[t] ?? [],
+        approachesByTonality[t] ?? {},
+        xenByTonality[t] ?? {},
+        tonicRoot, progMode,
+      );
+    }
     if (mainChords.length === 0) return;
 
     // Candidate pulse positions where a mid-bar chord is metrically
     // valid in this meter, intersected with what the user has enabled.
-    const allCandidates = candidateMidBarPulses(song.timeSignature);
+    const allCandidates = candidateMidBarPulses(song.timeSignature, partitionOverride);
     const enabledPulses = allCandidates.filter(p => midBarPulses.has(p));
 
     // Returns the number of sustained melody notes that fall at or after
@@ -1252,24 +1542,98 @@ export default function HarmonyWorkshop() {
     // Secondary-dominant builder: V7 of the *next* bar's chord, pulling
     // into the downbeat. Falls through to any pool chord that shares a
     // common tone with the next chord (smooth voice-leading).
+    //
+    // Filter approaches to only targets the user actually checked.
+    // An approach for an unchecked target adds V/X / ii/X / etc. to the
+    // pool but their resolution X is unreachable, leaving the engine
+    // stuck — voiceLedReharm does the same filter for the same reason.
+    const tCheckedSet = new Set(checkedByTonality[t] ?? []);
+    const tApproaches = approachesByTonality[t] ?? {};
+    const filteredApproaches: Record<string, ApproachKind[]> = {};
+    for (const [target, kinds] of Object.entries(tApproaches)) {
+      if (tCheckedSet.has(target)) filteredApproaches[target] = kinds;
+    }
     const chordPool: PoolProgChord[] = getAllPoolChords(
       edo, t,
       checkedByTonality[t] ?? [],
-      approachesByTonality[t] ?? {},
+      filteredApproaches,
       xenByTonality[t] ?? {},
       tonicRoot,
     );
+    // Targets where iiV is on but secdom is OFF: V/X is iiV-only and must
+    // not appear as a standalone insertion in the mid-bar slot — that
+    // belongs to the secdom toggle.  Without this filter the mid-bar
+    // builder happily drops V/X into bars on its own, ignoring the user's
+    // approach selection.
+    const iiVOnlyVTargets = new Set<string>();
+    for (const [target, kinds] of Object.entries(filteredApproaches)) {
+      if (kinds.includes("iiV") && !kinds.includes("secdom")) {
+        iiVOnlyVTargets.add(`V/${target}`);
+      }
+    }
     const dm = getDegreeMap(edo);
     const P5 = dm["5"] ?? 7;
-    const buildMidBarChord = (nextChord: ProgChord | undefined): ProgChord | null => {
+    // Strip xen suffix (~neu, ~qrt, …) before consulting FUNCTIONAL_WEIGHTS.
+    const stripXen = (r: string): string => {
+      const i = r.indexOf("~");
+      return i > 0 ? r.slice(0, i) : r;
+    };
+    const APPLIED_RE = /^(V|ii|iiø|vii°|TT)\//;
+    const buildMidBarChord = (
+      currentChord: ProgChord | undefined,
+      nextChord: ProgChord | undefined,
+    ): ProgChord | null => {
       if (!nextChord) return null;
+      const curRoman = currentChord?.roman ?? "";
+      // If the current bar's chord is applied, it must resolve directly
+      // to next — no mid-bar filler.  Inserting anything between V/IV
+      // and IV breaks the tonicization.
+      if (currentChord && APPLIED_RE.test(stripXen(currentChord.roman))) return null;
+      // Mid-bar must not duplicate the current bar's main chord (no
+      // "two hits for V/IV" inside one bar) nor the next bar's chord
+      // (mid-bar is for motion, not a pre-echo of where we're heading).
+      // It also can't be an iiV-only V/X.
+      let eligible = chordPool.filter(c =>
+        c.roman !== curRoman &&
+        c.roman !== nextChord.roman &&
+        !iiVOnlyVTargets.has(c.roman),
+      );
+      // The mid-bar chord becomes the new predecessor of mainChord[i+1],
+      // so it must respect mainChord[i+1]'s iiV-only lock: if next is a
+      // V/X with iiV-locked predecessor, the mid-bar must be ii/X.
+      const nextStripped = stripXen(nextChord.roman);
+      if (iiVOnlyVTargets.has(nextStripped)) {
+        const target = nextStripped.slice(2); // "V/X" → "X"
+        const allowedPredecessors = new Set([`ii/${target}`, `iiø/${target}`]);
+        eligible = eligible.filter(c => allowedPredecessors.has(stripXen(c.roman)));
+      }
+      // If currentChord is in FUNCTIONAL_WEIGHTS, restrict mid-bar to
+      // chords that are valid forward-moves from currentChord.  Without
+      // this, mainChord ii/V can be followed by mid-bar vii° (unrelated)
+      // even though ii/V's only allowed targets are V/V, vii°/V, TT/V,
+      // and V.  Skip the filter when current isn't in the table (e.g.
+      // user-defined modal-interchange chords).
+      if (currentChord) {
+        const fwRow = FUNCTIONAL_WEIGHTS_TABLE[stripXen(currentChord.roman)];
+        if (fwRow) {
+          const allowedNext = new Set(Object.keys(fwRow));
+          eligible = eligible.filter(c => allowedNext.has(stripXen(c.roman)));
+        }
+      }
+      // Mid-bar chord becomes prev for nextChord, so applied mid-bar
+      // chords must be able to resolve to next (e.g. V/iii can only
+      // come before iii, never before vi — even if V/iii has a common
+      // tone with vi).
+      eligible = eligible.filter(c => {
+        if (!APPLIED_RE.test(stripXen(c.roman))) return true;
+        const row = FUNCTIONAL_WEIGHTS_TABLE[stripXen(c.roman)];
+        return !!row && row[stripXen(nextChord.roman)] !== undefined;
+      });
       const secDomRoot = ((nextChord.root - P5) % edo + edo) % edo;
-      const secDom = chordPool.find(c => c.root === secDomRoot && c.chordTypeId === "dom7");
+      const secDom = eligible.find(c => c.root === secDomRoot && c.chordTypeId === "dom7");
       if (secDom) return secDom;
       const nextPcs = new Set(nextChord.chordPcs);
-      const candidates = chordPool.filter(c =>
-        c.chordPcs.some(p => nextPcs.has(p)) && c.roman !== nextChord.roman,
-      );
+      const candidates = eligible.filter(c => c.chordPcs.some(p => nextPcs.has(p)));
       if (candidates.length === 0) return null;
       return candidates[Math.floor(Math.random() * candidates.length)];
     };
@@ -1302,7 +1666,7 @@ export default function HarmonyWorkshop() {
         const viable = enabledPulses.filter(p => notesFrom(song.bars[i], p) >= 1);
         if (viable.length > 0) {
           const pulse = viable[Math.floor(Math.random() * viable.length)];
-          const mid = buildMidBarChord(mainChords[i + 1]);
+          const mid = buildMidBarChord(mainChords[i], mainChords[i + 1]);
           if (mid) {
             chords.push(mid);
             chordPositions.push(pulse);
@@ -1339,7 +1703,7 @@ export default function HarmonyWorkshop() {
       const next = [...prev, r];
       return next.length > 50 ? next.slice(next.length - 50) : next;
     });
-  }, [edo, song, tonalitySet, checkedByTonality, approachesByTonality, xenByTonality, progMode, effectiveTonality, tonicRoot, adaptMelody, modePcs, midBarPulses, pickRoundTonality]);
+  }, [edo, song, tonalitySet, checkedByTonality, approachesByTonality, xenByTonality, progMode, effectiveTonality, tonicRoot, adaptMelody, modePcs, midBarPulses, partitionOverride, pickRoundTonality]);
 
   const timeSig = song.timeSignature;
 
@@ -1368,21 +1732,6 @@ export default function HarmonyWorkshop() {
           </div>
           <div className="w-px h-4 bg-[#2a2a2a]" />
           <div className="flex items-center gap-1.5">
-            <label className="text-[10px] text-[#666] uppercase tracking-wider">Scale</label>
-            <select value={scaleFamily} onChange={(e) => setScaleFamily(e.target.value)}
-              className="bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-white focus:outline-none">
-              {SCALE_FAMILIES.map((f) => <option key={f} value={f}>{f}</option>)}
-            </select>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <label className="text-[10px] text-[#666] uppercase tracking-wider">Mode</label>
-            <select value={modeName} onChange={(e) => setModeName(e.target.value)}
-              className="bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-white focus:outline-none">
-              {modeOptions.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </div>
-          <div className="w-px h-4 bg-[#2a2a2a]" />
-          <div className="flex items-center gap-1.5">
             <label className="text-[10px] text-[#666] uppercase tracking-wider">Adapt Melody</label>
             <button onClick={() => setAdaptMelody(!adaptMelody)}
               className={`px-2 py-0.5 text-[10px] rounded border transition-colors ${
@@ -1393,11 +1742,11 @@ export default function HarmonyWorkshop() {
           </div>
         </div>
 
-        {/* Logic toggle (Markov vs Random) */}
+        {/* Logic toggle (Voice-Led vs Random) */}
         <div className="flex flex-wrap gap-1.5 items-center">
           <span className="text-[10px] text-[#666] uppercase tracking-wider">Logic</span>
           {([
-            { value: "functional" as ProgressionMode, label: "Markov", color: "#6a9aca" },
+            { value: "functional" as ProgressionMode, label: "Voice-Led", color: "#6a9aca" },
             { value: "random" as ProgressionMode, label: "Random", color: "#999" },
           ] as const).map((m) => (
             <button key={m.value} onClick={() => setProgMode(m.value)}
@@ -1449,13 +1798,56 @@ export default function HarmonyWorkshop() {
         <div className="w-px h-4 bg-[#2a2a2a]" />
         <label className="text-[10px] text-[#666] uppercase tracking-wider">Meter</label>
         <select value={targetTimeSig}
-          onChange={(e) => { setTargetTimeSig(e.target.value); setResult(null); setHistory([]); }}
+          onChange={(e) => { setTargetTimeSig(e.target.value); setPartitionStr(""); setRemeterSeed(0); setResult(null); setHistory([]); }}
           className="bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-white focus:outline-none">
           <option value="">Original ({rawSong.timeSignature})</option>
           {TIME_SIGS.filter(ts => ts !== rawSong.timeSignature).map(ts => (
             <option key={ts} value={ts}>{ts}</option>
           ))}
         </select>
+        {(() => {
+          const [top, bot] = effectiveTimeSig.split("/").map(Number);
+          if (bot !== 8) return null;
+          const expected = (top * 8) / bot;
+          const placeholder = (
+            top === 5 ? "2+3" :
+            top === 7 ? "2+2+3" :
+            top === 9 ? "3+3+3" :
+            top === 11 ? "2+2+3+2+2" :
+            `…=${expected}`
+          );
+          return (
+            <>
+              <label className="text-[10px] text-[#666] uppercase tracking-wider" title={`e.g. 2+2+3 — must sum to ${expected}`}>Group</label>
+              <input
+                type="text"
+                value={partitionStr}
+                onChange={(e) => setPartitionStr(e.target.value)}
+                placeholder={placeholder}
+                spellCheck={false}
+                className={`bg-[#1a1a1a] border rounded px-2 py-1 text-xs text-white focus:outline-none w-20 ${
+                  partitionInputValid ? "border-[#2a2a2a]" : "border-[#a44]"
+                }`}
+                title={partitionInputValid
+                  ? `Beat grouping in eighths (sum to ${expected})`
+                  : `Must be "+"-separated positive integers summing to ${expected}`}
+              />
+            </>
+          );
+        })()}
+        {targetTimeSig && targetTimeSig !== rawSong.timeSignature && (
+          <button
+            onClick={() => { setRemeterSeed(Date.now()); setResult(null); setHistory([]); }}
+            className={`px-1.5 py-0.5 text-[10px] rounded border transition-colors ${
+              remeterSeed > 0
+                ? "bg-[#1a2a1a] border-[#3a6a3a] text-[#6abf6a]"
+                : "bg-[#1a1a1a] border-[#2a2a2a] text-[#888] hover:text-white"
+            }`}
+            title="Re-roll which ornaments get dropped during meter conversion (different rhythm, same melody skeleton)"
+          >
+            Reroll
+          </button>
+        )}
         <div className="w-px h-4 bg-[#2a2a2a]" />
         <label className="text-[10px] text-[#666] uppercase tracking-wider">Rhythm</label>
         <select value={rhythmStyle}
@@ -1529,7 +1921,7 @@ export default function HarmonyWorkshop() {
             // later group-starts toggle between "chord can land here" (filled
             // indigo) and "no mid-bar chord here" (outlined).  Non-start
             // pulses are small dots that visualise the meter's shape only.
-            const partition = metricPartitionEighths(song.timeSignature);
+            const partition = metricPartitionEighths(song.timeSignature, partitionOverride);
             // Eighth-note position of each group's start (cumulative).
             const groupStartEighth: number[] = [];
             let cum = 0;
@@ -1659,6 +2051,7 @@ export default function HarmonyWorkshop() {
               : song.bars.map(() => [0])
           }
           timeSig={timeSig}
+          partitionOverride={partitionOverride}
         />
       </div>
 
@@ -1723,11 +2116,13 @@ function HWTonalityChordPicker({
     return m;
   }, [tonalityBanks]);
 
+  // Single-select: HarmonyWorkshop reharmonizes against one tonality at
+  // a time, so picking a new one replaces the active tonality rather
+  // than adding to a set.
   const toggleTonality = (name: string) => {
-    const next = new Set(tonalitySet);
-    if (next.has(name)) next.delete(name); else next.add(name);
-    setTonalitySet(next);
-    if (next.has(name) && !checkedByTonality[name]) {
+    if (tonalitySet.has(name) && tonalitySet.size === 1) return;
+    setTonalitySet(new Set([name]));
+    if (!checkedByTonality[name]) {
       const bank = banksByName[name];
       if (bank) {
         const primary = bank.levels.find(l => l.name === "Primary");
@@ -1773,25 +2168,25 @@ function HWTonalityChordPicker({
     setXenByTonality({ ...xenByTonality, [tonality]: nextT });
   };
 
+  // Combined qua/quin toggle: clicking the merged stack button adds or
+  // removes both qrt and qnt at once (mixed state collapses to off).
+  const toggleXenStack = (tonality: string, target: string) => {
+    const tXen = xenByTonality[tonality] ?? {};
+    const list = tXen[target] ?? [];
+    const hasAny = list.includes("qrt") || list.includes("qnt");
+    const nextList: XenKind[] = hasAny
+      ? list.filter(k => k !== "qrt" && k !== "qnt")
+      : [...list, "qrt", "qnt"];
+    const nextT = { ...tXen, [target]: nextList };
+    if (nextList.length === 0) delete nextT[target];
+    setXenByTonality({ ...xenByTonality, [tonality]: nextT });
+  };
+
   return (
     <div className="space-y-3">
       <div className="bg-[#0e0e0e] border border-[#1a1a1a] rounded p-2 space-y-2">
         <div className="flex items-center gap-2">
-          <p className="text-xs text-[#888] font-medium">TONALITIES</p>
-          <button onClick={() => setTonalitySet(new Set(tonalityBanks.map(b => b.name)))}
-            className="text-[9px] text-[#555] hover:text-[#9999ee] border border-[#222] rounded px-2 py-0.5">All</button>
-          {TONALITY_FAMILIES.map(g => (
-            <button key={g.key} onClick={() => {
-              const next = new Set(tonalitySet);
-              for (const t of g.tonalities) if (banksByName[t]) next.add(t);
-              setTonalitySet(next);
-            }}
-              className="text-[9px] text-[#555] hover:text-[#aaa] border border-[#222] rounded px-2 py-0.5">
-              +{g.label}
-            </button>
-          ))}
-          <button onClick={() => setTonalitySet(new Set())}
-            className="text-[9px] text-[#555] hover:text-[#aaa] border border-[#222] rounded px-2 py-0.5 ml-auto">Clear</button>
+          <p className="text-xs text-[#888] font-medium">TONALITY</p>
         </div>
         {TONALITY_FAMILIES.map(group => {
           const available = group.tonalities.filter(t => banksByName[t]);
@@ -1837,15 +2232,11 @@ function HWTonalityChordPicker({
             toggleApproach={(target, kind) => toggleApproach(tonality, target, kind)}
             xenMap={xenByTonality[tonality] ?? {}}
             toggleXen={(target, kind) => toggleXen(tonality, target, kind)}
+            toggleXenStack={(target) => toggleXenStack(tonality, target)}
             edo={edo}
           />
         );
       })}
-      {tonalitySet.size === 0 && (
-        <div className="text-xs text-[#666] italic px-3 py-2 border border-[#222] rounded">
-          Pick at least one tonality above to choose chords.
-        </div>
-      )}
     </div>
   );
 }
@@ -1853,7 +2244,7 @@ function HWTonalityChordPicker({
 function HWChordSelectionPanel({
   tonality, accent, bank, checkedSet,
   toggleChord, setLevel, approachMap, toggleApproach,
-  xenMap, toggleXen,
+  xenMap, toggleXen, toggleXenStack,
   edo,
 }: {
   tonality: string;
@@ -1866,6 +2257,7 @@ function HWChordSelectionPanel({
   toggleApproach: (target: string, kind: ApproachKind) => void;
   xenMap: Record<string, XenKind[]>;
   toggleXen: (target: string, kind: XenKind) => void;
+  toggleXenStack: (target: string) => void;
   edo: number;
 }) {
   const baseMap = useMemo<Record<string, number[]>>(
@@ -1942,29 +2334,55 @@ function HWChordSelectionPanel({
                             })}
                           </div>
                         )}
-                        {xenAvail.length > 0 && (
-                          <div className="flex gap-0.5 px-1 pb-1">
-                            {xenAvail.map(k => {
-                              const on = enabledXen.has(k);
-                              const color = XEN_COLOR[k];
-                              return (
-                                <button key={k}
-                                  onClick={() => isChecked ? toggleXen(entry.label, k) : toggleChord(entry.label)}
-                                  title={isChecked
-                                    ? `${entry.label} with ${k === "neu" ? "neutral" : k === "sub" ? "subminor" : k === "sup" ? "supermajor" : k === "qrt" ? "quartal" : "quintal"} variant`
-                                    : `Click to enable ${entry.label}`}
-                                  className={`flex-1 min-h-[24px] text-[10px] leading-tight px-1 py-1 rounded border transition-colors ${
-                                    !isChecked ? "bg-[#141414] text-[#555] border-[#222] hover:text-[#aaa] hover:border-[#444]"
-                                    : on ? "text-black font-semibold"
-                                    : "bg-[#141414] text-[#888] border-[#333] hover:text-[#ddd] hover:border-[#555]"
-                                  }`}
-                                  style={isChecked && on ? { background: color, borderColor: color } : undefined}>
-                                  {XEN_LABEL[k]}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
+                        {xenAvail.length > 0 && (() => {
+                          const thirdKinds = xenAvail.filter(k => k !== "qrt" && k !== "qnt");
+                          const hasStack = xenAvail.includes("qrt") || xenAvail.includes("qnt");
+                          const stackOn = enabledXen.has("qrt") || enabledXen.has("qnt");
+                          return (
+                            <div className="flex flex-col gap-0.5 px-1 pb-1">
+                              {thirdKinds.length > 0 && (
+                                <div className="flex gap-0.5">
+                                  {thirdKinds.map(k => {
+                                    const on = enabledXen.has(k);
+                                    const color = XEN_COLOR[k];
+                                    return (
+                                      <button key={k}
+                                        onClick={() => isChecked ? toggleXen(entry.label, k) : toggleChord(entry.label)}
+                                        title={isChecked
+                                          ? `${entry.label} with ${k === "neu" ? "neutral" : k === "sub" ? "subminor" : "supermajor"} variant`
+                                          : `Click to enable ${entry.label}`}
+                                        className={`flex-1 min-h-[24px] text-[10px] leading-tight px-1 py-1 rounded border transition-colors ${
+                                          !isChecked ? "bg-[#141414] text-[#555] border-[#222] hover:text-[#aaa] hover:border-[#444]"
+                                          : on ? "text-black font-semibold"
+                                          : "bg-[#141414] text-[#888] border-[#333] hover:text-[#ddd] hover:border-[#555]"
+                                        }`}
+                                        style={isChecked && on ? { background: color, borderColor: color } : undefined}>
+                                        {XEN_LABEL[k]}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {hasStack && (
+                                <div className="flex gap-0.5">
+                                  <button
+                                    onClick={() => isChecked ? toggleXenStack(entry.label) : toggleChord(entry.label)}
+                                    title={isChecked
+                                      ? `${entry.label} as quartal (stacked 4ths) + quintal (stacked 5ths)`
+                                      : `Click to enable ${entry.label}`}
+                                    className={`flex-1 min-h-[24px] text-[10px] leading-tight px-1 py-1 rounded border transition-colors ${
+                                      !isChecked ? "bg-[#141414] text-[#555] border-[#222] hover:text-[#aaa] hover:border-[#444]"
+                                      : stackOn ? "text-black font-semibold"
+                                      : "bg-[#141414] text-[#888] border-[#333] hover:text-[#ddd] hover:border-[#555]"
+                                    }`}
+                                    style={isChecked && stackOn ? { background: XEN_COLOR.qrt, borderColor: XEN_COLOR.qrt } : undefined}>
+                                    qua/quin
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   );

@@ -103,6 +103,24 @@ export default function ChordsTab({
       return copy;
     });
   }, [setXenByTonality]);
+  // Combined qua/quin toggle: the per-chord card surfaces stacked-4ths and
+  // stacked-5ths voicings as one button. "On" if either kind is enabled;
+  // clicking removes both (mixed state collapses to off) or adds both.
+  const toggleXenStackForNumeral = useCallback((tonality: string, numeral: string) => {
+    setXenByTonality(prev => {
+      const tonMap = prev[tonality] ?? {};
+      const existing = tonMap[numeral] ?? [];
+      const hasAny = existing.includes("qrt") || existing.includes("qnt");
+      const next = hasAny
+        ? existing.filter(x => x !== "qrt" && x !== "qnt")
+        : [...existing, "qrt", "qnt"];
+      const tonCopy = { ...tonMap };
+      if (next.length === 0) delete tonCopy[numeral]; else tonCopy[numeral] = next;
+      const copy = { ...prev };
+      if (Object.keys(tonCopy).length === 0) delete copy[tonality]; else copy[tonality] = tonCopy;
+      return copy;
+    });
+  }, [setXenByTonality]);
 
   // Tonality multi-select. The user picks one or more modes (boxes); at
   // play time a random one is chosen and only its pool drives the loop.
@@ -161,6 +179,14 @@ export default function ChordsTab({
   const [melodyVol, setMelodyVol] = useLS<number>("lt_crd_vol_melody", 0.75);
   const [passingTones, setPassingTones] = useLS<boolean>("lt_crd_passing_tones", false);
   const fhVoicesRef = useRef<{ chords: number[][]; bass: number[][]; melody: number[][]; appliedShapes: (number[] | null)[] } | null>(null);
+  // Capture the picked tonality's chord map / xen map / scale roots so
+  // loop iterations after the first preserve them.  Without these refs
+  // the setTimeout closure called buildLoopFrames(loop) with no override
+  // args — meaning xenList=[] for every chord on iteration 2+, and
+  // qrt/qnt toggles never fired again.
+  const loopChordMapRef = useRef<Record<string, number[]> | null>(null);
+  const loopXenMapRef = useRef<Record<string, string[]> | null>(null);
+  const loopScaleRootsRef = useRef<number[] | null>(null);
   // Recency tracking for tonality picking — bias toward tonalities the
   // user hasn't seen lately so a multi-tonality pool actually rotates
   // instead of stochastically clumping on the same key.
@@ -471,11 +497,14 @@ export default function ChordsTab({
 
   // ── Shared voicing pipeline ─────────────────────────────────────────
 
-  // Derive the set of valid note counts from the selected voicing patterns
+  // Derive the set of valid note counts from the selected voicing patterns.
+  // Stack patterns (Quartal / Quintal) advertise a fixed note count via
+  // `stack.n`; chord-tone patterns use [minNotes, maxNotes].
   const patternNoteCounts = useMemo(() => {
     const counts = new Set<number>();
     for (const p of ALL_VOICING_PATTERNS) {
       if (!checkedPatterns.has(p.id)) continue;
+      if (p.stack) { counts.add(p.stack.n); continue; }
       const lo = p.minNotes;
       const hi = p.maxNotes ?? 7;
       for (let n = lo; n <= hi; n++) counts.add(n);
@@ -490,24 +519,67 @@ export default function ChordsTab({
     let shape = stepsOverride ?? currentChordMap[rn];
     if (!shape) return null;
 
-    // Apply a random compatible chord type. The pool is the numeral's natural
-    // type plus any per-numeral xen opt-ins; if the shape isn't in the
-    // catalog at all, fall through with the raw shape.
-    const compatTypes = getCompatibleTypes(shape, xenList);
-    if (compatTypes.length > 0) {
-      shape = applyChordType(shape, randomChoice(compatTypes));
-    }
-
     const validCounts = Array.from(patternNoteCounts);
     if (validCounts.length === 0) return null;
     const targetNotes = randomChoice(validCounts);
 
-    // If the selected voicing pattern expects a 7th (≥4 notes) but the applied
-    // chord type is a triad, auto-extend with the diatonic 7th so the
-    // "1 3 5 7" voicing actually has a 7th to voice.  Use the per-round
-    // tonality's scale roots when supplied (multi-tonality loops can pick
-    // a different tonality each round, so the global memo is wrong here).
-    if (targetNotes >= 4 && shape.length === 3) {
+    // Apply a random compatible chord type. The pool is the numeral's natural
+    // type plus any per-numeral xen opt-ins; if the shape isn't in the
+    // catalog at all, fall through with the raw shape.  Quartal (qrt) and
+    // quintal (qnt) toggles aren't 3rd-quality alterations — they replace
+    // the stack entirely — so they're added as separate shape variants
+    // sized to match targetNotes (so 3-, 4-, and 5-note voicings each
+    // get a properly-stacked quartal/quintal voicing instead of being
+    // extended with a diatonic 7th that breaks the stack).
+    const compatTypes = getCompatibleTypes(shape, xenList);
+    const shapeVariants: { steps: number[]; kind: "natural" | "qrt" | "qnt" }[] =
+      compatTypes.map(t => ({ steps: applyChordType(shape, t), kind: "natural" }));
+    const sh2 = getChordShapes(edo);
+    const rootShapeStep = shape[0];
+    // Quartal / quintal voicings: closed stacks at the size the user's
+    // voicing pattern asked for.  Each subsequent note sits a P4 (or P5)
+    // above the previous, so 4-stack and 5-stack quartals naturally
+    // ascend past the octave — Show Answer flags those notes with
+    // "(+1 oct)" so the reader can see which scale degree was lifted.
+    //   • 3-stack qrt  →  1, 4, b7
+    //   • 4-stack qrt  →  1, 4, b7, b3(+1 oct)
+    //   • 5-stack qrt  →  1, 4, b7, b3(+1 oct), b6(+1 oct)  (McCoy Tyner)
+    //   • Top-third qrt (4/5 notes) → quartal stack capped with an M3
+    //     above the highest 4th — "Maiden Voyage" / "So What" sonority
+    //     (root + b3 + M3 produces the characteristic #9 compound).
+    //   • Quintal mirrors the 3/4/5-stack pattern, P5s instead of P4s.
+    const buildStack = (root: number, intervalSteps: number, n: number): number[] => {
+      const out = [root];
+      for (let k = 1; k < n; k++) out.push(root + k * intervalSteps);
+      return out;
+    };
+    if (xenList.includes("qrt")) {
+      const n = Math.max(3, Math.min(5, targetNotes));
+      shapeVariants.push({ steps: buildStack(rootShapeStep, sh2.P4, n), kind: "qrt" });
+      if (n >= 4) {
+        const stack = buildStack(rootShapeStep, sh2.P4, n - 1);
+        stack.push(stack[stack.length - 1] + sh2.M3);
+        shapeVariants.push({ steps: stack, kind: "qrt" });
+      }
+    }
+    if (xenList.includes("qnt")) {
+      const n = Math.max(3, Math.min(5, targetNotes));
+      shapeVariants.push({ steps: buildStack(rootShapeStep, sh2.P5, n), kind: "qnt" });
+    }
+    let shapeKind: "natural" | "qrt" | "qnt" = "natural";
+    if (shapeVariants.length > 0) {
+      const picked = randomChoice(shapeVariants);
+      shape = picked.steps;
+      shapeKind = picked.kind;
+    }
+
+    // For natural triads only: if the voicing pattern expects a 7th
+    // (≥4 notes), auto-extend with the diatonic 7th of the round's
+    // tonality (so I7 voices as Imaj7 in C major, not Idom7).  Quartal
+    // and quintal variants are already sized to targetNotes; they skip
+    // both this extension and the upper-extension fill below.
+    const isXenStack = shapeKind === "qrt" || shapeKind === "qnt";
+    if (!isXenStack && targetNotes >= 4 && shape.length === 3) {
       const scaleRoots = scaleRootsOverride !== undefined ? scaleRootsOverride : diatonicScaleRoots;
       const rootPc = ((shape[0] % edo) + edo) % edo;
       let seventhInterval: number | null = null;
@@ -814,14 +886,21 @@ export default function ChordsTab({
     return { chords, bass, melody, appliedShapes };
   }, [voiceChord, chordMap, bassLineMode, melodyMode, edo, tonicPc, lowestOct, highestOct, clampToLayout, layoutPitchRange, passingTones]);
 
-  /** Play all active texture voices using the multi-voice scheduler. */
+  /** Play all active texture voices using the multi-voice scheduler.
+   *  CHORD_BOOST compensates for the playMultiVoice 1/sqrt(noteCount)
+   *  attenuation: with 4-note voicings, vol * harmonyVol gets divided by
+   *  ~2, so a 0.55 * 0.7 input ends up around 0.19 — half of Mode ID's
+   *  0.7 single-note default.  Multiply up so chord-mode hits a
+   *  comparable loudness without changing the user-facing slider. */
+  const CHORD_BOOST = 2.2;
+  const BASS_BOOST = 1.6;
   const playVoices = useCallback((voices: { chords: number[][]; bass: number[][] }, gapMs: number, noteDur: number, vol: number) => {
     const voiceList: { frames: number[][]; noteDuration: number; gain: number }[] = [];
     if (textureLayers.has("harmony") && voices.chords.length) {
-      voiceList.push({ frames: voices.chords, noteDuration: noteDur, gain: vol * harmonyVol });
+      voiceList.push({ frames: voices.chords, noteDuration: noteDur, gain: vol * harmonyVol * CHORD_BOOST });
     }
     if (textureLayers.has("bass") && voices.bass.length) {
-      voiceList.push({ frames: voices.bass, noteDuration: noteDur * 1.2, gain: vol * bassVol });
+      voiceList.push({ frames: voices.bass, noteDuration: noteDur * 1.2, gain: vol * bassVol * BASS_BOOST });
     }
     if (voiceList.length === 0) return;
     audioEngine.playMultiVoice(voiceList, edo, gapMs, voices.chords.length || 1);
@@ -866,7 +945,15 @@ export default function ChordsTab({
         loopTimerId.current = null;
         const loop = currentLoop;
         if (!loop || !isLoopingRef.current) return;
-        const newVoices = buildLoopFrames(loop);
+        // Re-voice with the tonality's preserved chord map + xen toggles
+        // so qrt/qnt and other xen variants keep firing on every
+        // iteration, not just the first.
+        const newVoices = buildLoopFrames(
+          loop,
+          loopChordMapRef.current ?? undefined,
+          loopXenMapRef.current ?? undefined,
+          loopScaleRootsRef.current,
+        );
         if (newVoices.chords.some(c => c.length > 0)) {
           lastPlayed.current = { frames: newVoices.chords, info: loop.join(" → ") };
           fhVoicesRef.current = newVoices;
@@ -929,6 +1016,11 @@ export default function ChordsTab({
     }
 
     setCurrentLoop(progression);
+    // Persist the picked tonality's pool so loop iterations after the
+    // first keep using the same xen toggles + chord map.
+    loopChordMapRef.current = tonalityChordMap;
+    loopXenMapRef.current = tonalityXen;
+    loopScaleRootsRef.current = tonalityScaleRoots;
     const voices = buildLoopFrames(progression, tonalityChordMap, tonalityXen, tonalityScaleRoots);
     if (!voices.chords.some(c => c.length > 0)) {
       setLoopInfo("Could not voice these chords.");
@@ -949,12 +1041,44 @@ export default function ChordsTab({
         const bassNames = bassSlice.map(f => f.map(n => intervalLabel(((n - tonicPc) % edo + edo) % edo, edo)).join(",")).join(" → ");
         detailLines.push(`Bass:   ${bassNames}`);
       }
-      // "from Do" and "in context" show ONLY the chord (harmony) notes
+      // "from Do" and "in context" show ONLY the chord (harmony) notes.
+      // A "+N" tag appears ONLY when a note has been lifted ABOVE its
+      // natural ascending placement.  In a closed-position voicing the
+      // notes ascend naturally and get no tags — even when an inversion
+      // forces 1 or 3 into the next octave above the bass (that climb
+      // is implied by the bottom-to-top sequence).  The tag appears
+      // only when an explicit spread / drop / quartal-stack mechanism
+      // pushes the note an octave further.
       if (voices.chords[idx]?.length) {
-        const chordRoot = applied ? tonicPc + applied[0] : tonicPc;
         const chordNotes = [...voices.chords[idx]].sort((a, b) => a - b);
-        const tonicNames = chordNotes.map(n => intervalLabel(((n - tonicPc) % edo + edo) % edo, edo));
-        const rootNames = chordNotes.map(n => intervalLabel(((n - chordRoot) % edo + edo) % edo, edo));
+        const lowest = chordNotes[0];
+        // Chain natural ascending positions: each note's natural is the
+        // lowest absolute pitch (with its pitch class) that sits above
+        // the previous note's natural placement.
+        const natural: number[] = [chordNotes[0]];
+        for (let i = 1; i < chordNotes.length; i++) {
+          const pc = ((chordNotes[i] % edo) + edo) % edo;
+          let nat = pc + Math.floor(natural[i - 1] / edo) * edo;
+          while (nat <= natural[i - 1]) nat += edo;
+          natural.push(nat);
+        }
+        const refForPc = (refPc: number): number => {
+          const pc = ((refPc % edo) + edo) % edo;
+          const offset = ((lowest - pc) % edo + edo) % edo;
+          return lowest - offset;
+        };
+        const tonicRef = refForPc(tonicPc);
+        const chordRootPc = applied ? ((applied[0] % edo) + edo) % edo : 0;
+        const rootRef = refForPc(tonicPc + chordRootPc);
+        const labelWithOct = (n: number, ref: number, idx: number): string => {
+          const rel = n - ref;
+          const pc = ((rel % edo) + edo) % edo;
+          const oct = Math.floor((n - natural[idx]) / edo);
+          const base = intervalLabel(pc, edo);
+          return oct > 0 ? `${base}+${oct}` : base;
+        };
+        const tonicNames = chordNotes.map((n, i) => labelWithOct(n, tonicRef, i));
+        const rootNames = chordNotes.map((n, i) => labelWithOct(n, rootRef, i));
         detailLines.push(`Chord from Do:    [${tonicNames.join(", ")}]`);
         detailLines.push(`Chord in context: [${rootNames.join(", ")}]`);
         const lilWarn = formatLilWarnings(checkLowIntervalLimits(chordNotes, edo), edo);
@@ -1267,6 +1391,7 @@ export default function ChordsTab({
               toggleApproach={(target, kind) => toggleApproach(t, target, kind)}
               xenMap={xenByTonality[t] ?? {}}
               toggleXen={(numeral, xenId) => toggleXenForNumeral(t, numeral, xenId)}
+              toggleXenStack={(numeral) => toggleXenStackForNumeral(t, numeral)}
             />
           );
         })}
@@ -1598,21 +1723,19 @@ const XEN_SHORT_LABEL: Record<string, string> = {
   neu3: "neu",
   clmaj3: "cl.maj",
   sup3: "sup",
-  qrt: "qua",
-  qnt: "quin",
 };
 // Voicing-style xen toggles: not 3rd-quality alterations (they replace
 // the chord's interval stack), so they're surfaced separately from the
 // catalog-derived quality buttons but live in the same xenByTonality
 // map.  Engine wiring: the chord-pool builder substitutes the parent
 // chord's shape with a quartal/quintal stack when the variant is picked.
-const XEN_VOICING_KINDS = ["qrt", "qnt"] as const;
-type XenVoicingKind = typeof XEN_VOICING_KINDS[number];
+// The UI exposes them as a single combined "qua/quin" button — toggling
+// adds/removes both stack variants together.
 
 function ChordSelectionPanel({
   tonality, accent, bank, edo, chordMap, checkedSet, toggleChord, setLevel,
   collapsedLevels, toggleLevel, approachMap, toggleApproach,
-  xenMap, toggleXen,
+  xenMap, toggleXen, toggleXenStack,
 }: {
   tonality: string;
   accent: string;
@@ -1628,6 +1751,7 @@ function ChordSelectionPanel({
   toggleApproach: (target: string, kind: ApproachKind) => void;
   xenMap: Record<string, string[]>;
   toggleXen: (numeral: string, xenId: string) => void;
+  toggleXenStack: (numeral: string) => void;
 }) {
   // Xen 3rd qualities available in this EDO (everything not in the
   // standard set: subminor, neutral, supermajor, classical min/maj for
@@ -1780,14 +1904,14 @@ function ChordSelectionPanel({
                               </div>
                             )}
                             <div className="flex gap-0.5">
-                              {XEN_VOICING_KINDS.map(k => {
-                                const on = enabledXen.has(k);
-                                const color = XEN_QUALITY_COLOR[k];
+                              {(() => {
+                                const on = enabledXen.has("qrt") || enabledXen.has("qnt");
+                                const color = XEN_QUALITY_COLOR.qrt;
                                 return (
-                                  <button key={k}
-                                    onClick={() => isChecked ? toggleXen(entry.label, k) : toggleChord(entry.label)}
+                                  <button
+                                    onClick={() => isChecked ? toggleXenStack(entry.label) : toggleChord(entry.label)}
                                     title={isChecked
-                                      ? `${entry.label} as ${k === "qrt" ? "quartal (stacked 4ths)" : "quintal (stacked 5ths)"}`
+                                      ? `${entry.label} as quartal (stacked 4ths) + quintal (stacked 5ths)`
                                       : `Click to enable ${entry.label}`}
                                     className={`flex-1 min-h-[24px] text-[10px] leading-tight px-1 py-1 rounded border transition-colors ${
                                       !isChecked ? "bg-[#141414] text-[#555] border-[#222] hover:text-[#aaa] hover:border-[#444]"
@@ -1795,10 +1919,10 @@ function ChordSelectionPanel({
                                       : "bg-[#141414] text-[#888] border-[#333] hover:text-[#ddd] hover:border-[#555]"
                                     }`}
                                     style={isChecked && on ? { background: color, borderColor: color } : undefined}>
-                                    {XEN_SHORT_LABEL[k]}
+                                    qua/quin
                                   </button>
                                 );
-                              })}
+                              })()}
                             </div>
                           </div>
                         </div>

@@ -3102,28 +3102,69 @@ function PatternDrillSection({
                                     })}
                                   </div>
                                 )}
-                                {xenAvail.length > 0 && (
-                                  <div className="flex gap-0.5 px-1 pb-1">
-                                    {xenAvail.map(k => {
-                                      const variantLabel = `${entry.label}${XEN_SUFFIX}${k}`;
-                                      const on = checkedChords.has(variantLabel);
-                                      const color = XEN_COLOR[k];
-                                      return (
-                                        <button key={k}
-                                          onClick={() => isChecked ? toggleChord(variantLabel) : toggleChord(entry.label)}
-                                          title={isChecked ? `${entry.label} ${XEN_LABEL[k]}` : `Click to enable ${entry.label}`}
-                                          className={`flex-1 min-h-[24px] text-[10px] leading-tight px-1 py-1 rounded border transition-colors ${
-                                            !isChecked ? "bg-[#141414] text-[#555] border-[#222] hover:text-[#aaa] hover:border-[#444]"
-                                            : on ? "text-black font-semibold"
-                                            : "bg-[#141414] text-[#888] border-[#333] hover:text-[#ddd] hover:border-[#555]"
-                                          }`}
-                                          style={isChecked && on ? { background: color, borderColor: color } : undefined}>
-                                          {XEN_LABEL[k]}
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                )}
+                                {xenAvail.length > 0 && (() => {
+                                  // Render 3rd-quality kinds individually;
+                                  // collapse qrt/qnt into one "qua/quin" button.
+                                  const thirdKinds = xenAvail.filter(k => k !== "qrt" && k !== "qnt");
+                                  const hasStack = xenAvail.includes("qrt") || xenAvail.includes("qnt");
+                                  const stackLabels: string[] = [];
+                                  if (xenAvail.includes("qrt")) stackLabels.push(`${entry.label}${XEN_SUFFIX}qrt`);
+                                  if (xenAvail.includes("qnt")) stackLabels.push(`${entry.label}${XEN_SUFFIX}qnt`);
+                                  const stackOn = stackLabels.some(l => checkedChords.has(l));
+                                  const toggleStack = () => {
+                                    setCheckedChords(prev => {
+                                      const next = new Set(prev);
+                                      if (stackOn) {
+                                        for (const l of stackLabels) next.delete(l);
+                                      } else {
+                                        for (const l of stackLabels) next.add(l);
+                                      }
+                                      setDrillChords([...next]);
+                                      return next;
+                                    });
+                                  };
+                                  return (
+                                    <div className="flex flex-col gap-0.5 px-1 pb-1">
+                                      {thirdKinds.length > 0 && (
+                                        <div className="flex gap-0.5">
+                                          {thirdKinds.map(k => {
+                                            const variantLabel = `${entry.label}${XEN_SUFFIX}${k}`;
+                                            const on = checkedChords.has(variantLabel);
+                                            const color = XEN_COLOR[k];
+                                            return (
+                                              <button key={k}
+                                                onClick={() => isChecked ? toggleChord(variantLabel) : toggleChord(entry.label)}
+                                                title={isChecked ? `${entry.label} ${XEN_LABEL[k]}` : `Click to enable ${entry.label}`}
+                                                className={`flex-1 min-h-[24px] text-[10px] leading-tight px-1 py-1 rounded border transition-colors ${
+                                                  !isChecked ? "bg-[#141414] text-[#555] border-[#222] hover:text-[#aaa] hover:border-[#444]"
+                                                  : on ? "text-black font-semibold"
+                                                  : "bg-[#141414] text-[#888] border-[#333] hover:text-[#ddd] hover:border-[#555]"
+                                                }`}
+                                                style={isChecked && on ? { background: color, borderColor: color } : undefined}>
+                                                {XEN_LABEL[k]}
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                      {hasStack && (
+                                        <div className="flex gap-0.5">
+                                          <button
+                                            onClick={() => isChecked ? toggleStack() : toggleChord(entry.label)}
+                                            title={isChecked ? `${entry.label} qua/quin (stacked 4ths + 5ths)` : `Click to enable ${entry.label}`}
+                                            className={`flex-1 min-h-[24px] text-[10px] leading-tight px-1 py-1 rounded border transition-colors ${
+                                              !isChecked ? "bg-[#141414] text-[#555] border-[#222] hover:text-[#aaa] hover:border-[#444]"
+                                              : stackOn ? "text-black font-semibold"
+                                              : "bg-[#141414] text-[#888] border-[#333] hover:text-[#ddd] hover:border-[#555]"
+                                            }`}
+                                            style={isChecked && stackOn ? { background: XEN_COLOR.qrt, borderColor: XEN_COLOR.qrt } : undefined}>
+                                            qua/quin
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             </div>
                           );
@@ -3572,6 +3613,20 @@ function TonalityChordPicker({
     setXenByTonality({ ...xenByTonality, [tonality]: nextT });
   };
 
+  // Combined qua/quin toggle: clicking the merged stack button adds or
+  // removes both qrt and qnt at once (mixed state collapses to off).
+  const toggleXenStack = (tonality: string, target: string) => {
+    const tXen = xenByTonality[tonality] ?? {};
+    const list = tXen[target] ?? [];
+    const hasAny = list.includes("qrt") || list.includes("qnt");
+    const nextList: XenKind[] = hasAny
+      ? list.filter(k => k !== "qrt" && k !== "qnt")
+      : [...list, "qrt", "qnt"];
+    const nextT = { ...tXen, [target]: nextList };
+    if (nextList.length === 0) delete nextT[target];
+    setXenByTonality({ ...xenByTonality, [tonality]: nextT });
+  };
+
   return (
     <div className="space-y-3">
       {/* Family-grouped tonality multi-select */}
@@ -3638,6 +3693,7 @@ function TonalityChordPicker({
             toggleApproach={(target, kind) => toggleApproach(tonality, target, kind)}
             xenMap={xenByTonality[tonality] ?? {}}
             toggleXen={(target, kind) => toggleXen(tonality, target, kind)}
+            toggleXenStack={(target) => toggleXenStack(tonality, target)}
             edo={edo}
           />
         );
@@ -3657,7 +3713,7 @@ function TonalityChordPicker({
 function MPChordSelectionPanel({
   tonality, accent, bank, checkedSet,
   toggleChord, setLevel, approachMap, toggleApproach,
-  xenMap, toggleXen,
+  xenMap, toggleXen, toggleXenStack,
   edo,
 }: {
   tonality: string;
@@ -3670,6 +3726,7 @@ function MPChordSelectionPanel({
   toggleApproach: (target: string, kind: ApproachKind) => void;
   xenMap: Record<string, XenKind[]>;
   toggleXen: (target: string, kind: XenKind) => void;
+  toggleXenStack: (target: string) => void;
   edo: number;
 }) {
   // Primary/Diatonic chord entries store `steps: null` and resolve at engine
@@ -3749,27 +3806,51 @@ function MPChordSelectionPanel({
                             })}
                           </div>
                         )}
-                        {xenAvail.length > 0 && (
-                          <div className="flex gap-0.5 px-1 pb-1">
-                            {xenAvail.map(k => {
-                              const on = enabledXen.has(k);
-                              const color = XEN_COLOR[k];
-                              return (
-                                <button key={k}
-                                  onClick={() => isChecked ? toggleXen(entry.label, k) : toggleChord(entry.label)}
-                                  title={isChecked ? `${entry.label} with ${k === "neu" ? "neutral" : k === "sub" ? "subminor" : k === "sup" ? "supermajor" : k === "qrt" ? "quartal" : "quintal"} variant` : `Click to enable ${entry.label}`}
-                                  className={`flex-1 min-h-[24px] text-[10px] leading-tight px-1 py-1 rounded border transition-colors ${
-                                    !isChecked ? "bg-[#141414] text-[#555] border-[#222] hover:text-[#aaa] hover:border-[#444]"
-                                    : on ? "text-black font-semibold"
-                                    : "bg-[#141414] text-[#888] border-[#333] hover:text-[#ddd] hover:border-[#555]"
-                                  }`}
-                                  style={isChecked && on ? { background: color, borderColor: color } : undefined}>
-                                  {XEN_LABEL[k]}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
+                        {xenAvail.length > 0 && (() => {
+                          const thirdKinds = xenAvail.filter(k => k !== "qrt" && k !== "qnt");
+                          const hasStack = xenAvail.includes("qrt") || xenAvail.includes("qnt");
+                          const stackOn = enabledXen.has("qrt") || enabledXen.has("qnt");
+                          return (
+                            <div className="flex flex-col gap-0.5 px-1 pb-1">
+                              {thirdKinds.length > 0 && (
+                                <div className="flex gap-0.5">
+                                  {thirdKinds.map(k => {
+                                    const on = enabledXen.has(k);
+                                    const color = XEN_COLOR[k];
+                                    return (
+                                      <button key={k}
+                                        onClick={() => isChecked ? toggleXen(entry.label, k) : toggleChord(entry.label)}
+                                        title={isChecked ? `${entry.label} with ${k === "neu" ? "neutral" : k === "sub" ? "subminor" : "supermajor"} variant` : `Click to enable ${entry.label}`}
+                                        className={`flex-1 min-h-[24px] text-[10px] leading-tight px-1 py-1 rounded border transition-colors ${
+                                          !isChecked ? "bg-[#141414] text-[#555] border-[#222] hover:text-[#aaa] hover:border-[#444]"
+                                          : on ? "text-black font-semibold"
+                                          : "bg-[#141414] text-[#888] border-[#333] hover:text-[#ddd] hover:border-[#555]"
+                                        }`}
+                                        style={isChecked && on ? { background: color, borderColor: color } : undefined}>
+                                        {XEN_LABEL[k]}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                              {hasStack && (
+                                <div className="flex gap-0.5">
+                                  <button
+                                    onClick={() => isChecked ? toggleXenStack(entry.label) : toggleChord(entry.label)}
+                                    title={isChecked ? `${entry.label} as quartal (stacked 4ths) + quintal (stacked 5ths)` : `Click to enable ${entry.label}`}
+                                    className={`flex-1 min-h-[24px] text-[10px] leading-tight px-1 py-1 rounded border transition-colors ${
+                                      !isChecked ? "bg-[#141414] text-[#555] border-[#222] hover:text-[#aaa] hover:border-[#444]"
+                                      : stackOn ? "text-black font-semibold"
+                                      : "bg-[#141414] text-[#888] border-[#333] hover:text-[#ddd] hover:border-[#555]"
+                                    }`}
+                                    style={isChecked && stackOn ? { background: XEN_COLOR.qrt, borderColor: XEN_COLOR.qrt } : undefined}>
+                                    qua/quin
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                   );

@@ -73,7 +73,14 @@ const TONIC_CHORD: Record<string, ChordOption> = {
 
 // Resolve a chord-symbol degree label (including "11", "13", etc.) to a step count.
 // Falls back to the lower-octave equivalent when a label isn't directly in the EDO map.
-function resolveStep(d: string, edo: number): number {
+//
+// In meantone EDOs (19, 31, 41) some modes (notably Altered) have scale
+// degrees whose family-map step doesn't match the global getDegreeMap —
+// e.g. Altered's "3" is enharmonically a "b4" and sits at a different step
+// in 31-EDO than getDegreeMap's "3".  When a modeMap is supplied we prefer
+// it so the characteristic chord lands on the same notes the scale plays.
+function resolveStep(d: string, edo: number, modeMap?: Record<string, number>): number {
+  if (modeMap && modeMap[d] !== undefined) return modeMap[d];
   const map = getDegreeMap(edo);
   if (map[d] !== undefined) return map[d];
   const fallback: Record<string, string> = {
@@ -81,7 +88,11 @@ function resolveStep(d: string, edo: number): number {
     "13":  "6",  "b13": "b6", "#13": "#6",
   };
   const alt = fallback[d];
-  return (alt && map[alt] !== undefined) ? map[alt] : 0;
+  if (alt) {
+    if (modeMap && modeMap[alt] !== undefined) return modeMap[alt];
+    if (map[alt] !== undefined) return map[alt];
+  }
+  return 0;
 }
 
 const c = (modeName: string): ChordOption[] => {
@@ -309,6 +320,32 @@ function pickAvoiding(pool: string[], avoid: string | undefined): string {
   return src[Math.floor(Math.random() * src.length)];
 }
 
+// Diagnostic priority order for a mode, highest → lowest:
+//   1. character tones (colors) — the alterations that *define* the mode
+//   2. 3rd — major / minor quality
+//   3. 5th — present in most diatonic modes; secondary stability
+//   4. 4th (or whatever the mode's 4th-degree label is) — last
+// If a mode happens to put a 4th or 5th *into* its character set
+// (e.g. Lydian's #4, Locrian's b5), that note enters the priority
+// list at level 1 instead of level 3/4 — handled automatically by
+// the dedup in `getDiagnosticPriority`.
+function getDiagnosticPriority(mode: ModeInfo): string[] {
+  const third = getThird(mode);
+  const out: string[] = [];
+  // Level 1 — colors (shuffled so different runs feature different ones first).
+  for (const c of [...mode.character].sort(() => Math.random() - 0.5)) {
+    if (!out.includes(c)) out.push(c);
+  }
+  // Level 2 — 3rd.
+  if (!out.includes(third)) out.push(third);
+  // Level 3 — 5th, only if the mode actually has one.
+  if (mode.scaleDegrees.includes("5") && !out.includes("5")) out.push("5");
+  // Level 4 — 4th-position degree (could be "4", "#4", "b5" depending on mode).
+  const fourth = mode.scaleDegrees[3];
+  if (fourth && fourth !== "1" && !out.includes(fourth)) out.push(fourth);
+  return out;
+}
+
 // Archetype B — framed by stable non-root tones (3rd, 5th, etc.).
 // Root never appears; drone supplies the tonic reference.
 const archetypeStableFramed: ArchetypeFn = (mode, tonicAbs, edo, low, high, phraseLen) => {
@@ -326,20 +363,34 @@ const archetypeStableFramed: ArchetypeFn = (mode, tonicAbs, edo, low, high, phra
   // mustHit color list to whatever's left.  A short maxNotes (e.g. 3)
   // shouldn't blow past its budget just because the mode has many colors.
   const target = Math.max(2, phraseLen);
-  const start = randomChoice(anchors);
-  const end = randomChoice(anchors);
   const innerSlots = Math.max(0, target - 2);
-  const mustHit = [...colors].sort(() => Math.random() - 0.5).slice(0, innerSlots);
+  // mustHit follows the priority order (colors first, then 3rd, then
+  // 5th, then 4th).  When phraseLen is short (innerSlots < |colors|+1),
+  // the 3rd may not fit; in that case we force it as the start so the
+  // listener always hears the mode's quality.
+  const mustHit = getDiagnosticPriority(mode).slice(0, innerSlots);
+  const has3rd = mustHit.includes(third);
+  // If the 3rd didn't fit in mustHit, force it as the start.  Either
+  // way the 3rd is placed exactly once (via mustHit or via start);
+  // fill and end never reintroduce it.
+  const start = has3rd ? randomChoice(anchors.filter(a => a !== third)) || randomChoice(anchors) : third;
+  // End picks from anchors excluding the 3rd so it can't double up
+  // there either.
+  const endAnchors = anchors.filter(a => a !== third);
+  const end = endAnchors.length ? randomChoice(endAnchors) : randomChoice(anchors);
   const seq: string[] = [start, ...mustHit];
   const fillCount = Math.max(0, target - 1 - seq.length);
   const colorPool = colors.length <= 2 ? [...colors, ...extras] : colors;
+  // Fill anchor pool excludes the 3rd — it's already placed exactly
+  // once.  No repeats of the 3rd anywhere in the phrase.
+  const fillAnchors = anchors.filter(a => a !== third);
   for (let i = 0; i < fillCount; i++) {
     const prev = seq[seq.length - 1];
     const r = Math.random();
-    // Strong bias toward color tones — they're what actually identifies
-    // the mode. Anchors only fill ~20% of the inner slots.
-    if (r < 0.2)  seq.push(pickAvoiding(anchors, prev));
-    else          seq.push(pickAvoiding(colorPool, prev));
+    // 75% colors, 25% other anchors.  The 3rd is intentionally absent
+    // from the fill pool — it sits exactly once in the phrase.
+    if (r < 0.75 || fillAnchors.length === 0)  seq.push(pickAvoiding(colorPool, prev));
+    else                                        seq.push(pickAvoiding(fillAnchors, prev));
   }
   seq.push(end);
   return voiceLeadSeq(seq, mode, tonicAbs, edo, low, high);
@@ -350,26 +401,32 @@ const archetypeStableFramed: ArchetypeFn = (mode, tonicAbs, edo, low, high, phra
 // (3rd / 5th / 7th — slice avoids the upper extensions, which would just be
 // the rest of the scale and turn the spine into the whole mode) and color tones.
 const archetypeSpine: ArchetypeFn = (mode, tonicAbs, edo, low, high, phraseLen) => {
+  const third = getThird(mode);
   const chord = mode.chordOptions[0]?.degrees ?? ["1","3","5","b7"];
   const spine = chord.slice(1, 4);
   if (!spine.length) return null;
   const colors = getColorsMinusThird(mode);
   const extras = getMelodicExtras(mode);
 
-  const shuffledSpine = [...spine].sort(() => Math.random() - 0.5);
+  // Spine excluding the 3rd — used in fill so the 3rd never repeats.
+  const spineNoThird = [...spine.filter(d => d !== third)].sort(() => Math.random() - 0.5);
   const colorPool = (colors.length <= 2 ? [...colors, ...extras] : [...colors])
     .sort(() => Math.random() - 0.5);
   // Honour phraseLen strictly — never exceed the user's Max-notes budget.
   const target = Math.max(1, phraseLen);
   const seq: string[] = [];
+  // Lead with the 3rd so the listener hears the diagnostic tone
+  // immediately, regardless of phrase length.  3rd is placed exactly
+  // once here; fill never re-emits it.
+  if (target >= 1) seq.push(third);
   let si = 0, ci = 0;
   while (seq.length < target) {
     const prev: string | undefined = seq.length > 0 ? seq[seq.length - 1] : undefined;
-    // 70% color tones, 30% spine — same color-bias intent as the
-    // other two archetypes.
-    if (Math.random() < 0.3) {
-      let pick = shuffledSpine[si++ % shuffledSpine.length];
-      if (pick === prev && shuffledSpine.length > 1) pick = shuffledSpine[si++ % shuffledSpine.length];
+    // 70% colors, 30% other spine notes (5th / 7th).  Colors are the
+    // top priority per the diagnostic order; spine fills weak slots.
+    if (Math.random() < 0.3 && spineNoThird.length > 0) {
+      let pick = spineNoThird[si++ % spineNoThird.length];
+      if (pick === prev && spineNoThird.length > 1) pick = spineNoThird[si++ % spineNoThird.length];
       seq.push(pick);
     } else {
       let pick = colorPool[ci++ % colorPool.length];
@@ -393,23 +450,29 @@ const archetypeLandOnColor: ArchetypeFn = (mode, tonicAbs, edo, low, high, phras
   // start + must-hits + fillers, all capped to fit.
   const target = Math.max(2, phraseLen);
   const finalColor = randomChoice(colors);
-  const start = randomChoice(stable);
   const innerSlots = Math.max(0, target - 2);
-  const mustHit = colors
-    .filter(c => c !== finalColor)
-    .sort(() => Math.random() - 0.5)
-    .slice(0, innerSlots);
+  // mustHit follows priority order (colors > 3rd > 5th > 4th); the
+  // final-landing color is reserved separately so we filter it out
+  // here to avoid duplicating it in the inner.
+  const priorityFiltered = getDiagnosticPriority(mode).filter(d => d !== finalColor);
+  const mustHit = priorityFiltered.slice(0, innerSlots);
+  const has3rd = mustHit.includes(third);
+  // Force-start with 3rd when it didn't fit into mustHit; otherwise
+  // pick a random non-3rd stable so the 3rd doesn't double-up.
+  const stableNoThird = stable.filter(d => d !== third);
+  const start = has3rd
+    ? (stableNoThird.length ? randomChoice(stableNoThird) : randomChoice(stable))
+    : third;
   const seq: string[] = [start, ...mustHit];
   const fillCount = Math.max(0, target - 1 - seq.length);
   const colorPool = colors.length <= 2 ? [...colors, ...extras] : colors;
   for (let i = 0; i < fillCount; i++) {
     const prev = seq[seq.length - 1];
     const r = Math.random();
-    // 70% color, 15% stable, 15% third.  Heavy bias toward colors so
-    // the listener actually hears the mode's defining tones.
-    if (r < 0.15)       seq.push(pickAvoiding(stable, prev));
-    else if (r < 0.30)  seq.push(prev === third ? pickAvoiding(stable, prev) : third);
-    else                seq.push(pickAvoiding(colorPool, prev));
+    // 75% colors, 25% other stable.  3rd intentionally absent — it's
+    // already placed exactly once via mustHit or start.
+    if (r < 0.75 || stableNoThird.length === 0)  seq.push(pickAvoiding(colorPool, prev));
+    else                                          seq.push(pickAvoiding(stableNoThird, prev));
   }
   seq.push(finalColor);
   return voiceLeadSeq(seq, mode, tonicAbs, edo, low, high);
@@ -582,13 +645,14 @@ function tryBuildScale(
   return { notes: fitted, degrees, pattern };
 }
 
-// Characteristic-chord builder: a 1-3-7 shell (lower structure) topped by the
-// mode's character tones (upper structure), so the listener hears the basic
-// quality (major / minor / dom / dim) underneath the modal colors. Root is
-// anchored at tonicAbs; each successive tone is octave-shifted up to sit above
-// the previous one, and the stack is allowed to run past the top of the
-// register. Character tones already covered by the shell (e.g. Mixolydian's
-// b7) drop out — leaving the shell to carry that color on its own.
+// Characteristic-chord builder: plays the mode's full tonic 13th chord —
+// lower structure 1-3-5-7 + upper structure 9-11-13, with each degree's
+// alteration baked in by the mode (e.g. Aeolian = 1, b3, 5, b7, 9, 11, b13).
+// All seven degrees stack ascending from tonicAbs so the listener actually
+// hears every tension named in the chord symbol.  Earlier this was a 1-3-7
+// shell + character-tones-only upper, which made chords like "m7(9,11,♭13)"
+// drop the 9 and 11 entirely — the symbol claimed extensions the voicing
+// never played.  The stack is allowed to run past the top of the register.
 function generateChord(
   mode: ModeInfo, tonicAbs: number, edo: number, _low: number, _high: number,
 ): { notes: number[]; chordName: string; degrees: string[] } | null {
@@ -596,28 +660,16 @@ function generateChord(
   if (!mode.chordOptions.length) return null;
   const pick = mode.chordOptions[0];
 
-  // Shell: 1, 3, 7 — read by chord position so altered 3rds/7ths
-  // (b3, b7, dim7=6, …) come along with the chord's quality.
-  const shell: string[] = [pick.degrees[0]];
-  if (pick.degrees.length >= 2) shell.push(pick.degrees[1]);
-  if (pick.degrees.length >= 4) shell.push(pick.degrees[3]);
-
-  // Upper structure: character tones not already represented in the shell,
-  // sorted by raw step so the voicing reads in ascending pitch order.
-  const shellSet = new Set(shell);
-  const upper = mode.character
-    .filter(d => !shellSet.has(d))
-    .map(d => ({ d, step: resolveStep(d, edo) }))
-    .sort((a, b) => a.step - b.step);
-
+  const modeMap = getModeDegreeMap(edo, mode.family, mode.name);
+  // Drop the natural P5 — it's redundant in dense voicings (the ear
+  // hears it from the harmonic series of the root) and dropping it
+  // makes room for the upper tensions to speak.  Altered fifths
+  // (b5 in Locrian/Altered, #5 in Lydian Aug / Ionian #5) ARE chord-
+  // defining and stay in the voicing.
+  const playedDegrees = pick.degrees.filter(d => d !== "5");
   const notes: number[] = [tonicAbs];
-  for (let i = 1; i < shell.length; i++) {
-    let n = tonicAbs + resolveStep(shell[i], edo);
-    while (n <= notes[notes.length - 1]) n += edo;
-    notes.push(n);
-  }
-  for (const { d } of upper) {
-    let n = tonicAbs + resolveStep(d, edo);
+  for (let i = 1; i < playedDegrees.length; i++) {
+    let n = tonicAbs + resolveStep(playedDegrees[i], edo, modeMap);
     while (n <= notes[notes.length - 1]) n += edo;
     notes.push(n);
   }
@@ -625,7 +677,7 @@ function generateChord(
   return {
     notes,
     chordName: pick.name,
-    degrees: [...shell, ...upper.map(u => u.d)],
+    degrees: playedDegrees,
   };
 }
 

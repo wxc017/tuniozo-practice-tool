@@ -78,55 +78,69 @@ export interface VoicingPattern {
   spread: boolean;    // spread variant
   minNotes: number;   // minimum chord size (3 = triads, 4 = sevenths)
   maxNotes?: number;  // maximum chord size (3 = triads only)
+  // Stack mode: replaces the chord's pitch content with N stacked
+  // P4s ("p4" → quartal) or P5s ("p5" → quintal) starting from the
+  // chord's root.  When set, `order` and `spread` are ignored.  `n`
+  // is the number of notes in the stack (3 / 4 / 5).
+  stack?: { kind: "p4" | "p5"; n: number };
 }
 
-// Grouped by inversion for clean UI layout
+// Grouped by inversion for clean UI layout.
+//
+// Pattern audit: every spread variant whose actual pitch output is either
+// (a) identical to a non-spread pattern in the same group, or (b) so wide
+// that it produces a +2-octave (or wider) tag — uncommon in real voicings
+// — has been removed.  The remaining set is the canonical common-voicing
+// catalog: closed, mild-spread (one octave displacement), and inversions.
+//
+// Removed as redundant:
+//   • "1 3 5 (spread)"  ≡ "1 5 3"        (Root Position triads)
+//   • "1 3 5 7 (spread)" ≡ "1 5 3 7"     (Root Position sevenths)
+//   • "3 5 1 (spread)"  ≡ "3 1 5"        (1st Inversion triads)
+//   • "5 1 3 (spread)"  ≡ "5 3 1"        (2nd Inversion triads)
+// Removed for >+1-octave spread (uncommon, not used in practice):
+//   • "1 7 3 5 (spread)" → "1 3+1 7+1 5+2"
+//   • "1 5 3 7 (spread)" → "1 3+1 5+1 7+2"
+//   • "3 7 1 5 (spread)" → "3 1+1 7+1 5+2"
+//   • "3 1 5 7 (spread)" → "3 5+1 1+2 7+2"
+//   • "5 1 3 7 (spread)" → "5 3 1+1 7+2"
+//   • "7 3 5 1 (spread)" → "7 5 3+1 1+2"
 export const ALL_VOICING_PATTERNS: VoicingPattern[] = [
   // ── Root Position (bass = 1) ──────────────────────────────────────
   // Triads
   { id: "t-135",     label: "1 3 5",           group: "Root Position",  order: [0,1,2], spread: false, minNotes: 3, maxNotes: 3 },
   { id: "t-153",     label: "1 5 3",           group: "Root Position",  order: [0,2,1], spread: false, minNotes: 3, maxNotes: 3 },
-  { id: "t-135s",    label: "1 3 5 (spread)",  group: "Root Position",  order: [0,1,2], spread: true,  minNotes: 3, maxNotes: 3 },
   { id: "t-153s",    label: "1 5 3 (spread)",  group: "Root Position",  order: [0,2,1], spread: true,  minNotes: 3, maxNotes: 3 },
   // Sevenths
   { id: "7-1357",    label: "1 3 5 7",           group: "Root Position",  order: [0,1,2,3], spread: false, minNotes: 4 },
   { id: "7-1735",    label: "1 7 3 5",           group: "Root Position",  order: [0,3,1,2], spread: false, minNotes: 4 },
   { id: "7-1537",    label: "1 5 3 7",           group: "Root Position",  order: [0,2,1,3], spread: false, minNotes: 4 },
-  { id: "7-1357s",   label: "1 3 5 7 (spread)",  group: "Root Position",  order: [0,1,2,3], spread: true,  minNotes: 4 },
-  { id: "7-1735s",   label: "1 7 3 5 (spread)",  group: "Root Position",  order: [0,3,1,2], spread: true,  minNotes: 4 },
-  { id: "7-1537s",   label: "1 5 3 7 (spread)",  group: "Root Position",  order: [0,2,1,3], spread: true,  minNotes: 4 },
 
   // ── 1st Inversion (bass = 3) ──────────────────────────────────────
   // Triads
   { id: "t-351",     label: "3 5 1",           group: "1st Inversion",  order: [1,2,0], spread: false, minNotes: 3, maxNotes: 3 },
   { id: "t-315",     label: "3 1 5",           group: "1st Inversion",  order: [1,0,2], spread: false, minNotes: 3, maxNotes: 3 },
-  { id: "t-351s",    label: "3 5 1 (spread)",  group: "1st Inversion",  order: [1,2,0], spread: true,  minNotes: 3, maxNotes: 3 },
   { id: "t-315s",    label: "3 1 5 (spread)",  group: "1st Inversion",  order: [1,0,2], spread: true,  minNotes: 3, maxNotes: 3 },
   // Sevenths
   { id: "7-3715",    label: "3 7 1 5",           group: "1st Inversion",  order: [1,3,0,2], spread: false, minNotes: 4 },
   { id: "7-3157",    label: "3 1 5 7",           group: "1st Inversion",  order: [1,0,2,3], spread: false, minNotes: 4 },
   { id: "7-3571",    label: "3 5 7 1",           group: "1st Inversion",  order: [1,2,3,0], spread: false, minNotes: 4 },
-  { id: "7-3715s",   label: "3 7 1 5 (spread)",  group: "1st Inversion",  order: [1,3,0,2], spread: true,  minNotes: 4 },
-  { id: "7-3157s",   label: "3 1 5 7 (spread)",  group: "1st Inversion",  order: [1,0,2,3], spread: true,  minNotes: 4 },
   { id: "7-3571s",   label: "3 5 7 1 (spread)",  group: "1st Inversion",  order: [1,2,3,0], spread: true,  minNotes: 4 },
 
   // ── 2nd Inversion (bass = 5) ──────────────────────────────────────
   // Triads
   { id: "t-513",     label: "5 1 3",           group: "2nd Inversion",  order: [2,0,1], spread: false, minNotes: 3, maxNotes: 3 },
   { id: "t-531",     label: "5 3 1",           group: "2nd Inversion",  order: [2,1,0], spread: false, minNotes: 3, maxNotes: 3 },
-  { id: "t-513s",    label: "5 1 3 (spread)",  group: "2nd Inversion",  order: [2,0,1], spread: true,  minNotes: 3, maxNotes: 3 },
   { id: "t-531s",    label: "5 3 1 (spread)",  group: "2nd Inversion",  order: [2,1,0], spread: true,  minNotes: 3, maxNotes: 3 },
   // Sevenths
   { id: "7-5137",    label: "5 1 3 7",           group: "2nd Inversion",  order: [2,0,1,3], spread: false, minNotes: 4 },
   { id: "7-5713",    label: "5 7 1 3",           group: "2nd Inversion",  order: [2,3,0,1], spread: false, minNotes: 4 },
-  { id: "7-5137s",   label: "5 1 3 7 (spread)",  group: "2nd Inversion",  order: [2,0,1,3], spread: true,  minNotes: 4 },
   { id: "7-5713s",   label: "5 7 1 3 (spread)",  group: "2nd Inversion",  order: [2,3,0,1], spread: true,  minNotes: 4 },
 
   // ── 3rd Inversion (bass = 7) ──────────────────────────────────────
   { id: "7-7135",    label: "7 1 3 5",           group: "3rd Inversion",  order: [3,0,1,2], spread: false, minNotes: 4 },
   { id: "7-7351",    label: "7 3 5 1",           group: "3rd Inversion",  order: [3,1,2,0], spread: false, minNotes: 4 },
   { id: "7-7135s",   label: "7 1 3 5 (spread)",  group: "3rd Inversion",  order: [3,0,1,2], spread: true,  minNotes: 4 },
-  { id: "7-7351s",   label: "7 3 5 1 (spread)",  group: "3rd Inversion",  order: [3,1,2,0], spread: true,  minNotes: 4 },
 
   // ── Sus2 ──────────────────────────────────────────────────────────
   // Triads
@@ -163,9 +177,86 @@ export const ALL_VOICING_PATTERNS: VoicingPattern[] = [
   { id: "s47-5147",  label: "5 1 4 7",  group: "Sus4",  order: [2,0,1,3], spread: false, minNotes: 4 },
   { id: "s47-7145",  label: "7 1 4 5",  group: "Sus4",  order: [3,0,1,2], spread: false, minNotes: 4 },
   { id: "s47-7451",  label: "7 4 5 1",  group: "Sus4",  order: [3,1,2,0], spread: false, minNotes: 4 },
+
+  // ── Quartal (cycle of 4ths through the chord's scale) ─────────────
+  // Bypasses chord-tone selection — emits a stack ascending by 4ths
+  // through the chord's natural scale (major scale for major chords,
+  // minor scale for minor chords).  The label uses generic scale-degree
+  // names (1, 4, 7, 3, 6); the engine substitutes M7/M3/M6 for major
+  // chords and m7/m3/m6 for minor — so the voicing stays diatonic to
+  // the chord's quality.  No "+N" tags: the bottom-to-top sequence
+  // implies each note's octave via the ascending cycle.
+  { id: "qrt-3", label: "1 4 7",         group: "Quartal", order: [], spread: false, minNotes: 1, stack: { kind: "p4", n: 3 } },
+  { id: "qrt-4", label: "1 4 7 3",       group: "Quartal", order: [], spread: false, minNotes: 1, stack: { kind: "p4", n: 4 } },
+  { id: "qrt-5", label: "1 4 7 3 6",     group: "Quartal", order: [], spread: false, minNotes: 1, stack: { kind: "p4", n: 5 } },
+
+  // ── Quintal (cycle of 5ths through the chord's scale) ─────────────
+  // Same chord-quality awareness as quartal: M6/M3 for major chords,
+  // m6/m3 for minor.  Labels stay generic.
+  { id: "qnt-3", label: "1 5 2",         group: "Quintal", order: [], spread: false, minNotes: 1, stack: { kind: "p5", n: 3 } },
+  { id: "qnt-4", label: "1 5 2 6",       group: "Quintal", order: [], spread: false, minNotes: 1, stack: { kind: "p5", n: 4 } },
+  { id: "qnt-5", label: "1 5 2 6 3",     group: "Quintal", order: [], spread: false, minNotes: 1, stack: { kind: "p5", n: 5 } },
 ];
 
 export const VOICING_PATTERN_GROUPS: string[] = [...new Set(ALL_VOICING_PATTERNS.map(p => p.group))];
+
+// Re-label each voicing pattern with explicit "+N" octave tags — but ONLY
+// when the spread shift genuinely lifts a note ABOVE its natural ascending
+// placement.  A bottom-to-top sequence like "5 7 1 3" already implies its
+// own octave structure (1 must be in the next octave above 7 because 1<7
+// in pc; 3 must climb above 1; etc.) — those implied placements get NO
+// tag.  A spread variant that raises a note an octave beyond its implied
+// position (e.g. "1 3 5" → spread raises both 3 and 5 by an octave) gets
+// "+1" on each lifted note, making the label "1 3+1 5+1".
+//
+// Position math uses diatonic positions (1-7) so the labels are EDO-
+// agnostic; the same logic applies to applyVoicingPattern in 12-EDO
+// because diatonic positions preserve pitch order within each octave.
+(() => {
+  const positionOf = (tok: string): number => {
+    const m = tok.match(/^([b#]*)(\d)/);
+    return m ? parseInt(m[2], 10) : 0;
+  };
+  const OCT = 7; // diatonic positions per octave
+  const annotate = (originalLabel: string, spread: boolean): string => {
+    const clean = originalLabel.replace(/\s*\(spread\)\s*$/, "").trim();
+    const tokens = clean.split(/\s+/).filter(t => t.length > 0);
+    if (tokens.length === 0) return originalLabel;
+    const positions = tokens.map(positionOf);
+    // Phase 1 — compute the actual abs positions (with spread applied).
+    const octs: number[] = new Array(tokens.length).fill(0);
+    for (let i = 1; i < tokens.length; i++) {
+      while (positions[i] + octs[i] * OCT <= positions[i - 1] + octs[i - 1] * OCT) octs[i]++;
+    }
+    if (spread && tokens.length >= 3) {
+      for (let i = 1; i < tokens.length; i += 2) octs[i]++;
+    }
+    // Phase 2 — sort bottom-to-top.
+    const items = tokens.map((tok, i) => ({ tok, abs: positions[i] + octs[i] * OCT, pos: positions[i] }));
+    items.sort((a, b) => a.abs - b.abs);
+    // Phase 3 — chain natural ascending positions.  Each note's "natural"
+    // placement is the lowest octave-shift of its pos that sits above
+    // the previous note's NATURAL placement (not its actual placement).
+    // Tags appear only when actual > natural — i.e. the spread genuinely
+    // displaced this note beyond plain ascending.
+    const natural: number[] = [items[0].abs];
+    for (let i = 1; i < items.length; i++) {
+      let nat = items[i].pos;
+      while (nat <= natural[i - 1]) nat += OCT;
+      natural.push(nat);
+    }
+    return items.map((it, i) => {
+      const o = Math.floor((it.abs - natural[i]) / OCT);
+      return o > 0 ? `${it.tok}+${o}` : it.tok;
+    }).join(" ");
+  };
+  for (const p of ALL_VOICING_PATTERNS) {
+    // Stack-mode patterns (Quartal / Quintal) already have their final
+    // label baked in — skip them.
+    if (p.stack) continue;
+    p.label = annotate(p.label, p.spread);
+  }
+})();
 
 /** Apply a specific voicing pattern to a chord.
  *  `chord` may include extensions (9/11/13) already placed an octave above
@@ -177,6 +268,37 @@ export const VOICING_PATTERN_GROUPS: string[] = [...new Set(ALL_VOICING_PATTERNS
 export function applyVoicingPattern(chord: number[], edo: number, pattern: VoicingPattern): number[] {
   const n = chord.length;
   if (n === 0) return [];
+
+  // Stack-mode (Quartal / Quintal): emit a stack ascending through the
+  // chord's natural scale by 4ths (P4 cycle: 1, 4, 7, 3, 6) or 5ths
+  // (P5 cycle: 1, 5, 2, 6, 3).  Chord quality (major vs minor 3rd) is
+  // detected from the input chord — major chords use M7/M3/M6 in the
+  // upper positions, minor chords use m7/m3/m6.  The voicing therefore
+  // stays diatonic to the chord's quality (a quartal stack on a minor
+  // chord plays pure P4s, while on a major chord the cycle includes
+  // an A4 between 4 and 7 — which is what gives major-key quartal
+  // voicings their characteristic diatonic brightness).
+  if (pattern.stack) {
+    const sortedStack = [...chord].sort((a, b) => a - b);
+    const root = sortedStack[0];
+    const dm = getDegreeMap(edo);
+    let isMinor = false;
+    if (sortedStack.length >= 2) {
+      const third = ((sortedStack[1] - root) % edo + edo) % edo;
+      if (third === dm["b3"]) isMinor = true;
+    }
+    const degrees = pattern.stack.kind === "p4"
+      ? ["1", "4", isMinor ? "b7" : "7", isMinor ? "b3" : "3", isMinor ? "b6" : "6"]
+      : ["1", "5", "2", isMinor ? "b6" : "6", isMinor ? "b3" : "3"];
+    const offsets = degrees.slice(0, pattern.stack.n).map(d => dm[d] ?? 0);
+    const out: number[] = [root];
+    for (let k = 1; k < offsets.length; k++) {
+      let note = root + offsets[k];
+      while (note <= out[out.length - 1]) note += edo;
+      out.push(note);
+    }
+    return out;
+  }
 
   // Sort by absolute pitch so extensions (input at bass+edo+pc) retain the
   // octave displacement that distinguishes a 9th from a 2nd, an 11th from
@@ -606,11 +728,58 @@ const HOME_CHORDS = new Set(["I", "i"]);
  *
  * Returns null if no valid loop can be found.
  */
+// Common-practice transition weights — exported so the voice-leading
+// reharmonizer can score functional moves using the same table the Markov
+// walk uses.
+export const FUNCTIONAL_WEIGHTS_TABLE: Record<string, Record<string, number>> = {
+  "I":    { ii: 3, iii: 2, IV: 3, V: 2, vi: 2, "vii°": 1, "V/ii": 2, "V/iii": 1, "V/IV": 2, "V/V": 3, "V/vi": 2, "ii/IV": 1, "ii/V": 2, "iiø/ii": 1, "iiø/iii": 1, "iiø/vi": 1, "TT/I": 1, "TT/ii": 1, "TT/V": 1, "TT/vi": 1, iv: 1, bVII: 1, bIII: 1, bVI: 1 },
+  "ii":   { V: 4, "vii°": 2, "V/V": 3, "ii/V": 2 },
+  "iii":  { vi: 3, IV: 3, ii: 2 },
+  "IV":   { V: 3, "vii°": 2, I: 2, ii: 1, "V/V": 2, "TT/V": 1, iv: 2 },
+  "V":    { I: 5, vi: 2, IV: 1, bVI: 1 },
+  "vi":   { ii: 3, IV: 3, V: 1, iii: 2, "V/ii": 2, "iiø/ii": 1, iv: 1, bVII: 1 },
+  "vii°": { I: 3, iii: 2, vi: 2 },
+  "i":    { "ii°": 2, III: 2, iv: 3, V: 2, v: 1, VI: 2, VII: 1, "vii°": 2 },
+  "ii°":  { V: 4, "vii°": 2, v: 1 },
+  "III":  { VI: 3, iv: 3, i: 1 },
+  "iv":   { V: 3, "vii°": 2, I: 1, i: 2, v: 1 },
+  "v":    { i: 2, VI: 3, iv: 2, bVI: 2 },
+  "VI":   { "ii°": 3, iv: 3, V: 1, III: 1 },
+  "VII":  { III: 3, i: 3 },
+  "V/ii":  { ii: 5 },
+  "V/iii": { iii: 5 },
+  "V/IV":  { IV: 5 },
+  "V/V":   { V: 5 },
+  "V/vi":  { vi: 5 },
+  "ii/IV":   { "V/IV": 5, "vii°/IV": 2, "TT/IV": 1, IV: 2 },
+  "ii/V":    { "V/V": 5,  "vii°/V": 2,  "TT/V": 1,  V: 2 },
+  "iiø/ii":  { "V/ii": 5, "vii°/ii": 2, "TT/ii": 1, ii: 2 },
+  "iiø/iii": { "V/iii": 5,"vii°/iii": 2, iii: 2 },
+  "iiø/vi":  { "V/vi": 5, "vii°/vi": 2, "TT/vi": 1, vi: 2 },
+  "TT/I":   { I: 5 },
+  "TT/ii":  { ii: 5 },
+  "TT/V":   { V: 5 },
+  "TT/vi":  { vi: 5 },
+  "vii°/ii":  { ii: 5 },
+  "vii°/iii": { iii: 5 },
+  "vii°/IV":  { IV: 5 },
+  "vii°/V":   { V: 5 },
+  "vii°/vi":  { vi: 5 },
+  bIII: { IV: 3, iv: 2, bVI: 2, bVII: 2, i: 1 },
+  bVI:  { bVII: 3, V: 2, iv: 2, i: 1 },
+  bVII: { I: 4, i: 2, bIII: 2, IV: 2 },
+  "#iv°": { V: 3, "vii°": 2 },
+};
+
 export function generateFunctionalLoop(
   available: string[],
   length: number,
   maxAttempts = 300,
   boosted?: Set<string>,
+  // Per-target predecessor constraint: target → set of allowed predecessors.
+  // Used by the iiV-only mode (secondary V/X is iiV-locked, must follow
+  // ii/X or iiø/X — no direct I → V/X jumps).
+  restrictedPredecessors?: Map<string, Set<string>>,
 ): string[] | null {
   if (available.length < 2) return null;
 
@@ -620,8 +789,19 @@ export function generateFunctionalLoop(
   const startPool = diatonicStarts.length > 0 ? diatonicStarts : (homes.length > 0 ? homes : [available[0]]);
   const boostFactor = 3;
   const boost = boosted ?? new Set<string>();
+  const restricted = restrictedPredecessors ?? new Map<string, Set<string>>();
 
   const uniformPick = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
+  // Filter transitions by restrictedPredecessors: if target T is locked to
+  // predecessors P, drop any transition whose prev isn't in P.
+  const filterByRestrictions = (trans: { target: string; weight: number }[], prev: string) =>
+    restricted.size === 0
+      ? trans
+      : trans.filter(t => {
+          const allowed = restricted.get(t.target);
+          return !allowed || allowed.has(prev);
+        });
 
   // ── Build weighted transition table from HARMONIC_GRAPH ──
   // Same structure as melodicPatternData's Markov chain: Map<chord, {target, weight}[]>
@@ -629,48 +809,7 @@ export function generateFunctionalLoop(
   type Transition = { target: string; weight: number }[];
   const transitions = new Map<string, Transition>();
 
-  const FUNCTIONAL_WEIGHTS: Record<string, Record<string, number>> = {
-    "I":    { ii: 3, iii: 2, IV: 3, V: 2, vi: 2, "vii°": 1, "V/ii": 2, "V/iii": 1, "V/IV": 2, "V/V": 3, "V/vi": 2, "ii/IV": 1, "ii/V": 2, "iiø/ii": 1, "iiø/iii": 1, "iiø/vi": 1, "TT/I": 1, "TT/ii": 1, "TT/V": 1, "TT/vi": 1, iv: 1, bVII: 1, bIII: 1, bVI: 1 },
-    "ii":   { V: 4, "vii°": 2, "V/V": 3, "ii/V": 2 },
-    "iii":  { vi: 3, IV: 3, ii: 2 },
-    "IV":   { V: 3, "vii°": 2, I: 2, ii: 1, "V/V": 2, "TT/V": 1, iv: 2 },
-    "V":    { I: 5, vi: 2, IV: 1, bVI: 1 },
-    "vi":   { ii: 3, IV: 3, V: 1, iii: 2, "V/ii": 2, "iiø/ii": 1, iv: 1, bVII: 1 },
-    "vii°": { I: 3, iii: 2, vi: 2 },
-    "i":    { "ii°": 2, III: 2, iv: 3, V: 2, v: 1, VI: 2, VII: 1, "vii°": 2 },
-    "ii°":  { V: 4, "vii°": 2, v: 1 },
-    "III":  { VI: 3, iv: 3, i: 1 },
-    "iv":   { V: 3, "vii°": 2, I: 1, i: 2, v: 1 },
-    "v":    { i: 2, VI: 3, iv: 2, bVI: 2 },
-    "VI":   { "ii°": 3, iv: 3, V: 1, III: 1 },
-    "VII":  { III: 3, i: 3 },
-    // Applied chords — forced resolution (high weight to target)
-    "V/ii":  { ii: 5 },
-    "V/iii": { iii: 5 },
-    "V/IV":  { IV: 5 },
-    "V/V":   { V: 5 },
-    "V/vi":  { vi: 5 },
-    "ii/IV":   { "V/IV": 5, "vii°/IV": 2, "TT/IV": 1, IV: 2 },
-    "ii/V":    { "V/V": 5,  "vii°/V": 2,  "TT/V": 1,  V: 2 },
-    "iiø/ii":  { "V/ii": 5, "vii°/ii": 2, "TT/ii": 1, ii: 2 },
-    "iiø/iii": { "V/iii": 5,"vii°/iii": 2, iii: 2 },
-    "iiø/vi":  { "V/vi": 5, "vii°/vi": 2, "TT/vi": 1, vi: 2 },
-    "TT/I":   { I: 5 },
-    "TT/ii":  { ii: 5 },
-    "TT/V":   { V: 5 },
-    "TT/vi":  { vi: 5 },
-    // Secondary diminished — leading-tone approach, strong resolution to target
-    "vii°/ii":  { ii: 5 },
-    "vii°/iii": { iii: 5 },
-    "vii°/IV":  { IV: 5 },
-    "vii°/V":   { V: 5 },
-    "vii°/vi":  { vi: 5 },
-    // Borrowings
-    bIII: { IV: 3, iv: 2, bVI: 2, bVII: 2, i: 1 },
-    bVI:  { bVII: 3, V: 2, iv: 2, i: 1 },
-    bVII: { I: 4, i: 2, bIII: 2, IV: 2 },
-    "#iv°": { V: 3, "vii°": 2 },
-  };
+  const FUNCTIONAL_WEIGHTS = FUNCTIONAL_WEIGHTS_TABLE;
 
   // Build the transition map, filtering to only available chords.
   // Boosted targets get a weight multiplier so the walk biases toward them
@@ -710,7 +849,8 @@ export function generateFunctionalLoop(
 
     for (let step = 1; step < length; step++) {
       const prev = path[path.length - 1];
-      const trans = transitions.get(prev);
+      const rawTrans = transitions.get(prev);
+      const trans = rawTrans ? filterByRestrictions(rawTrans, prev) : rawTrans;
       const isLastStep = step === length - 1;
 
       if (!trans || trans.length === 0) {
