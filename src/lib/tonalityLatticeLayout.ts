@@ -46,6 +46,12 @@ const KEY_SPELLINGS = [
   { letter: "A", accidental: "",  name: "A"  },
   { letter: "E", accidental: "",  name: "E"  },
   { letter: "B", accidental: "",  name: "B"  },
+  { letter: "F", accidental: "♯", name: "F♯" },
+  { letter: "C", accidental: "♯", name: "C♯" },
+  { letter: "G", accidental: "♯", name: "G♯" },
+  { letter: "D", accidental: "♯", name: "D♯" },
+  { letter: "A", accidental: "♯", name: "A♯" },
+  { letter: "E", accidental: "♯", name: "E♯" },
   { letter: "B", accidental: "♯", name: "B♯" },
 ];
 
@@ -766,8 +772,14 @@ export function buildCylinderLattice(
       const parentPc = sourceNode.rootPc;
       const parentCfg = pcKnots.get(parentPc);
       if (!parentCfg) continue;
-      const childKeyEntry = uniqueKeys.find(uk => uk.key.pc === childPc);
-      if (!childKeyEntry) continue;
+      // Find a key spelling for childPc.  31-EDO has more pcs than
+      // chain-of-fifths spellings cover, so we fall back to a synthetic
+      // key entry rather than dropping the cable silently.
+      const matchedKey = uniqueKeys.find(uk => uk.key.pc === childPc);
+      const childKeyEntry = matchedKey ?? {
+        keyIdx: -1 - childPc,
+        key: { letter: "?", accidental: "", name: `pc${childPc}`, pc: childPc },
+      };
 
       // cableTOffset = 0 aligns the cable's local-u with the parent's
       // u, so the cable's anchor mode (anchor-mode rooted at childPc,

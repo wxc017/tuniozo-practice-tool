@@ -372,7 +372,13 @@ function NodeMesh({ node, edo, isAnchor, isActive, isHovered, isSelected, onHove
           depthTest={false}
           depthWrite={false} />
       </mesh>
-      <Html center distanceFactor={isHovered || isActive || isAnchor || isSelected ? 8 : 11}
+      <Html center
+            // Prominent labels (hover/active/anchor/selected) render at
+            // a *fixed screen size* — no distanceFactor — so they don't
+            // balloon to fill the canvas when the user zooms in close.
+            // Idle labels keep distanceFactor so they shrink at distance
+            // and don't clutter the wide view.
+            distanceFactor={isHovered || isActive || isAnchor || isSelected ? undefined : 11}
             style={{ pointerEvents: "none" }}>
         {isHovered || isActive || isAnchor || isSelected ? (
           <div style={{
@@ -755,7 +761,8 @@ function Scene({
         );
       })}
 
-      <OrbitControls makeDefault enableDamping dampingFactor={0.15} />
+      <OrbitControls makeDefault enableDamping dampingFactor={0.15}
+        minDistance={6} maxDistance={120} />
     </>
   );
 }
