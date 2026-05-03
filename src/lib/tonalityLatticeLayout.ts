@@ -140,6 +140,7 @@ export interface LatticeNode {
   pos: [number, number, number];
   rootPc: number;             // absolute pc for this (key, mode) instance
   knotT: number;              // parameter on the family's torus knot, [0, 2π)
+  modeRank: number;           // 0 = brightest mode in family, 6 = darkest
 }
 
 // One twisted torus knot T(P, Q, r, n) per root pc.  Each knot holds
@@ -247,6 +248,7 @@ export function buildTonalityLattice(edo: number): TonalityLattice {
           pos: [x, y, z],
           rootPc: key.pc,
           knotT: 0,
+          modeRank: 0,
         };
         nodes.push(node);
         nodeMap.set(id, node);
@@ -571,6 +573,7 @@ export function buildCylinderLattice(
           pos: [cfg.center[0] + lx, cfg.center[1] + ly, cfg.center[2] + lz],
           rootPc: key.pc,
           knotT: t,
+          modeRank: modeIdx,
         };
         nodes.push(node);
         nodeMap.set(id, node);
@@ -863,6 +866,7 @@ export function buildSingleKeyLattice(
         pos: [x, y, z],
         rootPc: synthKey.pc,
         knotT: 0,
+        modeRank: 0,
       };
       nodes.push(node);
       nodeMap.set(id, node);

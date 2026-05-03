@@ -235,8 +235,12 @@ class TwistedTorusKnotStrand extends THREE.Curve<THREE.Vector3> {
 function PcKnot({ cfg, isAnchorPc }: { cfg: KnotConfig; isAnchorPc: boolean }) {
   const r = cfg.intervalR;
   const strandCount = Math.max(2, r);
-  const TWIST_N = 1;
-  const STRAND_OFFSET = 0.55;
+  // Twist count = r, so distant modulations don't just look like
+  // "more strands" but visibly *spiral more* per loop.  Anchor (r=0)
+  // is rendered separately as a plain (P, Q) torus knot.
+  const TWIST_N = Math.max(2, r);
+  const STRAND_OFFSET = 1.6;
+  const STRAND_TUBE = 0.18;
 
   const strands = useMemo(() => {
     if (r === 0) return [];
@@ -246,7 +250,7 @@ function PcKnot({ cfg, isAnchorPc }: { cfg: KnotConfig; isAnchorPc: boolean }) {
         i, strandCount, TWIST_N, STRAND_OFFSET,
       )
     );
-  }, [cfg.R, cfg.r, cfg.P, cfg.Q, r, strandCount]);
+  }, [cfg.R, cfg.r, cfg.P, cfg.Q, r, strandCount, TWIST_N]);
 
   const color = isAnchorPc ? "#88bbff" : "#5577aa";
   const emissive = isAnchorPc ? "#264466" : "#101a26";
@@ -289,7 +293,7 @@ function PcKnot({ cfg, isAnchorPc }: { cfg: KnotConfig; isAnchorPc: boolean }) {
       {shell}
       {strands.map((curve, i) => (
         <mesh key={i}>
-          <tubeGeometry args={[curve, 280, 0.08, 6, true]} />
+          <tubeGeometry args={[curve, 320, STRAND_TUBE, 8, true]} />
           <meshStandardMaterial
             color={color} emissive={emissive}
             emissiveIntensity={emissiveIntensity}
@@ -326,7 +330,12 @@ function NodeMesh({ node, edo, isAnchor, isActive, isHovered, isSelected, onHove
   });
 
   const r = isAnchor ? 0.32 : 0.22;
-  const opacity = isAnchor || isActive || isHovered || isSelected ? 1 : 0.85;
+  // Within each family, modes are ranked by brightness (rank 0 =
+  // brightest, rank 6 = darkest).  Dim darker modes proportionally
+  // so the per-family brightness order reads visually.
+  const dim = 1 - (node.modeRank / 6) * 0.65;     // 1.0 (Lyd) → 0.35 (Loc)
+  const baseOpacity = isAnchor || isActive || isHovered || isSelected ? 1 : 0.85;
+  const opacity = baseOpacity * dim;
 
   return (
     <group position={node.pos}>
@@ -339,10 +348,10 @@ function NodeMesh({ node, edo, isAnchor, isActive, isHovered, isSelected, onHove
         <meshStandardMaterial
           color={baseColor}
           emissive={emissive}
-          emissiveIntensity={isActive ? 0.9 : isAnchor ? 0.55 : 0.18}
+          emissiveIntensity={(isActive ? 0.9 : isAnchor ? 0.55 : 0.18) * dim}
           roughness={0.35}
           metalness={0.4}
-          transparent={opacity < 1}
+          transparent
           opacity={opacity} />
       </mesh>
       <Html center distanceFactor={isHovered || isActive || isAnchor || isSelected ? 8 : 11}
