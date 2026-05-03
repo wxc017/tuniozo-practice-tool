@@ -918,6 +918,10 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
         return next;
       });
     }
+    // Hide the modulation-spoke overlay once the user has picked a
+    // direction — otherwise the spokes keep hovering over the source
+    // node after the satellite is already on screen.
+    setShowRays(false);
   }, [edo]);
 
   // Click the mid-edge "×" on an expanded modulation to collapse that
