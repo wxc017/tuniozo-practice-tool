@@ -296,6 +296,60 @@ export function buildTonalityLattice(edo: number): TonalityLattice {
   return lattice;
 }
 
+// ── Note-name helpers ───────────────────────────────────────────────────
+// Convert a pitch class into a readable note name.  For 12-EDO this is
+// a simple lookup; for 31-EDO we derive from the diatonic letter step
+// (chromatic semitone = 2 steps) + appropriate accidental — this gives
+// the same spellings the chain-of-fifths key list uses.
+const NAMES_12_SHARP = ["C","C♯","D","D♯","E","F","F♯","G","G♯","A","A♯","B"];
+const NAMES_12_FLAT  = ["C","D♭","D","E♭","E","F","G♭","G","A♭","A","B♭","B"];
+
+export function pcToNoteName(pc: number, edo: number, prefer: "sharp" | "flat" = "sharp"): string {
+  const norm = ((pc % edo) + edo) % edo;
+  if (edo === 12) {
+    return (prefer === "flat" ? NAMES_12_FLAT : NAMES_12_SHARP)[norm];
+  }
+  if (edo === 31) {
+    // Find the closest 7-letter diatonic anchor and express the
+    // remainder as ♯ / ♭ / 𝄲 / 𝄳.
+    const LETTER_PCS: { letter: string; pc: number }[] = [
+      { letter: "C", pc:  0 }, { letter: "D", pc:  5 }, { letter: "E", pc: 10 },
+      { letter: "F", pc: 13 }, { letter: "G", pc: 18 }, { letter: "A", pc: 23 },
+      { letter: "B", pc: 28 },
+    ];
+    let best = LETTER_PCS[0];
+    let bestDist = 999;
+    for (const lp of LETTER_PCS) {
+      // Distance modulo edo (signed, smallest absolute value)
+      let d = norm - lp.pc;
+      if (d > edo / 2) d -= edo;
+      if (d < -edo / 2) d += edo;
+      if (Math.abs(d) < bestDist) { bestDist = Math.abs(d); best = lp; }
+    }
+    let d = norm - best.pc;
+    if (d > edo / 2) d -= edo;
+    if (d < -edo / 2) d += edo;
+    if (d ===  0) return best.letter;
+    if (d ===  1) return best.letter + "𝄲";    // half-sharp
+    if (d === -1) return best.letter + "𝄳";    // half-flat
+    if (d ===  2) return best.letter + "♯";    // sharp
+    if (d === -2) return best.letter + "♭";    // flat
+    if (d ===  3) return best.letter + "♯𝄲";   // 3 above (rare)
+    if (d === -3) return best.letter + "♭𝄳";
+    if (d ===  4) return best.letter + "♯♯";   // double sharp
+    if (d === -4) return best.letter + "♭♭";
+    return `${best.letter}${d > 0 ? "+" : ""}${d}`;
+  }
+  // Fallback for other EDOs: closest 12-EDO letter
+  const pc12 = Math.round((norm / edo) * 12) % 12;
+  return NAMES_12_SHARP[((pc12 % 12) + 12) % 12];
+}
+
+// All 7 note names for a (rootPc, modeScale) pair, in scale order.
+export function scaleNoteNames(rootPc: number, scale: number[], edo: number): string[] {
+  return scale.map(s => pcToNoteName(((rootPc + s) % edo + edo) % edo, edo));
+}
+
 // Lookup helper: find the lattice node that matches an (familyName, modeName,
 // rootPc) triple — used to highlight whichever tonality the picker has selected.
 export function findLatticeNode(
@@ -371,12 +425,14 @@ export function buildSingleKeyLattice(
     ? familyRank.get(anchorFamily.id)?.get(anchorModeName) ?? 0
     : 0;
 
-  // Synthetic "key" for this view — only its pc matters.
+  // Synthetic "key" for this view — name resolved from tonicPc so the
+  // labels read e.g. "C Ionian" / "F♯ Lydian" rather than blank.
+  const pcNorm = ((tonicPc % edo) + edo) % edo;
   const synthKey: LatticeKey = {
     letter: "",
     accidental: "",
-    name: "",
-    pc: ((tonicPc % edo) + edo) % edo,
+    name: pcToNoteName(pcNorm, edo),
+    pc: pcNorm,
   };
 
   const { R, r, TWIST } = TORUS_PARAMS;

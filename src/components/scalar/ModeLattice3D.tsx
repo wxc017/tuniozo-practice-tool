@@ -17,6 +17,7 @@ import * as THREE from "three";
 import { audioEngine } from "@/lib/audioEngine";
 import {
   buildSingleKeyLattice, LATTICE_FAMILIES, TORUS_PARAMS,
+  scaleNoteNames,
   type TonalityLattice, type LatticeNode,
 } from "@/lib/tonalityLatticeLayout";
 import { formatHalfAccidentals, getSolfege } from "@/lib/edoData";
@@ -53,6 +54,7 @@ function harmonicSeriesGains(scale: number[]): number[] {
 
 interface NodeMeshProps {
   node: LatticeNode;
+  edo: number;
   isAnchor: boolean;
   isActive: boolean;
   isHovered: boolean;
@@ -60,7 +62,7 @@ interface NodeMeshProps {
   onClick: (node: LatticeNode) => void;
 }
 
-function NodeMesh({ node, isAnchor, isActive, isHovered, onHover, onClick }: NodeMeshProps) {
+function NodeMesh({ node, edo, isAnchor, isActive, isHovered, onHover, onClick }: NodeMeshProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const baseColor = useMemo(() => new THREE.Color(node.family.color), [node.family.color]);
   const emissive = baseColor;
@@ -98,15 +100,24 @@ function NodeMesh({ node, isAnchor, isActive, isHovered, onHover, onClick }: Nod
             background: "#0a0a0aee",
             border: `1px solid ${node.family.color}`,
             color: node.family.color,
-            padding: "2px 6px",
+            padding: "3px 7px",
             borderRadius: 3,
             fontSize: 11,
             fontWeight: 700,
             whiteSpace: "nowrap",
-            transform: "translate(0, -22px)",
+            transform: "translate(0, -28px)",
+            textAlign: "center",
           }}>
-            <span style={{ color: "#ddd", marginRight: 4 }}>{node.key.name}</span>
-            {formatHalfAccidentals(node.mode.name)}
+            <div>
+              <span style={{ color: "#ddd", marginRight: 4 }}>{node.key.name}</span>
+              {formatHalfAccidentals(node.mode.name)}
+            </div>
+            <div style={{
+              fontSize: 9, fontWeight: 500, color: "#bbb",
+              marginTop: 2, letterSpacing: 1,
+            }}>
+              {scaleNoteNames(node.rootPc, node.mode.scale, edo).join(" · ")}
+            </div>
           </div>
         </Html>
       )}
@@ -116,6 +127,7 @@ function NodeMesh({ node, isAnchor, isActive, isHovered, onHover, onClick }: Nod
 
 interface SceneProps {
   lattice: TonalityLattice;
+  edo: number;
   anchorId: string | null;
   activeId: string | null;
   hoveredId: string | null;
@@ -125,14 +137,23 @@ interface SceneProps {
   onClick: (node: LatticeNode) => void;
 }
 
-function Scene({ lattice, anchorId, activeId, hoveredId, showFamilies, showEdges, onHover, onClick }: SceneProps) {
-  // Edges that survive family + type filtering, in render order
-  // (z-edges last so they sit on top).
+function Scene({ lattice, edo, anchorId, activeId, hoveredId, showFamilies, showEdges, onHover, onClick }: SceneProps) {
+  // Edges are filtered to those touching the user's focus — the
+  // anchor (picker selection), the active drone, or the hovered node.
+  // This keeps the surface readable: only the current scale's
+  // connections light up rather than the full hairball.
   const visibleEdges = useMemo(() => {
     type Pair = { color: string; type: "y" | "z"; points: [LatticeNode["pos"], LatticeNode["pos"]] };
+    const focusIds = new Set<string>();
+    if (anchorId)  focusIds.add(anchorId);
+    if (activeId)  focusIds.add(activeId);
+    if (hoveredId) focusIds.add(hoveredId);
+    if (focusIds.size === 0) return [] as Pair[];
+
     const out: Pair[] = [];
     for (const e of lattice.edges) {
-      if (e.type === "x") continue;   // single-key view has no X-edges
+      if (e.type === "x") continue;
+      if (!focusIds.has(e.fromId) && !focusIds.has(e.toId)) continue;
       const a = lattice.nodeMap.get(e.fromId);
       const b = lattice.nodeMap.get(e.toId);
       if (!a || !b) continue;
@@ -140,34 +161,41 @@ function Scene({ lattice, anchorId, activeId, hoveredId, showFamilies, showEdges
       if (!showEdges[e.type]) continue;
       out.push({ color: e.color, type: e.type as "y" | "z", points: [a.pos, b.pos] });
     }
-    // Render y edges first, z edges last (so cross-family links sit on top).
     out.sort((a, b) => (a.type === "z" ? 1 : 0) - (b.type === "z" ? 1 : 0));
     return out;
-  }, [lattice, showFamilies, showEdges]);
+  }, [lattice, anchorId, activeId, hoveredId, showFamilies, showEdges]);
 
   return (
     <>
-      <ambientLight intensity={0.5} />
+      <ambientLight intensity={0.55} />
       <pointLight position={[10, 10, 10]} intensity={1.2} />
       <pointLight position={[-10, -5, -10]} intensity={0.7} />
-      <pointLight position={[0, 0, 14]} intensity={0.6} />
+      <pointLight position={[0, 0, 14]} intensity={0.7} />
 
-      {/* Twisted-torus scaffold — wireframe so the underlying surface
-          structure is visible but doesn't compete with the nodes.  The
-          nodes sit ON this surface (with twist applied), so the user can
-          see the topology that organises them. */}
+      {/* Twisted-torus surface — solid + translucent.  Renders the
+          actual surface the nodes live on rather than just a wireframe
+          guide; depth-sorted material so nodes embedded in the surface
+          are still visible from the camera's side. */}
       <mesh rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[TORUS_PARAMS.R, TORUS_PARAMS.r, 24, 64]} />
-        <meshBasicMaterial color="#1a2540" wireframe transparent opacity={0.18} />
+        <torusGeometry args={[TORUS_PARAMS.R, TORUS_PARAMS.r, 48, 128]} />
+        <meshStandardMaterial
+          color="#13243d"
+          emissive="#0a1830"
+          emissiveIntensity={0.4}
+          roughness={0.55}
+          metalness={0.2}
+          transparent opacity={0.55}
+          side={THREE.DoubleSide}
+          depthWrite={false} />
       </mesh>
 
       {visibleEdges.map((e, i) => (
         e.type === "y" ? (
           <Line key={`y-${i}`} points={e.points} color={e.color}
-            lineWidth={1.0} transparent opacity={0.45} />
+            lineWidth={1.6} transparent opacity={0.75} />
         ) : (
           <Line key={`z-${i}`} points={e.points} color={e.color}
-            lineWidth={1.6} transparent opacity={0.7} />
+            lineWidth={2.0} transparent opacity={0.9} />
         )
       ))}
 
@@ -177,6 +205,7 @@ function Scene({ lattice, anchorId, activeId, hoveredId, showFamilies, showEdges
           <NodeMesh
             key={node.id}
             node={node}
+            edo={edo}
             isAnchor={anchorId === node.id}
             isActive={activeId === node.id}
             isHovered={hoveredId === node.id}
@@ -340,6 +369,7 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
         <Canvas camera={{ position: cameraPos, fov: 45 }}>
           <Scene
             lattice={lattice}
+            edo={edo}
             anchorId={anchorId}
             activeId={activeId}
             hoveredId={hoveredId}
@@ -387,8 +417,34 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
         </div>
       )}
 
+      {/* Info strip — shows the active or hovered node's notes so the
+          user can read them without zooming into the floating label. */}
+      {(() => {
+        const focus = activeNode
+          ?? (hoveredId ? lattice.nodeMap.get(hoveredId) ?? null : null)
+          ?? (anchorId  ? lattice.nodeMap.get(anchorId)  ?? null : null);
+        if (!focus) return null;
+        const notes = scaleNoteNames(focus.rootPc, focus.mode.scale, edo);
+        return (
+          <div className="px-3 py-2 border-t border-[#1a1a1a] bg-[#0d0d0d]"
+               style={{ borderTopColor: focus.family.color + "30" }}>
+            <div className="flex items-baseline gap-3 flex-wrap">
+              <span style={{ color: focus.family.color, fontSize: 13, fontWeight: 700 }}>
+                {focus.key.name} {formatHalfAccidentals(focus.mode.name)}
+              </span>
+              <span className="text-[9px] text-[#666] tracking-wider">
+                {focus.family.label.toUpperCase()}
+              </span>
+              <span className="ml-auto text-[10px] text-[#888] font-mono tracking-wider">
+                {notes.join("   ")}
+              </span>
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="px-3 py-1.5 text-[9px] text-[#555] border-t border-[#1a1a1a] flex items-center gap-3">
-        <span>Click any node to drone its tonality.  Drag to orbit, scroll to zoom.</span>
+        <span>Click any node to drone its tonality.  Drag to orbit, scroll to zoom.  Edges fade in for whichever node you hover or have selected.</span>
         {activeNode && (
           <span style={{ color: activeNode.family.color }}>
             playing: {activeNode.key.name} {formatHalfAccidentals(activeNode.mode.name)}
