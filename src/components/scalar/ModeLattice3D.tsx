@@ -399,9 +399,9 @@ function NodeMesh({ node, edo, isAnchor, isActive, isHovered, isSelected, onHove
           </div>
         ) : (
           // Discrete always-on label — small, dim, no background.
-          // Includes the key's root letter alongside the mode short
-          // name (e.g. "D Dor", "B♭ Mix", "F♯ HMn") so the user can
-          // identify every node by sight without hovering.
+          // Uses the full mode name (e.g. "D Dorian", "B♭ Mixolydian",
+          // "F♯ Harmonic Minor") so the user can identify every node
+          // by sight without hovering.
           <div style={{
             color: palette,
             opacity: 0.82,
@@ -413,7 +413,7 @@ function NodeMesh({ node, edo, isAnchor, isActive, isHovered, isSelected, onHove
             letterSpacing: 0.2,
           }}>
             <span style={{ color: "#ddd", marginRight: 3 }}>{node.key.name}</span>
-            {formatHalfAccidentals(node.mode.short)}
+            {formatHalfAccidentals(node.mode.name)}
           </div>
         )}
       </Html>
