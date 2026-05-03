@@ -161,6 +161,16 @@ export interface KnotConfig {
   intervalR: number;          // interval class from anchor: 0 (unison),
                               // 1 (m2/M7), 2 (M2/m7), 3 (m3/M6),
                               // 4 (M3/m6), 5 (P4/P5), 6 (TT)
+  // Cable-knot fields.  When the user expands a pc via a specific
+  // modulation, the new pc-knot becomes a cable wrapping its parent's
+  // tube — this captures the parent-child relationship geometrically.
+  parentPc: number | null;    // null for anchor, else the pc whose tube this cable rides
+  wraps: number;              // m: number of wraps around parent's tube (= modSemis)
+  cableOffset: number;        // δ: distance from parent's tube centre
+  // u-offset along the parent's path so that the anchor-equivalent
+  // mode of this cable lands at the source node's position — so the
+  // cable visibly "starts from" the node the user expanded from.
+  cableTOffset: number;
 }
 
 export interface LatticeEdge {
@@ -469,11 +479,98 @@ export function knotPoint(R: number, r: number, P: number, Q: number, t: number)
   return [ringR * Math.cos(phi), -r * Math.sin(theta), ringR * Math.sin(phi)];
 }
 
+// Position on a CABLE around the parent's (P, Q) torus knot.  The
+// cable wraps the parent's tube `wraps` times as it traverses the
+// parent once, offset by `cableOffset` from the parent's tube
+// centerline along the parent's local normal/binormal frame.  Used
+// for modulated pc-knots so the new knot literally rides on the
+// parent's tube — the parent-child relationship is geometric.
+//
+// `u` ∈ [0, 1) — same parameter space the parent uses (one full
+// loop of the parent torus knot).
+export function cablePoint(
+  parentR: number, parentr: number,
+  parentP: number, parentQ: number,
+  parentCenter: [number, number, number],
+  wraps: number, cableOffset: number,
+  u: number,
+): [number, number, number] {
+  // Parent's point at u (local pre-translation).
+  const t = u * 2 * Math.PI;
+  const phi = parentP * t;
+  const theta = parentQ * t;
+  const ringR = parentR + parentr * Math.cos(theta);
+  const px = parentCenter[0] + ringR * Math.cos(phi);
+  const py = parentCenter[1] - parentr * Math.sin(theta);
+  const pz = parentCenter[2] + ringR * Math.sin(phi);
+  // Tangent via small finite difference along u.
+  const du = 0.0005;
+  const t2 = (u + du) * 2 * Math.PI;
+  const phi2 = parentP * t2;
+  const theta2 = parentQ * t2;
+  const ringR2 = parentR + parentr * Math.cos(theta2);
+  let tx = parentCenter[0] + ringR2 * Math.cos(phi2) - px;
+  let ty = parentCenter[1] - parentr * Math.sin(theta2) - py;
+  let tz = parentCenter[2] + ringR2 * Math.sin(phi2) - pz;
+  const tlen = Math.hypot(tx, ty, tz) || 1;
+  tx /= tlen; ty /= tlen; tz /= tlen;
+  // Normal: up × tangent (world up = +Y).  Falls back to +X if the
+  // tangent happens to be exactly ±Y.
+  let nx = -tz, ny = 0, nz = tx;
+  let nlen = Math.hypot(nx, ny, nz);
+  if (nlen < 1e-6) { nx = 1; ny = 0; nz = 0; nlen = 1; }
+  nx /= nlen; ny /= nlen; nz /= nlen;
+  // Binormal = tangent × normal.
+  const bx = ty * nz - tz * ny;
+  const by = tz * nx - tx * nz;
+  const bz = tx * ny - ty * nx;
+  const alpha = wraps * 2 * Math.PI * u;
+  const ca = Math.cos(alpha), sa = Math.sin(alpha);
+  return [
+    px + cableOffset * (ca * nx + sa * bx),
+    py + cableOffset * (ca * ny + sa * by),
+    pz + cableOffset * (ca * nz + sa * bz),
+  ];
+}
+
+// Sample any pc-knot's curve at parameter u — branches between plain
+// torus knot (anchor) and cable knot (modulated).  Renderer uses this
+// for curving edges along the actual knot path.  `u` is in [0, 1) in
+// the knot's local frame (anchor-equivalent mode at u = 0); for cables
+// the parent's-frame parameter has cableTOffset added so the anchor-
+// equivalent mode coincides with the source node's parent position.
+export function sampleKnotCurve(
+  cfg: KnotConfig,
+  parentCfg: KnotConfig | null,
+  u: number,
+): [number, number, number] {
+  if (cfg.parentPc !== null && parentCfg) {
+    const uParent = (u + cfg.cableTOffset) % 1;
+    return cablePoint(
+      parentCfg.R, parentCfg.r, parentCfg.P, parentCfg.Q, parentCfg.center,
+      cfg.wraps, cfg.cableOffset, uParent,
+    );
+  }
+  const [lx, ly, lz] = knotPoint(cfg.R, cfg.r, cfg.P, cfg.Q, u * 2 * Math.PI);
+  return [cfg.center[0] + lx, cfg.center[1] + ly, cfg.center[2] + lz];
+}
+
+// Per-pc expansion record.  When the user clicks a "+" ghost on a
+// modulation ray to expand a new pc, we record which node was the
+// source (so we know the parent pc) and the modulation's interval.
+// Together these turn the new pc-knot into a cable knot wrapping the
+// parent's tube with `modSemis` wraps.
+export interface PcExpansion {
+  sourceNodeId: string;
+  modSemis: number;
+}
+
 export function buildCylinderLattice(
   edo: number,
   tonicPc: number,
   anchorFamilyName: string | null,
   anchorModeName: string | null,
+  expansionInfo: Map<number, PcExpansion> = new Map(),
 ): TonalityLattice {
   const keys = buildKeys(edo);
   const families = LATTICE_FAMILIES;
@@ -528,35 +625,22 @@ export function buildCylinderLattice(
     const delta = ((pcB - pcA) % edo + edo) % edo;
     return ((Math.round((delta / edo) * 12) % 12) + 12) % 12;
   }
-  const pcKnots = new Map<number, KnotConfig>();
-  for (const { key } of uniqueKeys) {
-    const semis = semis12From(anchorPc, key.pc);
-    const dir = PC_OFFSET_BY_SEMIS[semis] ?? [0, 0, 0];
-    const intervalR = SEMIS_TO_INTERVAL_CLASS[semis] ?? 0;
-    pcKnots.set(key.pc, {
-      pc: key.pc,
-      center: [
-        dir[0] * PC_KNOT_SPACING,
-        dir[1] * PC_KNOT_SPACING,
-        dir[2] * PC_KNOT_SPACING,
-      ],
-      R: KNOT_R, r: KNOT_r, P: KNOT_P, Q: KNOT_Q, intervalR,
-    });
-  }
-
   // Order on each pc-knot: k = familyIdx · 7 + modeIdx, so each
-  // family is a contiguous 7-mode arc on the knot and modal-
-  // interchange neighbours are 7 nodes apart.  Shift t so the user's
-  // anchor (familyIdx, modeIdx) lands at t = 0 for every knot — that
-  // way "the same tonality" sits at the front of every root's knot.
+  // family is a contiguous 7-mode arc on the knot.  Shift t so the
+  // user's anchor (familyIdx, modeIdx) lands at t = 0 for every knot
+  // — that way "the same tonality" sits at the front of every root's
+  // knot (or aligns with the source node, for cables).
   const anchorFamilyIdx = anchorFamily?.zOrd ?? 0;
   const tAnchor = ((anchorFamilyIdx * 7 + anchorModeIdx) / KNOT_N) * TWO_PI;
 
+  const pcKnots = new Map<number, KnotConfig>();
   const nodes: LatticeNode[] = [];
   const nodeMap = new Map<string, LatticeNode>();
 
-  for (const { keyIdx, key } of uniqueKeys) {
-    const cfg = pcKnots.get(key.pc)!;
+  // Build all nodes for one pc-knot, given its KnotConfig.  Position
+  // is sampled from the appropriate curve (torus or cable).
+  function buildPcNodes(key: LatticeKey, keyIdx: number, cfg: KnotConfig): void {
+    const parentCfg = cfg.parentPc !== null ? pcKnots.get(cfg.parentPc) ?? null : null;
     for (const family of families) {
       const modeList = modes.get(family.id) ?? [];
       const familyIdx = family.zOrd;
@@ -565,12 +649,11 @@ export function buildCylinderLattice(
         const k = familyIdx * 7 + modeIdx;
         const tRaw = (k / KNOT_N) * TWO_PI;
         const t = ((tRaw - tAnchor) % TWO_PI + TWO_PI) % TWO_PI;
-        const [lx, ly, lz] = knotPoint(cfg.R, cfg.r, cfg.P, cfg.Q, t);
+        const u = t / TWO_PI;
+        const pos = sampleKnotCurve(cfg, parentCfg, u);
         const id = `${keyIdx}::${family.id}::${mode.name}`;
         const node: LatticeNode = {
-          id,
-          key, keyIdx, family, mode,
-          pos: [cfg.center[0] + lx, cfg.center[1] + ly, cfg.center[2] + lz],
+          id, key, keyIdx, family, mode, pos,
           rootPc: key.pc,
           knotT: t,
           modeRank: modeIdx,
@@ -579,6 +662,67 @@ export function buildCylinderLattice(
         nodeMap.set(id, node);
       }
     }
+  }
+
+  // 1. Build the anchor pc as a plain torus knot at the origin.
+  const anchorKeyEntry = uniqueKeys.find(uk => uk.key.pc === anchorPc);
+  if (anchorKeyEntry) {
+    const cfg: KnotConfig = {
+      pc: anchorPc, center: [0, 0, 0],
+      R: KNOT_R, r: KNOT_r, P: KNOT_P, Q: KNOT_Q,
+      intervalR: 0,
+      parentPc: null, wraps: 0, cableOffset: 0, cableTOffset: 0,
+    };
+    pcKnots.set(anchorPc, cfg);
+    buildPcNodes(anchorKeyEntry.key, anchorKeyEntry.keyIdx, cfg);
+  }
+
+  // 2. BFS-process expansions: each pc whose source node is already
+  //    built becomes a cable knot wrapping the source's pc-knot.
+  let progress = true;
+  while (progress) {
+    progress = false;
+    for (const [childPc, info] of expansionInfo) {
+      if (pcKnots.has(childPc)) continue;
+      const sourceNode = nodeMap.get(info.sourceNodeId);
+      if (!sourceNode) continue;     // wait until parent is built
+      const parentPc = sourceNode.rootPc;
+      const parentCfg = pcKnots.get(parentPc);
+      if (!parentCfg) continue;
+      const childKeyEntry = uniqueKeys.find(uk => uk.key.pc === childPc);
+      if (!childKeyEntry) continue;
+      const cfg: KnotConfig = {
+        pc: childPc, center: [0, 0, 0],   // unused for cable knots
+        R: KNOT_R, r: KNOT_r, P: KNOT_P, Q: KNOT_Q,
+        intervalR: 0,
+        parentPc,
+        wraps: info.modSemis,
+        cableOffset: parentCfg.r * 0.45,
+        cableTOffset: sourceNode.knotT / TWO_PI,
+      };
+      pcKnots.set(childPc, cfg);
+      buildPcNodes(childKeyEntry.key, childKeyEntry.keyIdx, cfg);
+      progress = true;
+    }
+  }
+
+  // 3. Remaining pcs (no expansion info or unresolved): fall back to
+  //    a standalone torus knot at the static PC_OFFSET_BY_SEMIS slot.
+  //    These are the pcs the user hasn't yet expanded; they're built
+  //    so the lattice has them but the renderer hides them.
+  for (const { key, keyIdx } of uniqueKeys) {
+    if (pcKnots.has(key.pc)) continue;
+    const semis = semis12From(anchorPc, key.pc);
+    const dir = PC_OFFSET_BY_SEMIS[semis] ?? [0, 0, 0];
+    const cfg: KnotConfig = {
+      pc: key.pc,
+      center: [dir[0] * PC_KNOT_SPACING, dir[1] * PC_KNOT_SPACING, dir[2] * PC_KNOT_SPACING],
+      R: KNOT_R, r: KNOT_r, P: KNOT_P, Q: KNOT_Q,
+      intervalR: SEMIS_TO_INTERVAL_CLASS[semis] ?? 0,
+      parentPc: null, wraps: 0, cableOffset: 0, cableTOffset: 0,
+    };
+    pcKnots.set(key.pc, cfg);
+    buildPcNodes(key, keyIdx, cfg);
   }
 
   // Edges (same musical relationships as before; only positions changed).
@@ -673,6 +817,10 @@ export interface ModulationEdge {
   kind: "interval" | "parallel" | "interchange";
   label: string;        // short label for display, e.g. "+P5", "Lyd", "Mel"
   color: string;
+  // For kind === "interval", the 12-EDO semitones of the modulation
+  // (used as the cable knot's wrap parameter when expanded).
+  // Undefined / 0 for parallel and modal-interchange edges.
+  semis?: number;
 }
 
 function intervalSteps(edo: number, semitones12: number): number {
@@ -723,6 +871,7 @@ export function computeModulationEdges(
         kind: "interval",
         label: iv.label,
         color: iv.color,
+        semis: iv.semis12,
       });
     }
   }

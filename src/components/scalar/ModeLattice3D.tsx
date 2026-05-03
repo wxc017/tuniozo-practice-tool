@@ -126,9 +126,9 @@ function CameraFocusCenter({ targetPos }: { targetPos: [number, number, number] 
 import { audioEngine } from "@/lib/audioEngine";
 import {
   buildCylinderLattice, LATTICE_FAMILIES,
-  scaleNoteNames, computeModulationEdges,
+  scaleNoteNames, computeModulationEdges, sampleKnotCurve, cablePoint,
   type TonalityLattice, type LatticeNode, type ModulationEdge,
-  type KnotConfig,
+  type KnotConfig, type PcExpansion,
 } from "@/lib/tonalityLatticeLayout";
 import { formatHalfAccidentals, getSolfege } from "@/lib/edoData";
 import { formatRomanNumeral } from "@/lib/formatRoman";
@@ -173,135 +173,93 @@ function altDistance(a: LatticeNode, b: LatticeNode, edo: number): number {
   return symdiff / 2;
 }
 
-// One strand of a T(P, Q, r, n) twisted torus knot — a helical path
-// that orbits the (P, Q) backbone with `twistN` full twists per
-// t-loop, indexed as one of `strandCount` adjacent strands offset by
-// `strandOffset` from the spine.  When r ≥ 2 we render `r` of these
-// in parallel so the bundle visibly twists around itself.
-class TwistedTorusKnotStrand extends THREE.Curve<THREE.Vector3> {
+// THREE.Curve subclass for a cable-knot path.  Defers to cablePoint
+// from the layout so we use exactly the same curve at render time
+// and at node-build time — guarantees nodes land on the rendered tube.
+class CableKnotCurve extends THREE.Curve<THREE.Vector3> {
   constructor(
-    private R: number, private r: number,
-    private P: number, private Q: number,
-    private strandIdx: number, private strandCount: number,
-    private twistN: number, private strandOffset: number,
+    private parentR: number, private parentr: number,
+    private parentP: number, private parentQ: number,
+    private parentCenter: [number, number, number],
+    private wraps: number, private cableOffset: number,
+    private cableTOffset: number,
   ) { super(); }
 
   override getPoint(u: number, optionalTarget?: THREE.Vector3): THREE.Vector3 {
     const target = optionalTarget ?? new THREE.Vector3();
-    const t = u * 2 * Math.PI;
-    // (P, Q) torus knot path — matches three.js TorusKnotGeometry
-    // (rotated π/2 around X so the carrying torus's axis is +Y).
-    const phi = this.P * t;
-    const theta = this.Q * t;
-    const ringR = this.R + this.r * Math.cos(theta);
-    const cx = ringR * Math.cos(phi);
-    const cy = -this.r * Math.sin(theta);
-    const cz = ringR * Math.sin(phi);
-    // Tangent via tiny finite difference.
-    const dt = 0.0005;
-    const t2 = (u + dt) * 2 * Math.PI;
-    const phi2 = this.P * t2;
-    const theta2 = this.Q * t2;
-    const ringR2 = this.R + this.r * Math.cos(theta2);
-    let tx = ringR2 * Math.cos(phi2) - cx;
-    let ty = -this.r * Math.sin(theta2) - cy;
-    let tz = ringR2 * Math.sin(phi2) - cz;
-    const tlen = Math.hypot(tx, ty, tz) || 1;
-    tx /= tlen; ty /= tlen; tz /= tlen;
-    // Normal = up × tangent.
-    let nx = -tz, ny = 0, nz = tx;
-    const nlen = Math.hypot(nx, ny, nz) || 1;
-    nx /= nlen; ny /= nlen; nz /= nlen;
-    // Binormal = tangent × normal.
-    const bx = ty * nz - tz * ny;
-    const by = tz * nx - tx * nz;
-    const bz = tx * ny - ty * nx;
-    // Strand angle: base offset by strand index, plus n full twists
-    // accumulated over the t-loop.
-    const alpha = (this.strandIdx / this.strandCount) * 2 * Math.PI + this.twistN * t;
-    const ca = Math.cos(alpha), sa = Math.sin(alpha);
-    return target.set(
-      cx + this.strandOffset * (ca * nx + sa * bx),
-      cy + this.strandOffset * (ca * ny + sa * by),
-      cz + this.strandOffset * (ca * nz + sa * bz),
+    const uParent = (u + this.cableTOffset) % 1;
+    const [x, y, z] = cablePoint(
+      this.parentR, this.parentr, this.parentP, this.parentQ, this.parentCenter,
+      this.wraps, this.cableOffset, uParent,
     );
+    return target.set(x, y, z);
   }
 }
 
-// Render one pc's knot as either a plain (P, Q) torus knot (anchor,
-// r = 0) or as `r` strands twisting around the (P, Q) backbone with
-// one full twist (r ≥ 2).  Twist count = interval class from anchor:
-// m3 modulations are 3-stranded, TT modulations are 6-stranded.
-function PcKnot({ cfg, isAnchorPc }: { cfg: KnotConfig; isAnchorPc: boolean }) {
-  const r = cfg.intervalR;
-  const strandCount = Math.max(2, r);
-  // Twist count = r, so distant modulations don't just look like
-  // "more strands" but visibly *spiral more* per loop.  Anchor (r=0)
-  // is rendered separately as a plain (P, Q) torus knot.
-  const TWIST_N = Math.max(2, r);
-  const STRAND_OFFSET = 1.6;
-  const STRAND_TUBE = 0.18;
+// Render one pc-knot.  Anchor and any pc the user hasn't expanded via
+// a modulation render as a plain (P, Q) torus knot mesh (their own
+// carrying torus, with a faint shell).  Pcs expanded via interval
+// modulations render as cable knots wrapping their parent's tube —
+// the cable is a TubeGeometry along a CableKnotCurve, which makes the
+// parent-child relationship geometric: the new knot literally rides
+// on the parent.
+function PcKnot({ cfg, parentCfg, isAnchorPc }: {
+  cfg: KnotConfig;
+  parentCfg: KnotConfig | null;
+  isAnchorPc: boolean;
+}) {
+  const isCable = cfg.parentPc !== null && parentCfg !== null;
 
-  const strands = useMemo(() => {
-    if (r === 0) return [];
-    return Array.from({ length: strandCount }, (_, i) =>
-      new TwistedTorusKnotStrand(
-        cfg.R, cfg.r, cfg.P, cfg.Q,
-        i, strandCount, TWIST_N, STRAND_OFFSET,
-      )
+  const cableCurve = useMemo(() => {
+    if (!isCable || !parentCfg) return null;
+    return new CableKnotCurve(
+      parentCfg.R, parentCfg.r, parentCfg.P, parentCfg.Q, parentCfg.center,
+      cfg.wraps, cfg.cableOffset, cfg.cableTOffset,
     );
-  }, [cfg.R, cfg.r, cfg.P, cfg.Q, r, strandCount, TWIST_N]);
+  }, [isCable, parentCfg, cfg.wraps, cfg.cableOffset, cfg.cableTOffset]);
 
-  const color = isAnchorPc ? "#88bbff" : "#5577aa";
-  const emissive = isAnchorPc ? "#264466" : "#101a26";
-  const emissiveIntensity = isAnchorPc ? 0.55 : 0.25;
-  const opacity = isAnchorPc ? 0.75 : 0.5;
+  const color = isAnchorPc ? "#88bbff" : isCable ? "#a4d4ff" : "#5577aa";
+  const emissive = isAnchorPc ? "#264466" : isCable ? "#1a3a55" : "#101a26";
+  const emissiveIntensity = isAnchorPc ? 0.55 : isCable ? 0.45 : 0.25;
+  const opacity = isAnchorPc ? 0.75 : isCable ? 0.85 : 0.45;
 
-  // Faint shell of the carrying torus the knot lives on.  Helps the
-  // user read the (R, r) torus shape that the knot/strand bundle is
-  // wound around, without visually competing with the strands.
-  const shell = (
-    <mesh rotation={[Math.PI / 2, 0, 0]}>
-      <torusGeometry args={[cfg.R, cfg.r, 18, 64]} />
-      <meshStandardMaterial
-        color={isAnchorPc ? "#3a4a66" : "#2a3340"}
-        transparent opacity={0.09}
-        side={THREE.DoubleSide}
-        depthWrite={false} />
-    </mesh>
-  );
-
-  if (r === 0) {
+  if (isCable && cableCurve) {
+    // Cable knot — TubeGeometry along the cable curve.  No shell;
+    // the parent's tube is the visible carrier.
     return (
-      <group position={cfg.center}>
-        {shell}
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <torusKnotGeometry args={[cfg.R, 0.18, 240, 14, cfg.P, cfg.Q]} />
-          <meshStandardMaterial
-            color={color} emissive={emissive}
-            emissiveIntensity={emissiveIntensity}
-            roughness={0.55} metalness={0.35}
-            transparent opacity={opacity}
-            depthWrite={false} />
-        </mesh>
-      </group>
+      <mesh>
+        <tubeGeometry args={[cableCurve, 320, 0.22, 10, true]} />
+        <meshStandardMaterial
+          color={color} emissive={emissive}
+          emissiveIntensity={emissiveIntensity}
+          roughness={0.55} metalness={0}
+          transparent opacity={opacity}
+          depthWrite={false} />
+      </mesh>
     );
   }
 
+  // Standalone torus knot (anchor or fallback).  Rendered with a
+  // faint carrying-torus shell so the (R, r) shape reads.
   return (
     <group position={cfg.center}>
-      {shell}
-      {strands.map((curve, i) => (
-        <mesh key={i}>
-          <tubeGeometry args={[curve, 320, STRAND_TUBE, 8, true]} />
-          <meshStandardMaterial
-            color={color} emissive={emissive}
-            emissiveIntensity={emissiveIntensity}
-            roughness={0.55} metalness={0.35}
-            transparent opacity={opacity}
-            depthWrite={false} />
-        </mesh>
-      ))}
+      <mesh rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[cfg.R, cfg.r, 18, 64]} />
+        <meshStandardMaterial
+          color={isAnchorPc ? "#3a4a66" : "#2a3340"}
+          transparent opacity={0.09}
+          side={THREE.DoubleSide}
+          depthWrite={false} />
+      </mesh>
+      <mesh rotation={[Math.PI / 2, 0, 0]}>
+        <torusKnotGeometry args={[cfg.R, 0.18, 240, 14, cfg.P, cfg.Q]} />
+        <meshStandardMaterial
+          color={color} emissive={emissive}
+          emissiveIntensity={emissiveIntensity}
+          roughness={0.55} metalness={0}
+          transparent opacity={opacity}
+          depthWrite={false} />
+      </mesh>
     </group>
   );
 }
@@ -426,7 +384,7 @@ interface SceneProps {
   modulationEdges: ModulationEdge[];
   onHover: (id: string | null) => void;
   onClick: (node: LatticeNode, ev: ThreeEvent<MouseEvent>) => void;
-  onExpand: (rootPc: number) => void;
+  onExpand: (rootPc: number, modEdge?: ModulationEdge) => void;
   onCollapse: (rootPc: number) => void;
 }
 
@@ -460,39 +418,55 @@ function Scene({
       if (!showFamilies[a.family.id] || !showFamilies[b.family.id]) continue;
       if (!showEdges[e.type]) continue;
       // y/z edges always live within a single pc-knot — same root,
-      // so both endpoints sit on the same torus.  Interpolate (φ, θ)
-      // along the shortest angular path and sample 3D positions back
-      // out of the torus parameterisation.
+      // so both endpoints sit on the same knot.  We curve the edge
+      // along the actual knot path: torus-surface (φ, θ) interpolation
+      // for plain torus pcs, and cable-curve u-interpolation for
+      // cable pcs.  Either way we sample the path between endpoints
+      // along the shortest angular / parameter path.
       const cfg = lattice.pcKnots.get(a.rootPc);
+      const parentCfg = cfg?.parentPc !== undefined && cfg?.parentPc !== null
+        ? lattice.pcKnots.get(cfg.parentPc) ?? null
+        : null;
       let points: [number, number, number][];
       let mid: [number, number, number];
       if (cfg && a.rootPc === b.rootPc) {
-        const phiA = cfg.P * a.knotT;
-        const thetaA = cfg.Q * a.knotT;
-        const phiB = cfg.P * b.knotT;
-        const thetaB = cfg.Q * b.knotT;
-        // Reduce to the shortest signed angular difference in [-π, π].
-        // φ and θ are multi-wound (φ goes up to P·2π) so a single 2π
-        // shift isn't enough — first take the difference modulo 2π,
-        // then flip sign if it exceeds π.
-        const shortestAngle = (raw: number): number => {
-          let x = ((raw % TWO_PI) + TWO_PI) % TWO_PI;
-          if (x > Math.PI) x -= TWO_PI;
-          return x;
-        };
-        const dPhi = shortestAngle(phiB - phiA);
-        const dTheta = shortestAngle(thetaB - thetaA);
-        points = [];
-        for (let s = 0; s <= NSAMPLES; s++) {
-          const u = s / NSAMPLES;
-          const phi = phiA + u * dPhi;
-          const theta = thetaA + u * dTheta;
-          const ringR = cfg.R + cfg.r * Math.cos(theta);
-          points.push([
-            cfg.center[0] + ringR * Math.cos(phi),
-            cfg.center[1] - cfg.r * Math.sin(theta),
-            cfg.center[2] + ringR * Math.sin(phi),
-          ]);
+        if (cfg.parentPc !== null && parentCfg) {
+          // Cable knot: sample cablePoint at u-values between A and B.
+          const uA = a.knotT / TWO_PI;
+          const uB = b.knotT / TWO_PI;
+          let dU = uB - uA;
+          if (dU >  0.5) dU -= 1;
+          if (dU < -0.5) dU += 1;
+          points = [];
+          for (let s = 0; s <= NSAMPLES; s++) {
+            const u = uA + (s / NSAMPLES) * dU;
+            points.push(sampleKnotCurve(cfg, parentCfg, u));
+          }
+        } else {
+          // Plain torus: interpolate (φ, θ) along shortest angular path.
+          const phiA = cfg.P * a.knotT;
+          const thetaA = cfg.Q * a.knotT;
+          const phiB = cfg.P * b.knotT;
+          const thetaB = cfg.Q * b.knotT;
+          const shortestAngle = (raw: number): number => {
+            let x = ((raw % TWO_PI) + TWO_PI) % TWO_PI;
+            if (x > Math.PI) x -= TWO_PI;
+            return x;
+          };
+          const dPhi = shortestAngle(phiB - phiA);
+          const dTheta = shortestAngle(thetaB - thetaA);
+          points = [];
+          for (let s = 0; s <= NSAMPLES; s++) {
+            const u = s / NSAMPLES;
+            const phi = phiA + u * dPhi;
+            const theta = thetaA + u * dTheta;
+            const ringR = cfg.R + cfg.r * Math.cos(theta);
+            points.push([
+              cfg.center[0] + ringR * Math.cos(phi),
+              cfg.center[1] - cfg.r * Math.sin(theta),
+              cfg.center[2] + ringR * Math.sin(phi),
+            ]);
+          }
         }
         mid = points[Math.floor(points.length / 2)];
       } else {
@@ -526,9 +500,13 @@ function Scene({
           a direct visual readout of *which* modulation got you here. */}
       {Array.from(lattice.pcKnots.values()).map(cfg => {
         if (!expandedRoots.has(cfg.pc)) return null;
+        const parentCfg = cfg.parentPc !== null
+          ? lattice.pcKnots.get(cfg.parentPc) ?? null
+          : null;
         return (
           <PcKnot key={`pcknot-${cfg.pc}`}
                   cfg={cfg}
+                  parentCfg={parentCfg}
                   isAnchorPc={cfg.pc === anchorRootPc} />
         );
       })}
@@ -566,7 +544,7 @@ function Scene({
             {!expanded && (
               <group position={[ghostV.x, ghostV.y, ghostV.z]}>
                 <mesh
-                  onClick={(e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); onExpand(m.toNode.rootPc); }}
+                  onClick={(e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); onExpand(m.toNode.rootPc, m); }}
                   onPointerOver={(e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }}
                   onPointerOut={() => { document.body.style.cursor = "default"; }}>
                   <sphereGeometry args={[0.12, 14, 10]} />
@@ -686,10 +664,16 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
   // anchor's tonic is expanded — the user grows the lattice outward
   // by clicking the "+" ghost at the tip of any modulation ray, and
   // shrinks it via the "×" button on the midpoint of an expanded ray.
+  // pcExpansionInfo records which modulation each pc was expanded
+  // *via* (source node + interval semitones), used by the layout to
+  // turn that pc's knot into a cable wrapping the source's knot.
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const anchorRootPc = useMemo(() => ((tonicPc % edo) + edo) % edo, [tonicPc, edo]);
   const [expandedRoots, setExpandedRoots] = useState<Set<number>>(
     () => new Set([anchorRootPc])
+  );
+  const [pcExpansionInfo, setPcExpansionInfo] = useState<Map<number, PcExpansion>>(
+    () => new Map()
   );
 
   // Camera-reset counter: bumping this triggers <CameraReset> to snap
@@ -705,6 +689,7 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
   // start over with only the new anchor's neighbourhood visible.
   useEffect(() => {
     setExpandedRoots(new Set([anchorRootPc]));
+    setPcExpansionInfo(new Map());
     setSelectedId(null);
     setCameraFocusId(null);
   }, [anchorRootPc, anchorKey]);
@@ -724,13 +709,15 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
     return [f ?? null, m ?? null] as [string | null, string | null];
   }, [anchorKey]);
 
-  // Multi-key cylinder lattice — 15 keys × 7 families × 7 modes = 735
-  // nodes, distributed on 7 concentric vertical cylinders (one per
-  // family), with the anchor's key rotated to θ = 0 and its brightness
-  // centred at y = 0 so it lands at front-and-centre.
+  // Per-pc-knot lattice.  Anchor pc lands at the origin as a plain
+  // (P, Q) torus knot; pcs the user has expanded via interval
+  // modulations get cable knots wrapping their source pc-knot's tube
+  // (parent-child relationship is geometric).  Pcs that haven't been
+  // explicitly expanded fall back to standalone torus knots at the
+  // PC_OFFSET_BY_SEMIS slot — they're not visible until expanded.
   const lattice = useMemo(
-    () => buildCylinderLattice(edo, tonicPc, anchorFamilyName, anchorModeName),
-    [edo, tonicPc, anchorFamilyName, anchorModeName]
+    () => buildCylinderLattice(edo, tonicPc, anchorFamilyName, anchorModeName, pcExpansionInfo),
+    [edo, tonicPc, anchorFamilyName, anchorModeName, pcExpansionInfo]
   );
 
   // Find the anchor's id within the cylinder lattice — its keyIdx
@@ -819,13 +806,27 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
   }, [activeId, startDroneFor, onActiveModeChange]);
 
   // Click a "+" ghost at the tip of a modulation ray to expand that
-  // root's 49-node neighbourhood (parallel modes + modal interchange).
-  const handleExpand = useCallback((rootPc: number) => {
+  // root's 49-node neighbourhood.  If the modulation is an interval
+  // mod (the only kind whose target is a different pc), we also
+  // record the source node + interval so the layout can turn the
+  // new pc-knot into a cable wrapping the source's knot.
+  const handleExpand = useCallback((rootPc: number, modEdge?: ModulationEdge) => {
+    const norm = ((rootPc % edo) + edo) % edo;
     setExpandedRoots(prev => {
       const next = new Set(prev);
-      next.add(((rootPc % edo) + edo) % edo);
+      next.add(norm);
       return next;
     });
+    if (modEdge && modEdge.kind === "interval" && modEdge.semis !== undefined) {
+      setPcExpansionInfo(prev => {
+        const next = new Map(prev);
+        next.set(norm, {
+          sourceNodeId: modEdge.fromNode.id,
+          modSemis: modEdge.semis!,
+        });
+        return next;
+      });
+    }
   }, [edo]);
 
   // Click the mid-edge "×" on an expanded modulation to collapse that
@@ -838,6 +839,14 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
     setExpandedRoots(prev => {
       if (!prev.has(norm)) return prev;
       const next = new Set(prev);
+      next.delete(norm);
+      return next;
+    });
+    // Drop any expansion info recorded for this pc — if the user
+    // re-expands later via a different modulation, the new path wins.
+    setPcExpansionInfo(prev => {
+      if (!prev.has(norm)) return prev;
+      const next = new Map(prev);
       next.delete(norm);
       return next;
     });
@@ -860,6 +869,7 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
     setSelectedId(null);
     setCameraFocusId(null);
     setExpandedRoots(new Set([anchorRootPc]));
+    setPcExpansionInfo(new Map());
     setCameraResetKey(k => k + 1);
     onActiveModeChange?.(null);
   }, [anchorRootPc, onActiveModeChange]);
