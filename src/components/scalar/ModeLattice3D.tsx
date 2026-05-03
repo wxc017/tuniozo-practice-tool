@@ -37,22 +37,8 @@ const FAMILY_COLOR: Record<string, string> = {
   "Subharmonic Diatonic Family": "#4a9ac7",
 };
 
-// Family → distinct 3D geometry.  Each family wears its own platonic
-// solid (or torus / torus-knot for the topologically different ones)
-// so silhouette alone identifies the family without reading the colour.
-type Shape =
-  | "octahedron" | "cube" | "dodecahedron" | "tetrahedron"
-  | "icosahedron" | "torus" | "torusKnot";
-
-const FAMILY_SHAPE: Record<string, Shape> = {
-  "Major Family":               "octahedron",   // 8 faces — clean, classic
-  "Harmonic Minor Family":      "cube",         // 6 square faces — grounded, minor-leaning
-  "Melodic Minor Family":       "dodecahedron", // 12 faces — rich, more complex
-  "Subminor Diatonic Family":   "tetrahedron",  // 4 faces — sharp, septimal edge
-  "Neutral Diatonic Family":    "icosahedron",  // 20 faces — rounded, ambivalent
-  "Supermajor Diatonic Family": "torus",        // genus-1 — different topology
-  "Subharmonic Diatonic Family":"torusKnot",    // most complex topology
-};
+// All nodes share one shape (uniform sphere).  Family identity reads
+// purely from colour — the "complex sphere" lives in the layout itself.
 
 
 interface NodeMeshProps {
@@ -66,18 +52,11 @@ interface NodeMeshProps {
   onClick: (node: ModeNode) => void;
 }
 
-// Render the family-specific geometry.  R3F primitives accept the
-// element form `<octahedronGeometry args={[radius, detail]} />` etc.
-function FamilyGeometry({ shape, r }: { shape: Shape; r: number }) {
-  switch (shape) {
-    case "octahedron":   return <octahedronGeometry args={[r, 0]} />;
-    case "cube":         return <boxGeometry args={[r * 1.6, r * 1.6, r * 1.6]} />;
-    case "dodecahedron": return <dodecahedronGeometry args={[r, 0]} />;
-    case "tetrahedron":  return <tetrahedronGeometry args={[r * 1.3, 0]} />;
-    case "icosahedron":  return <icosahedronGeometry args={[r, 0]} />;
-    case "torus":        return <torusGeometry args={[r * 0.85, r * 0.32, 14, 24]} />;
-    case "torusKnot":    return <torusKnotGeometry args={[r * 0.7, r * 0.22, 64, 8]} />;
-  }
+// Every node is a uniform sphere — color carries the family signal.
+// The "complex sphere" shape lives at the LATTICE level (the arrangement
+// of all nodes around the anchor), not at the individual-node level.
+function NodeGeometry({ r }: { r: number }) {
+  return <sphereGeometry args={[r, 24, 16]} />;
 }
 
 function NodeMesh({ node, rootName, isAnchor, isActive, isHovered, alterationFromAnchor: dAnchor, onHover, onClick }: NodeMeshProps) {
@@ -107,8 +86,7 @@ function NodeMesh({ node, rootName, isAnchor, isActive, isHovered, alterationFro
     else intensity = 0.4;
   }
 
-  const r = isAnchor ? 0.18 : 0.14;
-  const shape = FAMILY_SHAPE[node.family] ?? "octahedron";
+  const r = isAnchor ? 0.22 : node.isRelative ? 0.16 : 0.14;
 
   return (
     <group position={node.pos}>
@@ -117,13 +95,12 @@ function NodeMesh({ node, rootName, isAnchor, isActive, isHovered, alterationFro
         onPointerOver={(e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); onHover(node.key); }}
         onPointerOut={() => onHover(null)}
         onClick={(e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); onClick(node); }}>
-        <FamilyGeometry shape={shape} r={r} />
+        <NodeGeometry r={r} />
         <meshStandardMaterial
           color={baseColor.clone().multiplyScalar(intensity)}
-          emissive={emissive.clone().multiplyScalar(isActive ? 0.6 : isAnchor ? 0.35 : 0.1)}
-          roughness={0.4}
-          metalness={0.25}
-          flatShading />
+          emissive={emissive.clone().multiplyScalar(isActive ? 0.7 : isAnchor ? 0.5 : 0.25)}
+          roughness={0.3}
+          metalness={0.55} />
       </mesh>
       {/* Label always visible.  Root prefix appears whenever a 12-EDO
           letter is available (so 31-EDO sessions just show the mode
@@ -155,7 +132,8 @@ function NodeMesh({ node, rootName, isAnchor, isActive, isHovered, alterationFro
 }
 
 interface SceneProps {
-  anchorKey: string | null;
+  anchorFamily: string | null;
+  anchorMode: string | null;
   activeKey: string | null;
   hoveredKey: string | null;
   rootName: string;
@@ -164,18 +142,25 @@ interface SceneProps {
   edo: number;
 }
 
-function Scene({ anchorKey, activeKey, hoveredKey, rootName, onHover, onClick, edo }: SceneProps) {
-  const lattice = useMemo(() => getModeLattice(edo), [edo]);
+function Scene({ anchorFamily, anchorMode, activeKey, hoveredKey, rootName, onHover, onClick, edo }: SceneProps) {
+  const lattice = useMemo(
+    () => getModeLattice(edo, anchorFamily, anchorMode),
+    [edo, anchorFamily, anchorMode]
+  );
+  const anchorKey = anchorFamily && anchorMode
+    ? `${anchorFamily}::${anchorMode}::r0`
+    : null;
   const anchor = anchorKey ? lattice.byKey.get(anchorKey) ?? null : null;
 
   // Edge geometry split by alteration count.  Rendered back-to-front so
-  // 1-alt edges (the strongest topological signal) sit on top:
-  //   3 → faint bridge, dotted, near-invisible — only there to remind
-  //       the user that the xen and Western families ARE related.
+  // closer relationships sit on top:
+  //   3 → faint bridge, near-invisible.
   //   2 → dim grey, dashed.
-  //   1 → bright purple, solid, opaque.
+  //   1 → bright purple, solid.
+  //   0 → thick gold — relatives sharing the anchor's pitch set.
   const edgesByAlt = useMemo(() => {
-    const bucket: Record<number, { key: string; points: [number, number, number][] }[]> = { 1: [], 2: [], 3: [] };
+    const bucket: Record<number, { key: string; points: [number, number, number][] }[]>
+      = { 0: [], 1: [], 2: [], 3: [] };
     for (let i = 0; i < lattice.edges.length; i++) {
       const e = lattice.edges[i];
       const a = lattice.byKey.get(e.fromKey)!.pos;
@@ -187,9 +172,10 @@ function Scene({ anchorKey, activeKey, hoveredKey, rootName, onHover, onClick, e
 
   return (
     <>
-      <ambientLight intensity={0.45} />
-      <pointLight position={[6, 6, 6]} intensity={1.0} />
-      <pointLight position={[-6, -3, -6]} intensity={0.5} />
+      <ambientLight intensity={0.6} />
+      <pointLight position={[8, 8, 8]} intensity={1.4} />
+      <pointLight position={[-8, -4, -8]} intensity={0.8} />
+      <pointLight position={[0, 0, 12]} intensity={0.7} />
 
       {/* 3-alteration bridges — very faint, dotted */}
       {edgesByAlt[3].map(e => (
@@ -202,6 +188,12 @@ function Scene({ anchorKey, activeKey, hoveredKey, rootName, onHover, onClick, e
       {/* 1-alteration edges */}
       {edgesByAlt[1].map(e => (
         <Line key={e.key} points={e.points} color="#7173e6" lineWidth={1.5} transparent opacity={0.55} />
+      ))}
+      {/* 0-alteration edges — thick gold, "same notes / different root".
+          These connect the anchor to its relatives (D Dorian for C Major
+          etc.) and are the strongest topological link in the lattice. */}
+      {edgesByAlt[0].map(e => (
+        <Line key={e.key} points={e.points} color="#d4a52e" lineWidth={2.5} transparent opacity={0.85} />
       ))}
 
       {lattice.nodes.map(node => (
@@ -254,7 +246,10 @@ export default function ModeLattice3D({ edo, rootPitch, rootName = "", anchorKey
 
   const startDroneFor = useCallback((node: ModeNode, gains: number[]) => {
     audioEngine.stopDrone();
-    const notes = node.scale.map(s => rootPitch + s);
+    // Relative satellites have a non-zero rootPcOffset — their drone
+    // sits on a different root than the user's tonic.
+    const base = rootPitch + node.rootPcOffset;
+    const notes = node.scale.map(s => base + s);
     audioEngine.startDrone(notes, edo, 0.06 * playVol * 4, gains);
   }, [rootPitch, edo, playVol]);
 
@@ -299,19 +294,20 @@ export default function ModeLattice3D({ edo, rootPitch, rootName = "", anchorKey
     <div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded overflow-hidden">
       <div className="px-3 py-2 flex items-center justify-between border-b border-[#1a1a1a]">
         <p className="text-[10px] tracking-wider font-semibold text-[#888]">
-          MODE LATTICE — 49 modes, edges by alteration count
+          MODE LATTICE — anchor at center, shells by alteration distance
         </p>
         <div className="flex items-center gap-3 text-[9px] text-[#666]">
+          <span><span style={{ color: "#d4a52e" }}>━</span> same notes</span>
           <span><span style={{ color: "#7173e6" }}>━</span> 1 alt</span>
           <span><span style={{ color: "#3a3a3a" }}>┄</span> 2 alts</span>
-          <span><span style={{ color: "#202028" }}>┈</span> 3 alts (bridge)</span>
-          <span>↑ bright / ↓ dark</span>
+          <span><span style={{ color: "#202028" }}>┈</span> 3 alts</span>
         </div>
       </div>
       <div style={{ height: 520, background: "#0a0a0a" }}>
         <Canvas camera={{ position: [0, 0, 12], fov: 50 }}>
           <Scene
-            anchorKey={anchorKey}
+            anchorFamily={anchorKey ? anchorKey.split("::")[0] : null}
+            anchorMode={anchorKey ? anchorKey.split("::")[1] : null}
             activeKey={activeKey}
             hoveredKey={hoveredKey}
             rootName={rootName}

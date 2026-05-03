@@ -1,34 +1,35 @@
 // ── Mode-lattice layout ───────────────────────────────────────────────
-// Builds the data backing the 3D mode lattice that lives in the Scalar
-// Exploration tab.  Pure logic — no React, no DOM, no audio.
-//
-// Output:
-//   - 49 mode nodes (7 families × 7 modes), each with brightness +
-//     pre-computed (x, y, z) position.
-//   - Edge list connecting every pair of modes whose scales differ in
-//     at most 2 positions, tagged by alteration count.
-//
-// The layout is force-directed in the X-Z plane while Y is locked to
-// the mode's brightness (sum of scale steps, normalized).  This makes
-// brightness immediately readable (bright = up, dark = down) while the
-// horizontal position reflects which modes share notes.
+// Radial shell layout centered on the user-selected anchor mode.
+//   - Anchor sits at the origin.
+//   - Concentric shells at increasing radii hold every other mode,
+//     keyed by alteration distance from the anchor (= |pitchSet
+//     symdiff anchorPitchSet| / 2).
+//   - 0-alteration shell holds "relatives" — modes sharing the anchor's
+//     pitch set on different roots (e.g. D Dorian for C Major).
+//   - Each shell uses a different angular orientation so the shape
+//     reads as a complex multi-axis sphere rather than concentric rings.
+//   - Brightness biases the Y component slightly so within a shell,
+//     brighter modes float upward.
 
 import { PATTERN_SCALE_FAMILIES } from "./musicTheory";
 import { getModeDegreeMap } from "./edoData";
 
 export interface ModeNode {
-  key: string;          // unique id, e.g. "Major Family::Lydian"
-  family: string;       // e.g. "Major Family"
-  mode: string;         // e.g. "Lydian"
-  scale: number[];      // sorted step values within one octave (length 7)
-  brightness: number;   // sum of scale steps — used for Y position
-  pos: [number, number, number];   // (x, y, z) after layout
+  key: string;
+  family: string;
+  mode: string;
+  rootPcOffset: number;     // pc offset from the user's tonic (0 = on tonic)
+  scale: number[];          // step values from this node's own root
+  pitchSet: number[];       // sorted pitch classes mod edo (relative to tonic)
+  brightness: number;
+  pos: [number, number, number];
+  isRelative: boolean;      // true for satellites that share the anchor's notes
 }
 
 export interface ModeEdge {
   fromKey: string;
   toKey: string;
-  alterations: number;  // 1 or 2 — how many positions differ
+  alterations: number;      // 0, 1, 2, 3
 }
 
 export interface ModeLattice {
@@ -37,8 +38,6 @@ export interface ModeLattice {
   byKey: Map<string, ModeNode>;
 }
 
-// Order families left-to-right along X; within each family modes are
-// initialised at the family's X-band before force-direction takes over.
 const FAMILY_ORDER = [
   "Major Family",
   "Harmonic Minor Family",
@@ -49,64 +48,101 @@ const FAMILY_ORDER = [
   "Subharmonic Diatonic Family",
 ];
 
-// Deterministic PRNG so the layout is identical every session — no
-// "where did Lydian go this time?" surprise on reload.
-function mulberry32(seed: number) {
-  let a = seed;
-  return function () {
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
+function sortedSteps(degMap: Record<string, number>): number[] {
+  return Object.values(degMap).sort((a, b) => a - b);
 }
 
-function buildNodes(edo: number): ModeNode[] {
+function buildPitchSet(rootPcOffset: number, scale: number[], edo: number): number[] {
+  return scale.map(s => ((rootPcOffset + s) % edo + edo) % edo).sort((a, b) => a - b);
+}
+
+function pitchSetDistance(a: number[], b: number[]): number {
+  const setA = new Set(a);
+  let symdiff = 0;
+  for (const v of a) if (!b.includes(v)) symdiff++;
+  for (const v of b) if (!setA.has(v)) symdiff++;
+  return symdiff / 2;
+}
+
+// All 49 parallel modes rooted on the user's tonic (rootPcOffset = 0).
+function buildParallelNodes(edo: number): ModeNode[] {
   const out: ModeNode[] = [];
   for (const family of FAMILY_ORDER) {
     const modes = PATTERN_SCALE_FAMILIES[family] ?? [];
     for (const modeName of modes) {
-      const map = getModeDegreeMap(edo, family, modeName);
-      const steps = Object.values(map).sort((a, b) => a - b);
-      if (steps.length !== 7) continue;
-      const brightness = steps.reduce((s, v) => s + v, 0);
+      const scale = sortedSteps(getModeDegreeMap(edo, family, modeName));
+      if (scale.length !== 7) continue;
       out.push({
-        key: `${family}::${modeName}`,
+        key: `${family}::${modeName}::r0`,
         family,
         mode: modeName,
-        scale: steps,
-        brightness,
+        rootPcOffset: 0,
+        scale,
+        pitchSet: buildPitchSet(0, scale, edo),
+        brightness: scale.reduce((s, v) => s + v, 0),
         pos: [0, 0, 0],
+        isRelative: false,
       });
     }
   }
   return out;
 }
 
-// Per-position-displacement distance.  Two scales rooted on the same
-// note: distance = number of scale-degree positions where they differ.
-// Equivalent to |A symdiff B| / 2 over the pitch-class sets.
-function alterationDistance(a: number[], b: number[]): number {
-  const setA = new Set(a);
-  let diff = 0;
-  for (const v of a) if (!setA.has(v) || !b.includes(v)) {/* unreachable */}
-  // Symmetric difference counted in halves.
-  let symdiff = 0;
-  for (const v of a) if (!b.includes(v)) symdiff++;
-  for (const v of b) if (!a.includes(v)) symdiff++;
-  return symdiff / 2;
+// 6 relative satellites for the anchor — the other rotations of its
+// family parent on different roots, all sharing the anchor's pitch set.
+//
+// Math: anchor mode i with absolute root R_anchor implies all rotations
+// share a "base offset" A = R_anchor - parent[i-1].  Mode m's relative
+// root = A + parent[m-1].  Working in (pc - tonic) space, R_anchor of
+// the parallel anchor is 0, so A = -parent[i-1] mod edo.
+function buildRelativeNodes(
+  anchorFamily: string,
+  anchorMode: string,
+  edo: number,
+): ModeNode[] {
+  const familyModes = PATTERN_SCALE_FAMILIES[anchorFamily];
+  if (!familyModes) return [];
+  const anchorIdx = familyModes.indexOf(anchorMode);
+  if (anchorIdx < 0) return [];
+
+  // The "parent" scale = mode 1's intervals.  All modes are rotations
+  // of this parent.
+  const parent = sortedSteps(getModeDegreeMap(edo, anchorFamily, familyModes[0]));
+  if (parent.length !== 7) return [];
+
+  const A = ((0 - parent[anchorIdx]) % edo + edo) % edo;
+
+  const out: ModeNode[] = [];
+  for (let m = 0; m < familyModes.length; m++) {
+    if (m === anchorIdx) continue;
+    const modeName = familyModes[m];
+    const scale = sortedSteps(getModeDegreeMap(edo, anchorFamily, modeName));
+    if (scale.length !== 7) continue;
+    const rootPcOffset = (A + parent[m]) % edo;
+    out.push({
+      key: `${anchorFamily}::${modeName}::r${rootPcOffset}`,
+      family: anchorFamily,
+      mode: modeName,
+      rootPcOffset,
+      scale,
+      pitchSet: buildPitchSet(rootPcOffset, scale, edo),
+      brightness: scale.reduce((s, v) => s + v, 0),
+      pos: [0, 0, 0],
+      isRelative: true,
+    });
+  }
+  return out;
 }
 
+// Edges: every pair within 3 alterations gets one.  Relatives share the
+// anchor's pitch set so their distance is 0 from the anchor (the
+// "same-notes" edge).
 function buildEdges(nodes: ModeNode[]): ModeEdge[] {
   const out: ModeEdge[] = [];
   for (let i = 0; i < nodes.length; i++) {
     for (let j = i + 1; j < nodes.length; j++) {
-      const d = alterationDistance(nodes[i].scale, nodes[j].scale);
-      // 1 + 2 alteration edges are the primary topology.  3-alteration
-      // edges are emitted as faint "bridge" edges so the xen families
-      // (which are 3 alterations from the Western chain at minimum)
-      // don't end up as disconnected islands in the cloud.
-      if (d === 1 || d === 2 || d === 3) {
+      const d = pitchSetDistance(nodes[i].pitchSet, nodes[j].pitchSet);
+      if (d === 0 || d === 1 || d === 2 || d === 3) {
         out.push({ fromKey: nodes[i].key, toKey: nodes[j].key, alterations: d });
       }
     }
@@ -114,119 +150,139 @@ function buildEdges(nodes: ModeNode[]): ModeEdge[] {
   return out;
 }
 
-// Force-directed layout in the X-Z plane only (Y is locked to brightness).
-//   - Springs attract along edges (rest length depends on alteration count).
-//   - Coulomb-style repulsion between every pair keeps the cloud spread.
-//   - Cooling schedule shrinks the step size each iteration.
-function runForceLayout(nodes: ModeNode[], edges: ModeEdge[], rand: () => number) {
-  const N = nodes.length;
+// Radial shell layout.  Anchor at origin.  Each non-anchor node sits on
+// a shell whose radius is proportional to its alteration distance from
+// the anchor.  Within a shell, the Fibonacci spiral spreads nodes
+// evenly across the sphere; each shell's spiral starts from a different
+// "pole" (rotated golden-angle offset) so the alteration classes occupy
+// visually distinct axes — the user reads the structure as a complex
+// many-axis sphere rather than concentric rings.
+function radialLayout(
+  nodes: ModeNode[],
+  anchorKey: string | null,
+) {
+  const anchorIdx = anchorKey ? nodes.findIndex(n => n.key === anchorKey) : -1;
+  const anchor = anchorIdx >= 0 ? nodes[anchorIdx] : null;
 
-  // Brightness → Y in [-3, 3].
+  // Group nodes by distance bucket.
+  const buckets = new Map<number, ModeNode[]>();
+  for (const node of nodes) {
+    if (anchor && node.key === anchor.key) {
+      node.pos = [0, 0, 0];
+      continue;
+    }
+    const d = anchor ? pitchSetDistance(anchor.pitchSet, node.pitchSet) : 1;
+    if (!buckets.has(d)) buckets.set(d, []);
+    buckets.get(d)!.push(node);
+  }
+
+  const SHELL_RADIUS = (d: number) => 0.7 + d * 1.4;
+  const GOLDEN = Math.PI * (1 + Math.sqrt(5));
+
+  // Brightness range for the per-node Y bias.
   let bMin = Infinity, bMax = -Infinity;
   for (const n of nodes) { bMin = Math.min(bMin, n.brightness); bMax = Math.max(bMax, n.brightness); }
   const bRange = Math.max(1, bMax - bMin);
-  for (const n of nodes) {
-    n.pos[1] = ((n.brightness - bMin) / bRange) * 6 - 3;
-  }
 
-  // Initial X-Z scattering: family-banded along X with random jitter so
-  // identical-family modes don't all start on the same point.
-  const FAMILY_X: Record<string, number> = {};
-  for (let i = 0; i < FAMILY_ORDER.length; i++) {
-    FAMILY_X[FAMILY_ORDER[i]] = (i - (FAMILY_ORDER.length - 1) / 2) * 1.5;
-  }
-  for (const n of nodes) {
-    n.pos[0] = (FAMILY_X[n.family] ?? 0) + (rand() - 0.5) * 1.5;
-    n.pos[2] = (rand() - 0.5) * 4;
-  }
+  for (const [d, bucket] of buckets) {
+    const r = SHELL_RADIUS(d);
+    // Per-shell rotation offset so the alteration classes occupy
+    // different axes — 0-alt clusters near +Y, 1-alt near +X, 2-alt
+    // near +Z, 3-alt diagonal.
+    const polarTilt = (d * 1.05) % (Math.PI * 0.95);
+    const azimuthOffset = d * 1.7;
 
-  // Tunable constants.
-  const REPULSION = 0.55;     // magnitude of pairwise repulsion
-  const SPRING_1 = 1.0;        // attraction strength along 1-alt edges
-  const SPRING_2 = 0.25;       // attraction strength along 2-alt edges
-  const SPRING_3 = 0.05;       // very weak attraction along 3-alt bridges
-  const REST_1 = 1.5;
-  const REST_2 = 3.0;
-  const REST_3 = 4.5;
-  const ITERS = 350;
-  const INITIAL_STEP = 0.18;
-  const COOLING = 0.992;
-
-  // Edge lookup for spring force.
-  const edgeMap = new Map<string, ModeEdge[]>();
-  for (const e of edges) {
-    if (!edgeMap.has(e.fromKey)) edgeMap.set(e.fromKey, []);
-    if (!edgeMap.has(e.toKey)) edgeMap.set(e.toKey, []);
-    edgeMap.get(e.fromKey)!.push(e);
-    edgeMap.get(e.toKey)!.push(e);
-  }
-  const idxByKey = new Map<string, number>();
-  nodes.forEach((n, i) => idxByKey.set(n.key, i));
-
-  const fx = new Array(N).fill(0);
-  const fz = new Array(N).fill(0);
-
-  let step = INITIAL_STEP;
-  for (let iter = 0; iter < ITERS; iter++) {
-    fx.fill(0);
-    fz.fill(0);
-
-    // Pairwise repulsion (X-Z only).
+    const N = bucket.length;
     for (let i = 0; i < N; i++) {
-      for (let j = i + 1; j < N; j++) {
-        const dx = nodes[i].pos[0] - nodes[j].pos[0];
-        const dz = nodes[i].pos[2] - nodes[j].pos[2];
-        const r2 = dx * dx + dz * dz + 0.05;
-        const r = Math.sqrt(r2);
-        const f = REPULSION / r2;
-        const ux = dx / r, uz = dz / r;
-        fx[i] += f * ux; fz[i] += f * uz;
-        fx[j] -= f * ux; fz[j] -= f * uz;
+      const k = i + 0.5;
+      // Standard Fibonacci-sphere spiral with per-shell tilt + offset.
+      const yFrac = 1 - 2 * k / N;
+      const phi = Math.acos(yFrac);
+      const theta = GOLDEN * k + azimuthOffset;
+
+      // Rotate the spiral's "north pole" so each shell points along a
+      // different cardinal direction.  d = 0 → +Y, 1 → +X, 2 → -Y,
+      // 3 → +Z, 4 → -X, 5 → -Z, then repeats.
+      const POLE_DIRS: [number, number, number][] = [
+        [0, 1, 0], [1, 0, 0], [0, -1, 0], [0, 0, 1], [-1, 0, 0], [0, 0, -1],
+      ];
+      const poleIdx = d % POLE_DIRS.length;
+      const pole = POLE_DIRS[poleIdx];
+
+      // Build a local frame (u, v, w=pole) and place the spiral on it.
+      // pre-rotated point on canonical sphere (north pole at +Y)
+      const px = Math.sin(phi) * Math.cos(theta);
+      const py = Math.cos(phi);
+      const pz = Math.sin(phi) * Math.sin(theta);
+
+      // Rotate canonical (+Y pole) frame into pole direction.  Build
+      // rotation that maps (0,1,0) → pole.
+      let rx: number, ry: number, rz: number;
+      if (Math.abs(pole[1] - 1) < 1e-9) {
+        // Already at +Y pole.
+        rx = px; ry = py; rz = pz;
+      } else if (Math.abs(pole[1] + 1) < 1e-9) {
+        // Flip to -Y.
+        rx = px; ry = -py; rz = -pz;
+      } else {
+        // Rodrigues for general rotation from (0,1,0) to pole.
+        const ax = pole[2];
+        const ay = 0;
+        const az = -pole[0];
+        const al = Math.sqrt(ax * ax + az * az) || 1;
+        const axis = [ax / al, ay / al, az / al];
+        const cos = pole[1];
+        const sin = al;
+        const k1 = (axis[0] * px + axis[1] * py + axis[2] * pz) * (1 - cos);
+        rx = px * cos + (axis[1] * pz - axis[2] * py) * sin + axis[0] * k1;
+        ry = py * cos + (axis[2] * px - axis[0] * pz) * sin + axis[1] * k1;
+        rz = pz * cos + (axis[0] * py - axis[1] * px) * sin + axis[2] * k1;
       }
-    }
 
-    // Spring attraction along edges (X-Z only).
-    for (const e of edges) {
-      const i = idxByKey.get(e.fromKey)!;
-      const j = idxByKey.get(e.toKey)!;
-      const dx = nodes[j].pos[0] - nodes[i].pos[0];
-      const dz = nodes[j].pos[2] - nodes[i].pos[2];
-      const r = Math.sqrt(dx * dx + dz * dz + 0.0001);
-      const k = e.alterations === 1 ? SPRING_1 : e.alterations === 2 ? SPRING_2 : SPRING_3;
-      const rest = e.alterations === 1 ? REST_1 : e.alterations === 2 ? REST_2 : REST_3;
-      const f = k * (r - rest);
-      const ux = dx / r, uz = dz / r;
-      fx[i] += f * ux; fz[i] += f * uz;
-      fx[j] -= f * ux; fz[j] -= f * uz;
-    }
+      // Apply per-shell polar tilt — small wobble so shells don't
+      // perfectly nest.
+      const ct = Math.cos(polarTilt), st = Math.sin(polarTilt);
+      const fx = rx * ct + rz * st;
+      const fy = ry;
+      const fz = -rx * st + rz * ct;
 
-    // Apply forces.
-    for (let i = 0; i < N; i++) {
-      nodes[i].pos[0] += step * fx[i];
-      nodes[i].pos[2] += step * fz[i];
-    }
+      // Brightness Y bias (within shell, bright floats up).
+      const bBias = ((bucket[i].brightness - bMin) / bRange - 0.5) * 0.6;
 
-    step *= COOLING;
+      bucket[i].pos = [fx * r, fy * r + bBias, fz * r];
+    }
   }
 }
 
-let _cached: { edo: number; lattice: ModeLattice } | null = null;
+let _cached: { key: string; lattice: ModeLattice } | null = null;
 
-export function getModeLattice(edo: number): ModeLattice {
-  if (_cached && _cached.edo === edo) return _cached.lattice;
-  const nodes = buildNodes(edo);
+export function getModeLattice(
+  edo: number,
+  anchorFamily: string | null,
+  anchorMode: string | null,
+): ModeLattice {
+  const cacheKey = `${edo}::${anchorFamily ?? "_"}::${anchorMode ?? "_"}`;
+  if (_cached && _cached.key === cacheKey) return _cached.lattice;
+
+  const parallel = buildParallelNodes(edo);
+  const relatives = (anchorFamily && anchorMode)
+    ? buildRelativeNodes(anchorFamily, anchorMode, edo)
+    : [];
+  const nodes = [...parallel, ...relatives];
+
+  const anchorKey = (anchorFamily && anchorMode)
+    ? `${anchorFamily}::${anchorMode}::r0`
+    : null;
+
   const edges = buildEdges(nodes);
-  runForceLayout(nodes, edges, mulberry32(0x53cafe));
+  radialLayout(nodes, anchorKey);
+
   const byKey = new Map(nodes.map(n => [n.key, n]));
   const lattice: ModeLattice = { nodes, edges, byKey };
-  _cached = { edo, lattice };
+  _cached = { key: cacheKey, lattice };
   return lattice;
 }
 
-// Helper used by the renderer to highlight relations to the anchor.
-export function alterationFromAnchor(
-  anchor: ModeNode,
-  other: ModeNode,
-): number {
-  return alterationDistance(anchor.scale, other.scale);
+export function alterationFromAnchor(anchor: ModeNode, other: ModeNode): number {
+  return pitchSetDistance(anchor.pitchSet, other.pitchSet);
 }
