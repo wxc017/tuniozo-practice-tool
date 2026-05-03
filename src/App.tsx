@@ -619,7 +619,7 @@ export default function App() {
                 const SECTION_BUTTONS: { id: string; label: string; beta?: boolean }[] = [
                   // Always-visible
                   { id: "ear-trainer",          label: "Tonal Audiation" },
-                  { id: "scalar-exploration",   label: "Scalar Exploration" },
+                  { id: "scalar-exploration",   label: "Alteration Lattice" },
                   { id: "drum-patterns",        label: "Drum Patterns" },
                   { id: "melodic-patterns",     label: "Melodic Patterns" },
                   { id: "harmony-workshop",     label: "Harmony Workshop" },

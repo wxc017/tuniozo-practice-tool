@@ -794,13 +794,14 @@ export function buildCylinderLattice(
       // tube, alt-1 alongside alt-1, etc.  This is the "symmetric"
       // alignment: same arc layout on both knots, same parametric
       // position for corresponding modes.
-      // Modulated pcs render as their own full torus knot, same R/r/
-      // P/Q as the anchor, translated by a small offset along the
-      // modulation interval's direction so the satellite sits *inside*
-      // / overlapping the anchor's volume — not way off to the side.
-      // parentPc=null + cableOffset/cableTOffset=0 routes
-      // sampleKnotCurve through the standalone branch.
-      const SATELLITE_SPACING = 8;
+      // Spacing chosen so the satellite knot sits just outside the
+      // anchor's bounding sphere (R + r ≈ 21 with R = 14): close
+      // enough that the user can mentally trace which mode on the
+      // satellite corresponds to which mode on the anchor (same
+      // parametric position, same orientation), but separated enough
+      // that the two knots are visually distinct rather than nested
+      // and occluded.
+      const SATELLITE_SPACING = 24;
       const dirRaw = PC_OFFSET_BY_SEMIS[((info.modSemis % 12) + 12) % 12]
         ?? [1, 0, 0];
       const dirLen = Math.hypot(dirRaw[0], dirRaw[1], dirRaw[2]) || 1;

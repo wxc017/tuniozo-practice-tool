@@ -386,15 +386,15 @@ function NodeMesh({ node, edo, isAnchor, isActive, isHovered, isSelected, onHove
           // by sight without hovering.
           <div style={{
             color: palette,
-            opacity: 0.82,
-            fontSize: 8.5,
-            fontWeight: 600,
+            opacity: 0.92,
+            fontSize: 13,
+            fontWeight: 700,
             whiteSpace: "nowrap",
-            transform: "translate(0, -16px)",
-            textShadow: "0 0 4px #000, 0 0 4px #000",
-            letterSpacing: 0.2,
+            transform: "translate(0, -22px)",
+            textShadow: "0 0 6px #000, 0 0 6px #000",
+            letterSpacing: 0.3,
           }}>
-            <span style={{ color: "#ddd", marginRight: 3 }}>{node.key.name}</span>
+            <span style={{ color: "#eee", marginRight: 4 }}>{node.key.name}</span>
             {formatHalfAccidentals(node.mode.name)}
           </div>
         )}
@@ -1081,7 +1081,7 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
     <div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded overflow-hidden">
       <div className="px-3 py-2 flex items-center gap-2 flex-wrap border-b border-[#1a1a1a]">
         <p className="text-[10px] tracking-wider font-semibold text-[#888] mr-2">
-          TONALITY LATTICE · {expandedRoots.size} {expandedRoots.size === 1 ? "KEY" : "KEYS"} EXPANDED
+          ALTERATION LATTICE · {expandedRoots.size} {expandedRoots.size === 1 ? "KEY" : "KEYS"} EXPANDED
         </p>
         <button
           onClick={handleReset}
