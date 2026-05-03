@@ -385,21 +385,22 @@ function NodeMesh({ node, edo, isAnchor, isActive, isHovered, isSelected, onHove
             background: "#0a0a0aee",
             border: `1px solid ${palette}`,
             color: palette,
-            padding: "3px 7px",
-            borderRadius: 3,
-            fontSize: 11,
+            padding: "1px 4px",
+            borderRadius: 2,
+            fontSize: 8,
             fontWeight: 700,
             whiteSpace: "nowrap",
-            transform: "translate(0, -32px)",
+            transform: "translate(0, -16px)",
             textAlign: "center",
+            lineHeight: "10px",
           }}>
             <div>
-              <span style={{ color: "#ddd", marginRight: 4 }}>{node.key.name}</span>
+              <span style={{ color: "#ddd", marginRight: 3 }}>{node.key.name}</span>
               {formatHalfAccidentals(node.mode.name)}
             </div>
             <div style={{
-              fontSize: 9, fontWeight: 500, color: "#bbb",
-              marginTop: 2, letterSpacing: 1,
+              fontSize: 6.5, fontWeight: 500, color: "#bbb",
+              marginTop: 1, letterSpacing: 0.5,
             }}>
               {scaleNoteNames(node.rootPc, node.mode.scale, edo).join(" · ")}
             </div>
