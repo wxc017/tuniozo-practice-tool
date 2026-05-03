@@ -309,12 +309,14 @@ function NodeMesh({ node, edo, isAnchor, isActive, isHovered, isSelected, onHove
 
   useFrame((_, delta) => {
     if (!meshRef.current) return;
-    const target = isActive ? 1.6 : isAnchor ? 1.4 : isSelected ? 1.45 : isHovered ? 1.2 : 1.0;
+    const target = isActive ? 1.7 : isAnchor ? 1.6 : isSelected ? 1.5 : isHovered ? 1.25 : 1.0;
     const cur = meshRef.current.scale.x;
     meshRef.current.scale.setScalar(cur + (target - cur) * Math.min(1, delta * 8));
   });
 
-  const r = isAnchor ? 0.32 : 0.22;
+  // Anchor (the user's picker selection) is *much* bigger than the
+  // other nodes so it always reads as the lattice's centre of attention.
+  const r = isAnchor ? 0.55 : 0.22;
 
   return (
     <group position={node.pos}>
