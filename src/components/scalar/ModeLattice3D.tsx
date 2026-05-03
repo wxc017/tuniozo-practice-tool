@@ -779,7 +779,19 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
   // render the modulation-ray overlay.  Plain clicks update selectedId
   // (so the alt labels shift to that node) but don't switch rays on.
   const [showRays, setShowRays] = useState(false);
-  const anchorRootPc = useMemo(() => ((tonicPc % edo) + edo) % edo, [tonicPc, edo]);
+  // Plain-click re-anchor: stores an internal lattice anchor that
+  // overrides the picker prop.  When the user plain-clicks a node,
+  // the lattice reorients with that node as "main scale" and arcs
+  // recompute by alt distance from there.  Resets to null whenever
+  // the picker (anchorKey / tonicPc props) changes externally.
+  const [latticeAnchor, setLatticeAnchor] = useState<{
+    tonicPc: number; familyName: string; modeName: string;
+  } | null>(null);
+  const effectiveTonicPc = latticeAnchor?.tonicPc ?? tonicPc;
+  const anchorRootPc = useMemo(
+    () => ((effectiveTonicPc % edo) + edo) % edo,
+    [effectiveTonicPc, edo],
+  );
   const [expandedRoots, setExpandedRoots] = useState<Set<number>>(
     () => new Set([anchorRootPc])
   );
@@ -796,15 +808,11 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
   // (active → selected → anchor) until it's reset.
   const [cameraFocusId, setCameraFocusId] = useState<string | null>(null);
 
-  // Reset expansion when the user changes their tonic / anchor —
-  // start over with only the new anchor's neighbourhood visible.
+  // When the picker (external anchorKey / tonicPc) changes, drop any
+  // internal lattice re-anchor so the picker selection takes over.
   useEffect(() => {
-    setExpandedRoots(new Set([anchorRootPc]));
-    setPcExpansionInfo(new Map());
-    setSelectedId(null);
-    setShowRays(false);
-    setCameraFocusId(null);
-  }, [anchorRootPc, anchorKey]);
+    setLatticeAnchor(null);
+  }, [anchorKey, tonicPc]);
 
   // Family / edge visibility toggles.
   const [showFamilies, setShowFamilies] = useState<Record<string, boolean>>(
@@ -815,25 +823,34 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
   });
 
   // Parse the anchor's family + mode out of the picker selection.
-  const [anchorFamilyName, anchorModeName] = useMemo(() => {
+  const [pickerAnchorFamilyName, pickerAnchorModeName] = useMemo(() => {
     if (!anchorKey) return [null, null] as [string | null, string | null];
     const [f, m] = anchorKey.split("::");
     return [f ?? null, m ?? null] as [string | null, string | null];
   }, [anchorKey]);
+  // Effective anchor: internal re-anchor (from plain click) overrides
+  // the picker.  Used everywhere downstream for layout + lookup.
+  const anchorFamilyName = latticeAnchor?.familyName ?? pickerAnchorFamilyName;
+  const anchorModeName = latticeAnchor?.modeName ?? pickerAnchorModeName;
 
-  // Per-pc-knot lattice.  Anchor pc lands at the origin as a plain
-  // (P, Q) torus knot; pcs the user has expanded via interval
-  // modulations get cable knots wrapping their source pc-knot's tube
-  // (parent-child relationship is geometric).  Pcs that haven't been
-  // explicitly expanded fall back to standalone torus knots at the
-  // PC_OFFSET_BY_SEMIS slot — they're not visible until expanded.
+  // Reset expansion when the EFFECTIVE anchor changes — covers both
+  // the picker changing externally AND the user plain-clicking a
+  // node (which sets the internal latticeAnchor).
+  useEffect(() => {
+    setExpandedRoots(new Set([anchorRootPc]));
+    setPcExpansionInfo(new Map());
+    setSelectedId(null);
+    setShowRays(false);
+    setCameraFocusId(null);
+  }, [anchorRootPc, anchorFamilyName, anchorModeName]);
+
+  // Per-pc-knot lattice rebuilds when the effective anchor changes,
+  // so plain-clicking a node reorients the entire alt-arc structure.
   const lattice = useMemo(
-    () => buildCylinderLattice(edo, tonicPc, anchorFamilyName, anchorModeName, pcExpansionInfo),
-    [edo, tonicPc, anchorFamilyName, anchorModeName, pcExpansionInfo]
+    () => buildCylinderLattice(edo, effectiveTonicPc, anchorFamilyName, anchorModeName, pcExpansionInfo),
+    [edo, effectiveTonicPc, anchorFamilyName, anchorModeName, pcExpansionInfo]
   );
 
-  // Find the anchor's id within the cylinder lattice — its keyIdx
-  // depends on which spelling matches tonicPc.
   const anchorId = useMemo(() => {
     if (!anchorFamilyName || !anchorModeName) return null;
     const family = LATTICE_FAMILIES.find(f => f.familyName === anchorFamilyName);
@@ -841,12 +858,12 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
     for (const n of lattice.nodes) {
       if (n.family.id === family.id
           && n.mode.name === anchorModeName
-          && n.rootPc === ((tonicPc % edo) + edo) % edo) {
+          && n.rootPc === anchorRootPc) {
         return n.id;
       }
     }
     return null;
-  }, [lattice, anchorFamilyName, anchorModeName, tonicPc, edo]);
+  }, [lattice, anchorFamilyName, anchorModeName, anchorRootPc]);
 
   // Modulation edges: rays from whichever node the user has selected
   // (or the anchor by default if nothing's been clicked yet).  Empty
@@ -909,7 +926,15 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
       setShowRays(!alreadyOnForThis);
       return;
     }
-    // Plain click: toggle drone, leave ray visibility as-is.
+    // Plain click: re-anchor the lattice on this node (so it becomes
+    // the "main scale" and arcs reorient by alt distance from here),
+    // then toggle the drone.  The reset useEffect on anchorRootPc
+    // clears expandedRoots / pcExpansionInfo / showRays automatically.
+    setLatticeAnchor({
+      tonicPc: node.rootPc,
+      familyName: node.family.familyName,
+      modeName: node.mode.name,
+    });
     if (activeId === node.id) {
       audioEngine.stopDrone();
       setActiveId(null);
@@ -990,11 +1015,12 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
     setSelectedId(null);
     setShowRays(false);
     setCameraFocusId(null);
-    setExpandedRoots(new Set([anchorRootPc]));
+    setLatticeAnchor(null);
+    setExpandedRoots(new Set([((tonicPc % edo) + edo) % edo]));
     setPcExpansionInfo(new Map());
     setCameraResetKey(k => k + 1);
     onActiveModeChange?.(null);
-  }, [anchorRootPc, onActiveModeChange]);
+  }, [tonicPc, edo, onActiveModeChange]);
 
   // Focus target for the orbit camera.  Shift+click pins to a
   // specific node; otherwise fall back to whichever node is currently
