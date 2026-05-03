@@ -769,8 +769,8 @@ export function buildCylinderLattice(
       const childKeyEntry = uniqueKeys.find(uk => uk.key.pc === childPc);
       if (!childKeyEntry) continue;
 
-      // Compute the cable's "anchor pitch set": the user's anchor mode
-      // rooted at the cable's pc.
+      // Compute the satellite's "anchor pitch set": the user's anchor
+      // mode rooted at the satellite's pc.
       const childAnchorPcSet = new Set<number>();
       if (anchorFamily && anchorModeName) {
         const anchorMode = modes.get(anchorFamily.id)?.find(m => m.name === anchorModeName);
@@ -781,33 +781,41 @@ export function buildCylinderLattice(
         }
       }
 
-      // Alt-distance between the cable's anchor mode (anchor-mode rooted
-      // at childPc) and the parent anchor's pitch set.  This drives
-      // cableTOffset so the cable's anchor lands at the *same* arc-N
-      // position on the parent that alt-N tonalities occupy on the main
-      // knot — i.e. the cable is symmetric with the main knot's arc
-      // structure (D Ionian on the +M2 cable lines up with where the
-      // alt-2 arc sits on the C-Ionian-anchored main knot).
-      let cableAltDistance = 0;
-      {
-        let symdiff = 0;
-        for (const v of childAnchorPcSet) if (!anchorPcSet.has(v)) symdiff++;
-        for (const v of anchorPcSet) if (!childAnchorPcSet.has(v)) symdiff++;
-        cableAltDistance = symdiff / 2;
-      }
+      // Modulated pcs are rendered as standalone (P, Q) torus knots
+      // sitting *side by side* with the parent knot, not as cables
+      // wrapping the parent's tube.  Both knots share the same arc
+      // structure — anchor at arc 0, alt-1..6 at arcs 1..6 — so the
+      // anchor-equivalent modes (e.g. all the Ionians) line up at the
+      // same parameter t on every knot.  Centre offset uses the
+      // modulation interval's direction so e.g. +P5 sits along +X
+      // from the parent.  The spacing leaves a clear gap between tubes
+      // (knot fits in a sphere of radius R + r ≈ 12).
+      const SATELLITE_SPACING = 28;
+      const dirRaw = PC_OFFSET_BY_SEMIS[((info.modSemis % 12) + 12) % 12]
+        ?? [1, 0, 0];
+      const dirLen = Math.hypot(dirRaw[0], dirRaw[1], dirRaw[2]) || 1;
+      const childCenter: [number, number, number] = [
+        parentCfg.center[0] + (dirRaw[0] / dirLen) * SATELLITE_SPACING,
+        parentCfg.center[1] + (dirRaw[1] / dirLen) * SATELLITE_SPACING,
+        parentCfg.center[2] + (dirRaw[2] / dirLen) * SATELLITE_SPACING,
+      ];
 
-      const cableCfg: KnotConfig = {
+      // wraps is repurposed for satellite knots: it stores the semis
+      // from the parent's anchor pc (driving label colour + "+N" alt
+      // tag in the renderer).  cableOffset/cableTOffset stay zero —
+      // satellites don't wrap anything.
+      const childCfg: KnotConfig = {
         pc: childPc,
-        center: [0, 0, 0],
+        center: childCenter,
         R: KNOT_R, r: KNOT_r, P: KNOT_P, Q: KNOT_Q,
         intervalR: 0,
-        parentPc,
+        parentPc: null,
         wraps: info.modSemis,
-        cableOffset: parentCfg.r * 0.45,
-        cableTOffset: cableAltDistance / ALT_LEVELS,
+        cableOffset: 0,
+        cableTOffset: 0,
         sourceNodeId: info.sourceNodeId,
       };
-      pcKnots.set(childPc, cableCfg);
+      pcKnots.set(childPc, childCfg);
       const childAltOf = (t: Tonality): number => {
         const tSet = new Set<number>();
         for (const s of t.mode.scale) tSet.add(((t.pc + s) % edo + edo) % edo);
@@ -842,11 +850,12 @@ export function buildCylinderLattice(
         childArcs[idx].push(t);
       }
 
-      // Place nodes along the cable curve.  sampleKnotCurve handles
-      // the cable parameterisation given (cableCfg, parentCfg).
-      const placeCableNode = (t: Tonality, knotT: number, alt: number, rank: number) => {
+      // Place nodes along the satellite knot's own curve.  Since
+      // childCfg.parentPc is null, sampleKnotCurve dispatches to the
+      // plain (P, Q) torus knot path and adds childCenter automatically.
+      const placeChildNode = (t: Tonality, knotT: number, alt: number, rank: number) => {
         const u = knotT / TWO_PI;
-        const pos = sampleKnotCurve(cableCfg, parentCfg, u);
+        const pos = sampleKnotCurve(childCfg, null, u);
         const id = `${t.keyIdx}::${t.family.id}::${t.mode.name}`;
         const node: LatticeNode = {
           id, key: t.key, keyIdx: t.keyIdx,
@@ -860,7 +869,7 @@ export function buildCylinderLattice(
         nodeMap.set(id, node);
       };
       if (childAnchorTonality) {
-        placeCableNode(childAnchorTonality, 0.5 * ARC_T, 0, 0);
+        placeChildNode(childAnchorTonality, 0.5 * ARC_T, 0, 0);
       }
       for (let alt = 1; alt < ALT_LEVELS; alt++) {
         const arc = childArcs[alt];
@@ -870,7 +879,7 @@ export function buildCylinderLattice(
         for (let i = 0; i < arc.length; i++) {
           const knotT = arcStart + ARC_T * (i + 0.5) / arc.length;
           const rank = arc.length > 1 ? (i / (arc.length - 1)) * 6 : 0;
-          placeCableNode(arc[i], knotT, alt, rank);
+          placeChildNode(arc[i], knotT, alt, rank);
         }
       }
       progress = true;
