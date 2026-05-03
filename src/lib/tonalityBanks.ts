@@ -460,7 +460,7 @@ function buildXenFamilyBanks(edo: number, showSevenths: boolean): TonalityBank[]
   const SUBMINOR     = [0, 5, 7, 13, 18, 20, 25];   // 1 2 sub3 4 5 sub6 sub7
   const NEUTRAL      = [0, 5, 9, 13, 18, 22, 27];   // 1 2 neu3 4 5 neu6 neu7
   const SUPERMAJOR   = [0, 5, 11, 13, 18, 24, 29];  // 1 2 sup3 4 5 sup6 sup7
-  const SUBHARMONIC  = [0, 5, 7, 13, 18, 20, 27];   // 1 2 sub3 4 5 sub6 neu7
+  const SUBHARMONIC  = [0, 5, 7, 13, 18, 20, 28];   // 1 2 sub3 4 5 sub6 7
 
   // Mode names follow the "closest Greek mode + specific accidentals"
   // convention used by Western harmonic-minor / melodic-minor families

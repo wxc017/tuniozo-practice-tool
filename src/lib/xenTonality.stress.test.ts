@@ -29,7 +29,7 @@ const PARENTS: Record<string, number[]> = {
   "Subminor Diatonic Family":   [0, 5, 7, 13, 18, 20, 25],
   "Neutral Diatonic Family":    [0, 5, 9, 13, 18, 22, 27],
   "Supermajor Diatonic Family": [0, 5, 11, 13, 18, 24, 29],
-  "Subharmonic Diatonic Family": [0, 5, 7, 13, 18, 20, 27],
+  "Subharmonic Diatonic Family": [0, 5, 7, 13, 18, 20, 28],
 };
 
 describe("Xen tonality families — registration", () => {

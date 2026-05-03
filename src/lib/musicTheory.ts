@@ -2445,7 +2445,7 @@ function buildXenFamilyNames(parent: readonly number[], anchorName: string): str
 //   Mode 7 Supermajor Locrian  1     bb2   sub3  4     bb5   sub6  b7
 //
 // Subharmonic Diatonic Family
-//   Mode 1 Subharmonic Diatonic 1    2     sub3  4     5     sub6  neu7
+//   Mode 1 Subharmonic Diatonic 1    2     sub3  4     5     sub6  7
 //   Mode 2 Subharmonic Dorian  1     bb2   b3    4     bb5   neu6  b7
 //   Mode 3 Subharmonic Phrygian 1    sup2  sup3  4     ##5   sup6  sup7
 //   Mode 4 Subharmonic Lydian  1     2     sub3  neu4  5     6     sub7
@@ -2463,7 +2463,7 @@ function buildXenFamilyNames(parent: readonly number[], anchorName: string): str
 const SUBMINOR_PARENT_31     = [0, 5, 7, 13, 18, 20, 25] as const;  // 1 2 sub3 4 5 sub6 sub7
 const NEUTRAL_PARENT_31      = [0, 5, 9, 13, 18, 22, 27] as const;  // 1 2 neu3 4 5 neu6 neu7
 const SUPERMAJOR_PARENT_31   = [0, 5, 11, 13, 18, 24, 29] as const; // 1 2 sup3 4 5 sup6 sup7
-const SUBHARMONIC_PARENT_31  = [0, 5, 7, 13, 18, 20, 27] as const;  // 1 2 sub3 4 5 sub6 neu7
+const SUBHARMONIC_PARENT_31  = [0, 5, 7, 13, 18, 20, 28] as const;  // 1 2 sub3 4 5 sub6 7
 
 PATTERN_SCALE_MAPS_31["Subminor Diatonic Family"]   = buildXenFamily(SUBMINOR_PARENT_31,    PATTERN_SCALE_FAMILIES["Subminor Diatonic Family"]);
 PATTERN_SCALE_MAPS_31["Neutral Diatonic Family"]    = buildXenFamily(NEUTRAL_PARENT_31,     PATTERN_SCALE_FAMILIES["Neutral Diatonic Family"]);
