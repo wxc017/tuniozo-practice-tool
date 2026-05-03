@@ -5,6 +5,7 @@ import { formatHalfAccidentals, getModeDegreeMap, getSolfege } from "@/lib/edoDa
 import { getTonalityBanks, type TonalityBank } from "@/lib/tonalityBanks";
 import { bankToScaleFamMode } from "@/lib/tonalityChordPool";
 import { formatRomanNumeral } from "@/lib/formatRoman";
+import ModeLattice3D from "../scalar/ModeLattice3D";
 
 interface Props {
   tonicPc: number;
@@ -76,6 +77,14 @@ export default function ScalarTab({
     }));
     return { bank, scale };
   }, [banksByName, selected, edo]);
+
+  // Anchor key for the 3D lattice — `${family}::${mode}` of the
+  // currently-selected tonality.  bankToScaleFamMode gives us the pair.
+  const anchorKey = useMemo(() => {
+    if (!banksByName[selected]) return null;
+    const [fam, mode] = bankToScaleFamMode(selected);
+    return `${fam}::${mode}`;
+  }, [banksByName, selected]);
 
   const baseTonic = lowestPitch + (((tonicPc - lowestPitch) % edo) + edo) % edo;
 
@@ -367,6 +376,18 @@ export default function ScalarTab({
           );
         })}
       </div>
+
+      {/* ── 3D mode lattice ────────────────────────────────────────
+          All 49 modes arranged by force-directed simulation in X-Z;
+          Y locks to brightness so bright modes float and dark ones
+          sink.  The selected tonality from the picker above acts as
+          the visual anchor.  Click any mode to drone its scale on
+          the user's root pitch. ── */}
+      <ModeLattice3D
+        edo={edo}
+        rootPitch={baseTonic}
+        anchorKey={anchorKey}
+        playVol={playVol} />
     </div>
   );
 }
