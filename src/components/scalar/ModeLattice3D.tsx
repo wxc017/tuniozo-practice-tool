@@ -184,6 +184,19 @@ const SEMIS_TO_MOD_COLOR: Record<number, string> = {
   1:  "#cc66ff", 11: "#cc66ff",   // ±m2    — light purple
 };
 
+// Modulation interval (in semitones) → pitch-set alt count between
+// the same scale rooted on those two pcs.  Determined by the chain-
+// of-fifths distance: each fifth adds one accidental.
+const SEMIS_TO_ALT: Record<number, number> = {
+  0: 0,
+  7: 1,  5: 1,    // P5 / P4
+  2: 2,  10: 2,   // M2 / m7
+  3: 3,  9:  3,   // m3 / M6
+  4: 4,  8:  4,   // M3 / m6
+  1: 5,  11: 5,   // m2 / M7
+  6: 6,           // TT
+};
+
 function darken(hex: string, amount: number): string {
   const c = new THREE.Color(hex);
   c.lerp(new THREE.Color("#000000"), amount);
@@ -537,6 +550,41 @@ function Scene({
                   cfg={cfg}
                   parentCfg={parentCfg}
                   isAnchorPc={cfg.pc === anchorRootPc} />
+        );
+      })}
+
+      {/* For every expanded cable, drop a small label at its source
+          (the spot on the parent's tube the cable was spawned from)
+          showing the modulation's alt distance — so the user can read
+          "this cable is +1 alt from its parent" directly off the
+          structure, without having to Ctrl-click to see rays. */}
+      {Array.from(lattice.pcKnots.values()).map(cfg => {
+        if (cfg.parentPc === null) return null;
+        if (!expandedRoots.has(cfg.pc)) return null;
+        if (!cfg.sourceNodeId) return null;
+        const sourceNode = lattice.nodeMap.get(cfg.sourceNodeId);
+        if (!sourceNode) return null;
+        const altCount = SEMIS_TO_ALT[cfg.wraps] ?? 0;
+        const cableColor = SEMIS_TO_MOD_COLOR[cfg.wraps] ?? "#a4d4ff";
+        return (
+          <Html key={`cable-alt-${cfg.pc}`}
+                position={sourceNode.pos} center distanceFactor={9}
+                style={{ pointerEvents: "none" }}>
+            <div style={{
+              background: "#0a0a0add",
+              border: `1px solid ${cableColor}`,
+              color: cableColor,
+              padding: "0 2px",
+              borderRadius: 1,
+              fontSize: 6,
+              fontWeight: 700,
+              lineHeight: "7px",
+              whiteSpace: "nowrap",
+              transform: "translate(0, -10px)",
+            }}>
+              +{altCount}
+            </div>
+          </Html>
         );
       })}
 

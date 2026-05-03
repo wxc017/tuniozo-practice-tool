@@ -171,6 +171,10 @@ export interface KnotConfig {
   // mode of this cable lands at the source node's position — so the
   // cable visibly "starts from" the node the user expanded from.
   cableTOffset: number;
+  // For cables: the source-node id the cable was spawned from.
+  // Lets the renderer place per-cable annotations (e.g. modulation-
+  // alt label) at the spot on the parent where the cable starts.
+  sourceNodeId: string | null;
 }
 
 export interface LatticeEdge {
@@ -672,6 +676,7 @@ export function buildCylinderLattice(
       R: KNOT_R, r: KNOT_r, P: KNOT_P, Q: KNOT_Q,
       intervalR: 0,
       parentPc: null, wraps: 0, cableOffset: 0, cableTOffset: 0,
+      sourceNodeId: null,
     };
     pcKnots.set(anchorPc, cfg);
     buildPcNodes(anchorKeyEntry.key, anchorKeyEntry.keyIdx, cfg);
@@ -699,6 +704,7 @@ export function buildCylinderLattice(
         wraps: info.modSemis,
         cableOffset: parentCfg.r * 0.45,
         cableTOffset: sourceNode.knotT / TWO_PI,
+        sourceNodeId: info.sourceNodeId,
       };
       pcKnots.set(childPc, cfg);
       buildPcNodes(childKeyEntry.key, childKeyEntry.keyIdx, cfg);
@@ -720,6 +726,7 @@ export function buildCylinderLattice(
       R: KNOT_R, r: KNOT_r, P: KNOT_P, Q: KNOT_Q,
       intervalR: SEMIS_TO_INTERVAL_CLASS[semis] ?? 0,
       parentPc: null, wraps: 0, cableOffset: 0, cableTOffset: 0,
+      sourceNodeId: null,
     };
     pcKnots.set(key.pc, cfg);
     buildPcNodes(key, keyIdx, cfg);
