@@ -243,12 +243,11 @@ function PcKnot({ cfg, parentCfg, isAnchorPc }: {
   const emissiveIntensity = isAnchorPc ? 0.55 : isCable ? 0.55 : 0.25;
   const opacity = isAnchorPc ? 0.75 : isCable ? 0.85 : 0.45;
 
-  // Tube radii sized to read at the R = 8 backbone scale — visible
-  // colour stripes through space.  Node spheres are still bigger
-  // (anchor 0.55, others 0.22) so they sit proud of the tube and the
-  // always-on-top render order keeps them visible regardless.
-  const TUBE_RADIUS = 0.4;
-  const NODE_CABLE_RADIUS = 0.32;
+  // Tube radii: match the anchor backbone to the cable thickness so
+  // they read at the same visual weight.  Node spheres are bigger
+  // (anchor 0.55, others 0.22) and always-on-top so they stay visible.
+  const TUBE_RADIUS = 0.18;
+  const NODE_CABLE_RADIUS = 0.18;
 
   if (isCable && cableCurve) {
     // Cable knot — TubeGeometry along the cable curve.  Opaque so its
