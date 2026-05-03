@@ -58,24 +58,25 @@ interface NodeMeshProps {
   isAnchor: boolean;
   isActive: boolean;
   isHovered: boolean;
+  isSelected: boolean;
   onHover: (id: string | null) => void;
   onClick: (node: LatticeNode) => void;
 }
 
-function NodeMesh({ node, edo, isAnchor, isActive, isHovered, onHover, onClick }: NodeMeshProps) {
+function NodeMesh({ node, edo, isAnchor, isActive, isHovered, isSelected, onHover, onClick }: NodeMeshProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const baseColor = useMemo(() => new THREE.Color(node.family.color), [node.family.color]);
   const emissive = baseColor;
 
   useFrame((_, delta) => {
     if (!meshRef.current) return;
-    const target = isActive ? 1.6 : isAnchor ? 1.4 : isHovered ? 1.2 : 1.0;
+    const target = isActive ? 1.6 : isAnchor ? 1.4 : isSelected ? 1.45 : isHovered ? 1.2 : 1.0;
     const cur = meshRef.current.scale.x;
     meshRef.current.scale.setScalar(cur + (target - cur) * Math.min(1, delta * 8));
   });
 
   const r = isAnchor ? 0.18 : 0.13;
-  const opacity = isAnchor || isActive || isHovered ? 1 : 0.85;
+  const opacity = isAnchor || isActive || isHovered || isSelected ? 1 : 0.85;
 
   return (
     <group position={node.pos}>
@@ -94,9 +95,9 @@ function NodeMesh({ node, edo, isAnchor, isActive, isHovered, onHover, onClick }
           transparent={opacity < 1}
           opacity={opacity} />
       </mesh>
-      <Html center distanceFactor={isHovered || isActive || isAnchor ? 8 : 11}
+      <Html center distanceFactor={isHovered || isActive || isAnchor || isSelected ? 8 : 11}
             style={{ pointerEvents: "none" }}>
-        {isHovered || isActive || isAnchor ? (
+        {isHovered || isActive || isAnchor || isSelected ? (
           <div style={{
             background: "#0a0a0aee",
             border: `1px solid ${node.family.color}`,
@@ -150,14 +151,20 @@ interface SceneProps {
   anchorId: string | null;
   activeId: string | null;
   hoveredId: string | null;
+  selectedId: string | null;     // node whose modulation rays are visible
+  expandedRoots: Set<number>;    // pcs whose neighbourhoods are expanded
   showFamilies: Record<string, boolean>;
   showEdges: Record<string, boolean>;
   modulationEdges: ModulationEdge[];
   onHover: (id: string | null) => void;
   onClick: (node: LatticeNode) => void;
+  onExpand: (rootPc: number) => void;
 }
 
-function Scene({ lattice, edo, anchorId, activeId, hoveredId, showFamilies, showEdges, modulationEdges, onHover, onClick }: SceneProps) {
+function Scene({
+  lattice, edo, anchorId, activeId, hoveredId, selectedId, expandedRoots,
+  showFamilies, showEdges, modulationEdges, onHover, onClick, onExpand,
+}: SceneProps) {
   const anchorFamilyId = anchorId
     ? lattice.nodeMap.get(anchorId)?.family.id ?? null
     : null;
@@ -216,19 +223,62 @@ function Scene({ lattice, edo, anchorId, activeId, hoveredId, showFamilies, show
         );
       })}
 
-      {/* Modulation edges from the anchor.  Drawn last so they sit on
-          top of the regular Y/Z edges and read as the dominant visual
-          link from the anchor outward. */}
-      {modulationEdges.map((m, i) => (
-        <Line
-          key={`mod-${i}`}
-          points={[m.fromNode.pos, m.toNode.pos]}
-          color={m.color}
-          lineWidth={2.4}
-          transparent
-          opacity={0.95}
-        />
-      ))}
+      {/* Modulation rays from the user-selected node.  Drawn last so
+          they sit on top of regular edges.  For each modulation:
+          - If the destination key is expanded, the ray ends at the
+            real target node (solid, full-strength).
+          - Otherwise it ends short of the target with a small "+"
+            ghost marker the user can click to expand that key. */}
+      {selectedId && modulationEdges.map((m, i) => {
+        const expanded = expandedRoots.has(m.toNode.rootPc);
+        // Shorten the ray when not expanded so the ghost marker doesn't
+        // overlap with where a real node would have been.
+        const fromV = new THREE.Vector3(...m.fromNode.pos);
+        const toV   = new THREE.Vector3(...m.toNode.pos);
+        const ghostV = expanded
+          ? toV
+          : fromV.clone().lerp(toV, 0.6);   // 60% of the way out
+        return (
+          <group key={`mod-${i}`}>
+            <Line
+              points={[m.fromNode.pos, [ghostV.x, ghostV.y, ghostV.z]]}
+              color={m.color}
+              lineWidth={expanded ? 2.4 : 1.6}
+              transparent opacity={expanded ? 0.95 : 0.75}
+              dashed={!expanded}
+              dashScale={20}
+              gapSize={0.3} />
+            {!expanded && (
+              <group position={[ghostV.x, ghostV.y, ghostV.z]}>
+                <mesh
+                  onClick={(e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); onExpand(m.toNode.rootPc); }}
+                  onPointerOver={(e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }}
+                  onPointerOut={() => { document.body.style.cursor = "default"; }}>
+                  <sphereGeometry args={[0.12, 14, 10]} />
+                  <meshStandardMaterial
+                    color={m.color}
+                    emissive={m.color}
+                    emissiveIntensity={0.5}
+                    transparent opacity={0.9} />
+                </mesh>
+                <Html center distanceFactor={9} style={{ pointerEvents: "none" }}>
+                  <div style={{
+                    color: m.color,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    whiteSpace: "nowrap",
+                    transform: "translate(0, -18px)",
+                    textShadow: "0 0 4px #000",
+                    letterSpacing: 0.3,
+                  }}>
+                    + {m.label}
+                  </div>
+                </Html>
+              </group>
+            )}
+          </group>
+        );
+      })}
 
       {visibleEdges.map((e, i) => (
         e.type === "y" ? (
@@ -242,6 +292,9 @@ function Scene({ lattice, edo, anchorId, activeId, hoveredId, showFamilies, show
 
       {lattice.nodes.map(node => {
         if (!showFamilies[node.family.id]) return null;
+        // Hide nodes whose root pc isn't expanded — only the anchor's
+        // tonic (and any user-expanded neighbourhood roots) should show.
+        if (!expandedRoots.has(node.rootPc)) return null;
         return (
           <NodeMesh
             key={node.id}
@@ -250,6 +303,7 @@ function Scene({ lattice, edo, anchorId, activeId, hoveredId, showFamilies, show
             isAnchor={anchorId === node.id}
             isActive={activeId === node.id}
             isHovered={hoveredId === node.id}
+            isSelected={selectedId === node.id}
             onHover={onHover}
             onClick={onClick} />
         );
@@ -265,6 +319,23 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activeNode, setActiveNode] = useState<LatticeNode | null>(null);
   const [perNoteGains, setPerNoteGains] = useState<number[]>([]);
+
+  // Click-driven exploration state.  selectedId tracks which node has
+  // its modulation rays visible; expandedRoots is the set of root pcs
+  // whose 49-node neighbourhoods are rendered.  Initially only the
+  // anchor's tonic is expanded — the user grows the lattice outward
+  // by clicking the "+" ghost at the tip of any modulation ray.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [expandedRoots, setExpandedRoots] = useState<Set<number>>(
+    () => new Set([((tonicPc % edo) + edo) % edo])
+  );
+
+  // Reset expansion when the user changes their tonic / anchor —
+  // start over with only the new anchor's neighbourhood visible.
+  useEffect(() => {
+    setExpandedRoots(new Set([((tonicPc % edo) + edo) % edo]));
+    setSelectedId(null);
+  }, [tonicPc, edo, anchorKey]);
 
   // Family / edge visibility toggles.
   const [showFamilies, setShowFamilies] = useState<Record<string, boolean>>(
@@ -306,14 +377,17 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
     return null;
   }, [lattice, anchorFamilyName, anchorModeName, tonicPc, edo]);
 
-  // Modulation edges: rays from the anchor to common destination
-  // tonalities (key shifts, parallel modes, modal interchange).
+  // Modulation edges: rays from whichever node the user has selected
+  // (or the anchor by default if nothing's been clicked yet).  Empty
+  // until the user clicks a node, so the initial view is just the
+  // anchor's column without ray clutter.
   const modulationEdges = useMemo<ModulationEdge[]>(() => {
-    if (!anchorId) return [];
-    const anchorNode = lattice.nodeMap.get(anchorId);
-    if (!anchorNode) return [];
-    return computeModulationEdges(lattice, anchorNode, edo);
-  }, [lattice, anchorId, edo]);
+    const sourceId = selectedId ?? anchorId;
+    if (!sourceId) return [];
+    const node = lattice.nodeMap.get(sourceId);
+    if (!node) return [];
+    return computeModulationEdges(lattice, node, edo);
+  }, [lattice, selectedId, anchorId, edo]);
 
   useEffect(() => {
     return () => { audioEngine.stopDrone(); };
@@ -340,6 +414,9 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
   }, [rootPitch, tonicPc, edo, playVol]);
 
   const handleClick = useCallback((node: LatticeNode) => {
+    // Clicking a node serves two roles: select it (revealing its
+    // modulation rays) and toggle its drone.
+    setSelectedId(node.id);
     if (activeId === node.id) {
       audioEngine.stopDrone();
       setActiveId(null);
@@ -355,6 +432,26 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
     onActiveModeChange?.(node);
     startDroneFor(node, gains);
   }, [activeId, startDroneFor, onActiveModeChange]);
+
+  // Click a "+" ghost at the tip of a modulation ray to expand that
+  // root's 49-node neighbourhood (parallel modes + modal interchange).
+  const handleExpand = useCallback((rootPc: number) => {
+    setExpandedRoots(prev => {
+      const next = new Set(prev);
+      next.add(((rootPc % edo) + edo) % edo);
+      return next;
+    });
+  }, [edo]);
+
+  const handleReset = useCallback(() => {
+    audioEngine.stopDrone();
+    setActiveId(null);
+    setActiveNode(null);
+    setPerNoteGains([]);
+    setSelectedId(null);
+    setExpandedRoots(new Set([((tonicPc % edo) + edo) % edo]));
+    onActiveModeChange?.(null);
+  }, [tonicPc, edo, onActiveModeChange]);
 
   const updateGain = useCallback((index: number, value: number) => {
     if (!activeNode) return;
@@ -388,8 +485,13 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
     <div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded overflow-hidden">
       <div className="px-3 py-2 flex items-center gap-2 flex-wrap border-b border-[#1a1a1a]">
         <p className="text-[10px] tracking-wider font-semibold text-[#888] mr-2">
-          TONALITY LATTICE · 15 KEYS × 7 FAMILIES × 7 MODES
+          TONALITY LATTICE · {expandedRoots.size} {expandedRoots.size === 1 ? "KEY" : "KEYS"} EXPANDED
         </p>
+        <button
+          onClick={handleReset}
+          className="text-[9px] px-2 py-0.5 rounded border border-[#2a2a2a] bg-[#141414] text-[#888] hover:text-[#ccc] mr-2">
+          reset
+        </button>
         {LATTICE_FAMILIES.map(f => (
           <button key={f.id}
             onClick={() => setShowFamilies(s => ({ ...s, [f.id]: !s[f.id] }))}
@@ -432,11 +534,14 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
             anchorId={anchorId}
             activeId={activeId}
             hoveredId={hoveredId}
+            selectedId={selectedId}
+            expandedRoots={expandedRoots}
             showFamilies={showFamilies}
             showEdges={showEdges}
             modulationEdges={modulationEdges}
             onHover={setHoveredId}
-            onClick={handleClick} />
+            onClick={handleClick}
+            onExpand={handleExpand} />
         </Canvas>
       </div>
 
