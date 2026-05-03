@@ -400,7 +400,8 @@ interface SceneProps {
   anchorRootPc: number;
   activeId: string | null;
   hoveredId: string | null;
-  selectedId: string | null;     // node whose modulation rays are visible
+  selectedId: string | null;     // last-clicked node (alt-label reference)
+  showRays: boolean;             // whether the modulation-ray overlay is on
   expandedRoots: Set<number>;    // pcs whose neighbourhoods are expanded
   showFamilies: Record<string, boolean>;
   showEdges: Record<string, boolean>;
@@ -412,7 +413,7 @@ interface SceneProps {
 }
 
 function Scene({
-  lattice, edo, anchorId, anchorRootPc, activeId, hoveredId, selectedId, expandedRoots,
+  lattice, edo, anchorId, anchorRootPc, activeId, hoveredId, selectedId, showRays, expandedRoots,
   showFamilies, showEdges, modulationEdges, onHover, onClick, onExpand, onCollapse,
 }: SceneProps) {
   // Show every y/z edge between currently-visible nodes (those whose
@@ -549,7 +550,7 @@ function Scene({
             button at the midpoint that collapses the expansion when
             clicked.  We never offer a collapse button on the anchor's
             own root — that one is structural and always shown. */}
-      {selectedId && modulationEdges.map((m, i) => {
+      {showRays && selectedId && modulationEdges.map((m, i) => {
         const expanded = expandedRoots.has(m.toNode.rootPc);
         const isAnchorTarget = m.toNode.rootPc === anchorRootPc;
         const fromV = new THREE.Vector3(...m.fromNode.pos);
@@ -740,6 +741,10 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
   // *via* (source node + interval semitones), used by the layout to
   // turn that pc's knot into a cable wrapping the source's knot.
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Ray-visibility toggle: only when the user has Ctrl-clicked do we
+  // render the modulation-ray overlay.  Plain clicks update selectedId
+  // (so the alt labels shift to that node) but don't switch rays on.
+  const [showRays, setShowRays] = useState(false);
   const anchorRootPc = useMemo(() => ((tonicPc % edo) + edo) % edo, [tonicPc, edo]);
   const [expandedRoots, setExpandedRoots] = useState<Set<number>>(
     () => new Set([anchorRootPc])
@@ -763,6 +768,7 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
     setExpandedRoots(new Set([anchorRootPc]));
     setPcExpansionInfo(new Map());
     setSelectedId(null);
+    setShowRays(false);
     setCameraFocusId(null);
   }, [anchorRootPc, anchorKey]);
 
@@ -852,19 +858,22 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
     const ctrl = ev.ctrlKey || ev.metaKey;
     const shift = ev.shiftKey;
     if (shift) {
-      // Shift+click: focus the camera on this node — animate the orbit
-      // target without affecting the drone or the modulation overlay.
+      // Shift+click: focus the camera on this node.
       setCameraFocusId(node.id);
       return;
     }
+    // Every click updates selectedId so alt labels + (when on) the
+    // modulation ray overlay always shift to the last-clicked node.
+    const alreadyOnForThis = showRays && selectedId === node.id;
+    setSelectedId(node.id);
     if (ctrl) {
-      // Ctrl/⌘+click: toggle the modulation overlay for this node.
-      // Doesn't affect the drone — keeps the picker / mixer intact.
-      setSelectedId(prev => prev === node.id ? null : node.id);
+      // Ctrl+click: toggle the ray overlay.  If rays were already
+      // showing FOR THIS node, turn them off; otherwise turn on so
+      // the new node's rays appear.
+      setShowRays(!alreadyOnForThis);
       return;
     }
-    // Plain click: toggle the drone for this node.  Modulation rays
-    // stay hidden (or attached to whichever node was last Ctrl-clicked).
+    // Plain click: toggle drone, leave ray visibility as-is.
     if (activeId === node.id) {
       audioEngine.stopDrone();
       setActiveId(null);
@@ -879,7 +888,7 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
     setActiveNode(node);
     onActiveModeChange?.(node);
     startDroneFor(node, gains);
-  }, [activeId, startDroneFor, onActiveModeChange]);
+  }, [activeId, startDroneFor, onActiveModeChange, showRays, selectedId]);
 
   // Click a "+" ghost at the tip of a modulation ray to expand that
   // root's 49-node neighbourhood.  If the modulation is an interval
@@ -943,6 +952,7 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
     setActiveNode(null);
     setPerNoteGains([]);
     setSelectedId(null);
+    setShowRays(false);
     setCameraFocusId(null);
     setExpandedRoots(new Set([anchorRootPc]));
     setPcExpansionInfo(new Map());
@@ -1047,6 +1057,7 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
             activeId={activeId}
             hoveredId={hoveredId}
             selectedId={selectedId}
+            showRays={showRays}
             expandedRoots={expandedRoots}
             showFamilies={showFamilies}
             showEdges={showEdges}
