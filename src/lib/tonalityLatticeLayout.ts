@@ -632,17 +632,27 @@ export function buildCylinderLattice(
     }
   }
 
-  // ── Build all (pc, family, mode) tonalities and group by alt distance ──
+  // ── Build same-root tonalities and group by alt distance ──────────────
+  // The lattice only holds parallel modes + modal-interchange options
+  // at the anchor's root pc.  Different-root tonalities are reached
+  // via modulation rays, not by node placement.
   type Tonality = {
     keyIdx: number; key: LatticeKey;
     family: LatticeFamily; mode: LatticeMode;
     pc: number;
   };
   const allTonalities: Tonality[] = [];
-  for (const { keyIdx, key } of uniqueKeys) {
+  const anchorKeyEntry = uniqueKeys.find(uk => uk.key.pc === anchorPc) ?? uniqueKeys[0];
+  if (anchorKeyEntry) {
     for (const family of families) {
       for (const mode of (modes.get(family.id) ?? [])) {
-        allTonalities.push({ keyIdx, key, family, mode, pc: key.pc });
+        allTonalities.push({
+          keyIdx: anchorKeyEntry.keyIdx,
+          key: anchorKeyEntry.key,
+          family,
+          mode,
+          pc: anchorKeyEntry.key.pc,
+        });
       }
     }
   }
