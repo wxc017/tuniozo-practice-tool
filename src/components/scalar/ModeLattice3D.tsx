@@ -809,13 +809,17 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
   // Modulation edges: rays from whichever node the user has selected
   // (or the anchor by default if nothing's been clicked yet).  Empty
   // until the user clicks a node, so the initial view is just the
-  // anchor's column without ray clutter.
+  // anchor's column without ray clutter.  Filtered to *interval*
+  // modulations only (P5, P4, M3, m3, M2, TT, etc.) — the parallel-
+  // mode and modal-interchange rays are noise here since those
+  // relationships are already shown by the y/z edges within each knot.
   const modulationEdges = useMemo<ModulationEdge[]>(() => {
     const sourceId = selectedId ?? anchorId;
     if (!sourceId) return [];
     const node = lattice.nodeMap.get(sourceId);
     if (!node) return [];
-    return computeModulationEdges(lattice, node, edo);
+    return computeModulationEdges(lattice, node, edo)
+      .filter(m => m.kind === "interval");
   }, [lattice, selectedId, anchorId, edo]);
 
   useEffect(() => {
