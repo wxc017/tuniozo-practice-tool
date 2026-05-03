@@ -276,16 +276,24 @@ export function getIntervalNames(edo: number): string[] {
 
 // ── Solfege ────────────────────────────────────────────────────────────
 
+// Solfège syllables for 31-EDO (32 entries, step 0 → step 31).
+//
+// Vowel rules for non-diatonic alterations:
+//   "u"   = +1 step (half-sharp, 𝄲)
+//   "i"   = +2 step (sharp, replaces base vowel)
+//   "ai"  = -1 step (half-flat, 𝄳, rhymes with "eye")
+//   "e"/"a" = -2 step (flat, replaces base vowel)
+//   "ei"  = +2 step at Mi/Ti (since "Mi" / "Ti" already end in -i;
+//          step 12 = Mei (Mi-sharp = Fa-half-flat); step 30 = Tei.)
 const SOLFEGE_31 = [
-  "Do","Di","Ro","Ra",
-  "Ru","Re","Ri",
-  "Ma","Me","Mu","Mi",
-  "Mo","Fe","Fa","Fu",
-  "Fi","Se","Su","Sol",
-  "Si","Lo","Le","Lu",
-  "La","Li","Ta","Te",
-  "Tu","Ti","To",
-  "Da","Do",
+  "Do",  "Du",  "Di",                        //  0  1  2
+  "Ra",  "Rai", "Re",  "Ru",  "Ri",          //  3  4  5  6  7
+  "Me",  "Mai", "Mi",  "Mu",  "Mei",         //  8  9 10 11 12
+  "Fa",  "Fu",  "Fi",                        // 13 14 15
+  "Se",  "Sai", "Sol", "Su",  "Si",          // 16 17 18 19 20
+  "Le",  "Lai", "La",  "Lu",  "Li",          // 21 22 23 24 25
+  "Te",  "Tai", "Ti",  "Tu",  "Tei",         // 26 27 28 29 30
+  "Do",                                      // 31 (octave)
 ];
 
 const SOLFEGE_41 = [

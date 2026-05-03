@@ -13,6 +13,7 @@ import JazzTab from "@/components/tabs/JazzTab";
 import PatternsTab from "@/components/tabs/PatternsTab";
 import DroneTab from "@/components/tabs/DroneTab";
 import ModeIdentificationTab from "@/components/tabs/ModeIdentificationTab";
+import ScalarTab from "@/components/tabs/ScalarTab";
 
 
 
@@ -618,6 +619,7 @@ export default function App() {
                 const SECTION_BUTTONS: { id: string; label: string; beta?: boolean }[] = [
                   // Always-visible
                   { id: "ear-trainer",          label: "Tonal Audiation" },
+                  { id: "scalar-exploration",   label: "Scalar Exploration" },
                   { id: "drum-patterns",        label: "Drum Patterns" },
                   { id: "melodic-patterns",     label: "Melodic Patterns" },
                   { id: "harmony-workshop",     label: "Harmony Workshop" },
@@ -880,7 +882,7 @@ export default function App() {
       {/* Sticky keyboard — sits as a direct child of the scrolling root
           (not nested in the header) so its `sticky top-0` containing block
           spans the full scroll range. Only shown in tonal audiation. */}
-      {section === "ear-trainer" && (
+      {(section === "ear-trainer" || section === "scalar-exploration") && (
         <div className="sticky top-0 z-30 bg-[#0d0d0d] border-b border-[#1e1e1e] px-4 pt-2 pb-2 flex-shrink-0">
           {edo === 12 && vizType === "piano" ? (
             <PianoKeyboard highlightedPitches={highlighted}
@@ -913,6 +915,17 @@ export default function App() {
       {section === "uncommon-meters" && (
         <div className="flex-1 overflow-y-auto px-4">
           <UncommonMetersMode />
+        </div>
+      )}
+
+      {/* ── Scalar Exploration ── */}
+      {section === "scalar-exploration" && (
+        <div className="px-4 pt-3 flex-1 flex flex-col min-h-0 overflow-y-auto">
+          <div className="max-w-6xl mx-auto w-full">
+            <ScalarTab tonicPc={tonicPc} lowestPitch={lowestPitch} highestPitch={highestPitch}
+              edo={edo} onHighlight={handleHighlight}
+              ensureAudio={ensureAudio} playVol={playVol} />
+          </div>
         </div>
       )}
 
@@ -1455,8 +1468,6 @@ export default function App() {
               <ModeIdentificationTab key={tabKey} {...sharedTabProps} />
             </div>
           )}
-
-
 
         </div>
       </div>

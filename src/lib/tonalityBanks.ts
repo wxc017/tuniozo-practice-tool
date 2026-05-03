@@ -524,11 +524,22 @@ function classify3rd(thirdSemis: number): "sub" | "m" | "neu" | "M" | "sup" | "?
   if (thirdSemis === 11) return "sup";
   return "?";
 }
-// Classify a 5th-interval (in 31-EDO).  We accept narrow/wide variants too.
-function classify5th(fifthSemis: number): "d" | "P" | "A" | "?" {
+// Classify a 5th-interval (in 31-EDO).  Distinguishes the chromatic
+// flat / sharp 5th from the half-flat / half-sharp variants that 31-EDO
+// resolves separately:
+//   step 15 = s5 (sub-perfect / tritone-aug-4 territory)
+//   step 16 = b5 (diminished, chromatic flat)
+//   step 17 = bb5 (half-flat, sub-perfect)
+//   step 18 = P5 (perfect)
+//   step 19 = ##5 (half-sharp, super-perfect)
+//   step 20 = #5 (augmented, chromatic sharp)
+function classify5th(fifthSemis: number): "subP" | "d" | "hd" | "P" | "hA" | "A" | "?" {
+  if (fifthSemis === 15) return "subP";
   if (fifthSemis === 16) return "d";
+  if (fifthSemis === 17) return "hd";
   if (fifthSemis === 18) return "P";
-  if (fifthSemis === 21) return "A";  // augmented 5th == m6
+  if (fifthSemis === 19) return "hA";
+  if (fifthSemis === 20) return "A";
   return "?";
 }
 // Classify a 7th-interval (in 31-EDO).
@@ -580,15 +591,28 @@ function buildOneXenMode(parent: number[], rotIdx: number, modeName: string, edo
     // chord quality in xenharmonic practice.
     const upper = q3 === "M" || q3 === "sup" || q3 === "neu";
     let roman = upper ? XEN_ROMAN[i] : XEN_ROMAN[i].toLowerCase();
-    // 5th-quality marker
-    if (q5 === "d") roman += "°";   // diminished
-    else if (q5 === "A") roman += "+";   // augmented
+    // 5th-quality marker.  ° / + remain reserved for the chromatic
+    // flat-5 / sharp-5 (the canonical diminished / augmented chord
+    // qualities).  31-EDO's half-flat (bb5) and half-sharp (##5) 5ths,
+    // plus the very-flat sub-5 (s5), surface in the superscript suffix
+    // so the chord type is unambiguous on sight.
+    if (q5 === "d") roman += "°";        // b5  (diminished)
+    else if (q5 === "A") roman += "+";   // #5  (augmented)
 
-    // Chord suffix shows ONLY the 3rd-quality by default (s3 / N3 / S3
-    // when non-standard).  The 7th-quality suffix is suppressed unless
-    // showSevenths is on — toggled by the user in the UI.  Single-letter
-    // qualifier system: s = sub, m = min, N = neu, M = maj, S = sup.
+    // Chord suffix lists non-standard 3rd / 5th / 7th qualities.  Order
+    // is: 5th (when half-flat / half-sharp / sub) → 3rd → 7th.  Single-
+    // letter qualifier system: s = sub, m = min, N = neu, M = maj, S = sup.
+    //
+    // step 15 (which classify5th calls "subP") reads more naturally as
+    // an augmented 4th than as a sub-5th — in 31-EDO #4 (15) and b5 (16)
+    // are distinct intervals, and step 15 IS the aug-4, not a flat 5.
+    // So instead of labeling the chord with a fictional "s5", we surface
+    // it as "no5 #4": the chord lacks a real 5th, and the 4th sits
+    // raised where the 5th would be.
     const supParts: string[] = [];
+    if (q5 === "hd") supParts.push("bb5");      // half-flat 5
+    else if (q5 === "hA") supParts.push("##5"); // half-sharp 5
+    else if (q5 === "subP") { supParts.push("no5"); supParts.push("#4"); }
     if (q3 === "sub") supParts.push("s3");
     else if (q3 === "neu") supParts.push("N3");
     else if (q3 === "sup") supParts.push("S3");

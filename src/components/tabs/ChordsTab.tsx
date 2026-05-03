@@ -1886,7 +1886,7 @@ function ChordSelectionPanel({
                           ? { background: accent + "30", borderColor: accent }
                           : { background: "#141414", borderColor: "#1a1a1a" }}>
                         <button onClick={() => toggleChord(entry.label)}
-                          className={`flex-1 w-full px-2 py-1 text-xs text-left transition-colors ${
+                          className={`flex-1 w-full px-2 py-1.5 text-base font-semibold text-left transition-colors ${
                             isChecked ? "" : "text-[#666] hover:text-[#888]"
                           }`}
                           style={isChecked ? { color: accent } : undefined}>
