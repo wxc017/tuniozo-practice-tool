@@ -489,43 +489,19 @@ function Scene({
       let points: [number, number, number][];
       let mid: [number, number, number];
       if (cfg && a.rootPc === b.rootPc) {
-        if (cfg.parentPc !== null && parentCfg) {
-          // Cable knot: sample cablePoint at u-values between A and B.
-          const uA = a.knotT / TWO_PI;
-          const uB = b.knotT / TWO_PI;
-          let dU = uB - uA;
-          if (dU >  0.5) dU -= 1;
-          if (dU < -0.5) dU += 1;
-          points = [];
-          for (let s = 0; s <= NSAMPLES; s++) {
-            const u = uA + (s / NSAMPLES) * dU;
-            points.push(sampleKnotCurve(cfg, parentCfg, u));
-          }
-        } else {
-          // Plain torus: interpolate (φ, θ) along shortest angular path.
-          const phiA = cfg.P * a.knotT;
-          const thetaA = cfg.Q * a.knotT;
-          const phiB = cfg.P * b.knotT;
-          const thetaB = cfg.Q * b.knotT;
-          const shortestAngle = (raw: number): number => {
-            let x = ((raw % TWO_PI) + TWO_PI) % TWO_PI;
-            if (x > Math.PI) x -= TWO_PI;
-            return x;
-          };
-          const dPhi = shortestAngle(phiB - phiA);
-          const dTheta = shortestAngle(thetaB - thetaA);
-          points = [];
-          for (let s = 0; s <= NSAMPLES; s++) {
-            const u = s / NSAMPLES;
-            const phi = phiA + u * dPhi;
-            const theta = thetaA + u * dTheta;
-            const ringR = cfg.R + cfg.r * Math.cos(theta);
-            points.push([
-              cfg.center[0] + ringR * Math.cos(phi),
-              cfg.center[1] - cfg.r * Math.sin(theta),
-              cfg.center[2] + ringR * Math.sin(phi),
-            ]);
-          }
+        // Sample the knot's *own* path between the two endpoints
+        // (using knotPoint for torus knots or cablePoint for cables)
+        // so the edge follows the knot curve itself, not an
+        // independent (φ, θ) shortest-angular path on the torus.
+        const uA = a.knotT / TWO_PI;
+        const uB = b.knotT / TWO_PI;
+        let dU = uB - uA;
+        if (dU >  0.5) dU -= 1;
+        if (dU < -0.5) dU += 1;
+        points = [];
+        for (let s = 0; s <= NSAMPLES; s++) {
+          const u = ((uA + (s / NSAMPLES) * dU) % 1 + 1) % 1;
+          points.push(sampleKnotCurve(cfg, parentCfg, u));
         }
         mid = points[Math.floor(points.length / 2)];
       } else {
