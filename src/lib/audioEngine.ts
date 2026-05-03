@@ -143,8 +143,11 @@ export class AudioEngine {
       src.start(startTime);
       src.stop(stopAt);
     } else {
+      // Periodic wave with the tambura harmonic spectrum — adds
+      // partials so chord notes ring richer than a plain triangle.
       const osc = ctx.createOscillator();
-      osc.type = "triangle";
+      const wave = ctx.createPeriodicWave(TAMBURA_REAL, TAMBURA_IMAG, { disableNormalization: false });
+      osc.setPeriodicWave(wave);
       osc.frequency.value = this.absToFreq(abs, edo);
       osc.connect(g);
       osc.start(startTime);
