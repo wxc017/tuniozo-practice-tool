@@ -703,11 +703,11 @@ function Scene({
                     background: "#0a0a0aee",
                     border: "1px solid #ccddee",
                     color: "#ffffff",
-                    padding: "1px 4px",
-                    borderRadius: 2,
-                    fontSize: 8,
+                    padding: "0 2px",
+                    borderRadius: 1,
+                    fontSize: 5,
                     fontWeight: 700,
-                    lineHeight: "9px",
+                    lineHeight: "6px",
                     whiteSpace: "nowrap",
                   }}>
                     +{e.alt}
@@ -974,6 +974,9 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
         return next;
       });
     }
+    // Hide the modulation-spoke overlay once the user has picked a
+    // direction — the cable has spawned, the spokes have done their job.
+    setShowRays(false);
   }, [edo]);
 
   // Click the mid-edge "×" on an expanded modulation to collapse that

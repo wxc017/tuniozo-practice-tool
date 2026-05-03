@@ -769,6 +769,16 @@ export function buildCylinderLattice(
       const childKeyEntry = uniqueKeys.find(uk => uk.key.pc === childPc);
       if (!childKeyEntry) continue;
 
+      // cableTOffset = 0 aligns the cable's local-u with the parent's
+      // u, so the cable's anchor mode (anchor-mode rooted at childPc,
+      // e.g. D Ionian for a +M2 modulation off C Ionian) lands at the
+      // same parent_u position as the parent's anchor — and every alt
+      // arc on the cable lines up with the same arc on the parent.
+      // The cable still wraps the parent's tube via cableOffset, so
+      // visually D Ionian sits right alongside C Ionian on the parent's
+      // tube, alt-1 alongside alt-1, etc.  This is the "symmetric"
+      // alignment: same arc layout on both knots, same parametric
+      // position for corresponding modes.
       const cableCfg: KnotConfig = {
         pc: childPc,
         center: [0, 0, 0],
@@ -777,7 +787,7 @@ export function buildCylinderLattice(
         parentPc,
         wraps: info.modSemis,
         cableOffset: parentCfg.r * 0.45,
-        cableTOffset: sourceNode.knotT / TWO_PI,
+        cableTOffset: 0,
         sourceNodeId: info.sourceNodeId,
       };
       pcKnots.set(childPc, cableCfg);
