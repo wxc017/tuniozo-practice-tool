@@ -319,22 +319,17 @@ interface NodeMeshProps {
 
 function NodeMesh({ node, edo, isAnchor, isActive, isHovered, isSelected, onHover, onClick }: NodeMeshProps) {
   const meshRef = useRef<THREE.Mesh>(null);
-  // Per-mode colour ramp.  Brightest mode in the family pops as a
-  // neon-bright (lerped well past the family hue toward white);
-  // mid-rank stays at the family hue; darkest fades into near-black.
-  // The neon push is what stops the brighter modes from blending
-  // into the bluish knot-tube colour behind them.
+  // Single smooth colour ramp from "neon" (rank 0, family hue lerped
+  // toward white) to "near-black" (rank 6, family hue lerped toward
+  // black) with linear interpolation in between.  No opacity scaling
+  // — the gradient lives entirely in colour + emissive intensity so
+  // the nodes stay fully solid and easy to see against the knot tube.
   const rankT = node.modeRank / 6;
   const baseColor = useMemo(() => {
-    const c = new THREE.Color(node.family.color);
-    if (rankT < 0.5) {
-      // Brighten upper half of the rank scale toward white.
-      c.lerp(new THREE.Color("#ffffff"), (0.5 - rankT) * 1.1);  // up to 0.55 white at rank 0
-    } else {
-      // Darken lower half toward black.
-      c.lerp(new THREE.Color("#000000"), (rankT - 0.5) * 1.8);  // up to 0.9 black at rank 6
-    }
-    return c;
+    const family = new THREE.Color(node.family.color);
+    const neon = family.clone().lerp(new THREE.Color("#ffffff"), 0.55);
+    const dark = family.clone().lerp(new THREE.Color("#000000"), 0.88);
+    return neon.lerp(dark, rankT);
   }, [node.family.color, rankT]);
   const emissive = baseColor;
 
@@ -346,14 +341,6 @@ function NodeMesh({ node, edo, isAnchor, isActive, isHovered, isSelected, onHove
   });
 
   const r = isAnchor ? 0.32 : 0.22;
-  // Dramatic opacity dim on top of the colour lerp: brightest mode at
-  // full opacity, darkest at ~10%.  Active / hovered / selected nodes
-  // ignore the dim so the user can still see what they're focused on.
-  const dim = isAnchor || isActive || isHovered || isSelected
-    ? 1
-    : 1 - rankT * 0.9;                            // 1.0 (Lyd) → 0.1 (Loc)
-  const baseOpacity = isAnchor || isActive || isHovered || isSelected ? 1 : 0.9;
-  const opacity = baseOpacity * dim;
 
   return (
     <group position={node.pos}>
@@ -366,16 +353,14 @@ function NodeMesh({ node, edo, isAnchor, isActive, isHovered, isSelected, onHove
         <meshStandardMaterial
           color={baseColor}
           emissive={emissive}
-          // Boost emissive on the brightest ranks so they actually
-          // glow against the knot tube; dim it on darker ranks.
+          // Smooth emissive falloff matching the colour ramp:
+          // brightest mode glows hard, darkest barely glows.  No
+          // opacity transparency — the dimming is entirely in light.
           emissiveIntensity={
-            (isActive ? 1.3 : isAnchor ? 0.9 : 0.45)
-            * (rankT < 0.5 ? 1 + (0.5 - rankT) * 3 : Math.max(0.05, 1 - (rankT - 0.5) * 1.8))
+            (isActive ? 1.3 : isAnchor ? 0.9 : 0.45) * (1 - rankT * 0.85)
           }
           roughness={0.3}
-          metalness={0.45}
-          transparent
-          opacity={opacity} />
+          metalness={0.45} />
       </mesh>
       <Html center distanceFactor={isHovered || isActive || isAnchor || isSelected ? 8 : 11}
             style={{ pointerEvents: "none" }}>
