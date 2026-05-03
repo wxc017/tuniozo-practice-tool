@@ -532,7 +532,7 @@ function Scene({
           <Line points={e.points} color={e.color}
             lineWidth={e.type === "z" ? 2.0 : 1.6}
             transparent opacity={e.type === "z" ? 0.9 : 0.75} />
-          <Html position={e.mid} center distanceFactor={36}
+          <Html position={e.mid} center distanceFactor={15}
                 style={{ pointerEvents: "none" }}>
             <div style={{
               background: "#0a0a0acc",
@@ -540,9 +540,9 @@ function Scene({
               color: e.color,
               padding: "0 1px",
               borderRadius: 1,
-              fontSize: 4,
+              fontSize: 5,
               fontWeight: 700,
-              lineHeight: "5px",
+              lineHeight: "6px",
               whiteSpace: "nowrap",
             }}>
               +{e.alt}

@@ -453,7 +453,7 @@ const PC_OFFSET_BY_SEMIS: Record<number, [number, number, number]> = {
   11: [-0.5,  0,   -0.7],       // −m2 (= +M7)
   6:  [ 0.7,  0,   -0.7],       // tritone
 };
-const PC_KNOT_SPACING = 20;
+const PC_KNOT_SPACING = 34;
 
 // Local position on a (P, Q) torus knot at parameter t, relative to
 // the knot's centre.  Matches three.js's TorusKnotGeometry path so
