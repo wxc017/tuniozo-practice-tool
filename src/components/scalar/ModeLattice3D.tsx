@@ -804,20 +804,19 @@ function Scene({
               depthTest={false}
               depthWrite={false} />
             {labelVisible && (
-              <Html position={e.mid} center distanceFactor={isBridge ? 32 : 9}
+              <Html position={e.mid} center distanceFactor={isBridge ? 14 : 9}
                     style={{ pointerEvents: "none" }}
                     zIndexRange={[100, 0]}>
                 <div style={{
-                  background: "#0a0a0aee",
-                  border: `1.5px solid ${isBridge ? "#ddeeff" : e.color}`,
+                  background: "#0a0a0acc",
+                  border: `1px solid ${isBridge ? "#ccddee" : e.color}`,
                   color: isBridge ? "#ffffff" : e.color,
-                  padding: isBridge ? "2px 6px" : "0 1px",
-                  borderRadius: isBridge ? 4 : 1,
-                  fontSize: isBridge ? 11 : 5,
-                  fontWeight: 800,
-                  lineHeight: isBridge ? "13px" : "6px",
+                  padding: isBridge ? "1px 3px" : "0 1px",
+                  borderRadius: 2,
+                  fontSize: isBridge ? 7 : 5,
+                  fontWeight: 700,
+                  lineHeight: isBridge ? "8px" : "6px",
                   whiteSpace: "nowrap",
-                  boxShadow: isBridge ? "0 0 6px rgba(255,255,255,0.3)" : undefined,
                 }}>
                   +{e.alt}
                 </div>
