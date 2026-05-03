@@ -94,8 +94,9 @@ function NodeMesh({ node, edo, isAnchor, isActive, isHovered, onHover, onClick }
           transparent={opacity < 1}
           opacity={opacity} />
       </mesh>
-      {(isHovered || isActive || isAnchor) && (
-        <Html center distanceFactor={8} style={{ pointerEvents: "none" }}>
+      <Html center distanceFactor={isHovered || isActive || isAnchor ? 8 : 11}
+            style={{ pointerEvents: "none" }}>
+        {isHovered || isActive || isAnchor ? (
           <div style={{
             background: "#0a0a0aee",
             border: `1px solid ${node.family.color}`,
@@ -105,7 +106,7 @@ function NodeMesh({ node, edo, isAnchor, isActive, isHovered, onHover, onClick }
             fontSize: 11,
             fontWeight: 700,
             whiteSpace: "nowrap",
-            transform: "translate(0, -28px)",
+            transform: "translate(0, -32px)",
             textAlign: "center",
           }}>
             <div>
@@ -119,8 +120,24 @@ function NodeMesh({ node, edo, isAnchor, isActive, isHovered, onHover, onClick }
               {scaleNoteNames(node.rootPc, node.mode.scale, edo).join(" · ")}
             </div>
           </div>
-        </Html>
-      )}
+        ) : (
+          // Discrete always-on label — short mode name only, dim,
+          // small, no background.  Lets the user scan every node by
+          // sight without having to hover each one.
+          <div style={{
+            color: node.family.color,
+            opacity: 0.78,
+            fontSize: 8.5,
+            fontWeight: 600,
+            whiteSpace: "nowrap",
+            transform: "translate(0, -16px)",
+            textShadow: "0 0 4px #000, 0 0 4px #000",
+            letterSpacing: 0.2,
+          }}>
+            {formatHalfAccidentals(node.mode.short)}
+          </div>
+        )}
+      </Html>
     </group>
   );
 }
