@@ -703,10 +703,11 @@ function Scene({
                     background: "#0a0a0aee",
                     border: "1px solid #ccddee",
                     color: "#ffffff",
-                    padding: "2px 6px",
-                    borderRadius: 3,
-                    fontSize: 11,
-                    fontWeight: 800,
+                    padding: "1px 4px",
+                    borderRadius: 2,
+                    fontSize: 8,
+                    fontWeight: 700,
+                    lineHeight: "9px",
                     whiteSpace: "nowrap",
                   }}>
                     +{e.alt}
