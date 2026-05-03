@@ -604,17 +604,17 @@ function Scene({
         );
       })}
 
-      {/* Synthetic interval-modulation rays.  Now that the lattice
-          only holds same-root tonalities, the cross-root modulation
-          targets (G Ionian, D Ionian, ...) aren't in nodeMap.  Draw
-          short stubs from the selected node in fixed 3D directions
-          so the user sees the interval options as labelled spokes
-          radiating from whichever node they Ctrl-clicked. */}
+      {/* Modulation spokes — short clickable rays sticking out from
+          the selected node, one per interval modulation.  Same UX
+          as the pre-refactor cable-knot model (a "+" ghost-sphere
+          close to the source with a label), just rendered against
+          synthetic directions since the cross-root targets aren't
+          in the lattice anymore. */}
       {showRays && selectedId && (() => {
         const sourceNode = lattice.nodeMap.get(selectedId);
         if (!sourceNode) return null;
         const sourcePos = new THREE.Vector3(...sourceNode.pos);
-        const RAY_LENGTH = 4.0;
+        const GHOST_DISTANCE = 1.6;
         const MOD_SPOKES: Array<{ label: string; color: string; dir: [number, number, number] }> = [
           { label: "+P5", color: "#9966ff", dir: [ 1,  0,  0] },
           { label: "+P4", color: "#9966ff", dir: [-1,  0,  0] },
@@ -627,29 +627,42 @@ function Scene({
           { label: "TT",  color: "#ff9933", dir: [ 0.7,  0.5, -0.7] },
         ];
         return MOD_SPOKES.map((m, i) => {
-          const dirV = new THREE.Vector3(...m.dir).normalize().multiplyScalar(RAY_LENGTH);
+          const dirV = new THREE.Vector3(...m.dir).normalize().multiplyScalar(GHOST_DISTANCE);
           const endV = sourcePos.clone().add(dirV);
+          const endPos: [number, number, number] = [endV.x, endV.y, endV.z];
           return (
             <group key={`spoke-${i}`}>
               <Line
-                points={[sourceNode.pos, [endV.x, endV.y, endV.z]]}
+                points={[sourceNode.pos, endPos]}
                 color={m.color}
-                lineWidth={2.0}
-                transparent opacity={0.85}
+                lineWidth={1.6}
+                transparent opacity={0.75}
+                dashed dashScale={20} gapSize={0.3}
                 renderOrder={3}
                 depthTest={false}
                 depthWrite={false} />
-              <Html position={[endV.x, endV.y, endV.z]} center distanceFactor={20}
+              <mesh
+                position={endPos}
+                onClick={(e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); /* TODO: modulate anchor */ }}
+                onPointerOver={(e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = "pointer"; }}
+                onPointerOut={() => { document.body.style.cursor = "default"; }}>
+                <sphereGeometry args={[0.12, 14, 10]} />
+                <meshStandardMaterial
+                  color={m.color}
+                  emissive={m.color}
+                  emissiveIntensity={0.5}
+                  transparent opacity={0.9} />
+              </mesh>
+              <Html position={endPos} center distanceFactor={9}
                     style={{ pointerEvents: "none" }}>
                 <div style={{
-                  background: "#0a0a0add",
-                  border: `1px solid ${m.color}`,
                   color: m.color,
-                  padding: "1px 4px",
-                  borderRadius: 3,
-                  fontSize: 9,
+                  fontSize: 10,
                   fontWeight: 700,
                   whiteSpace: "nowrap",
+                  transform: "translate(0, -18px)",
+                  textShadow: "0 0 4px #000",
+                  letterSpacing: 0.3,
                 }}>
                   {m.label}
                 </div>
