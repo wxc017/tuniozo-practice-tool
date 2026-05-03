@@ -441,9 +441,10 @@ export function findLatticeNode(
 // (0..6).  m3 modulation gives 3 strands twisted around the backbone;
 // tritone gives 6.  Anchor (r = 0) is unwound.
 // Main knot is sized big enough that satellite knots can nest inside
-// its volume offset by a small amount, instead of sitting way off to
-// the side.  Keep r = R/2 so the (P, Q) knot shape stays familiar.
-const KNOT_R = 14.0;
+// its volume offset by just a small amount along the modulation
+// direction — they read as the same knot copied and shifted slightly,
+// not as a second knot off to the side.  Keep r = R/2.
+const KNOT_R = 28.0;
 const KNOT_r = KNOT_R / 2;
 // (3, 7) torus knot: 3 long-way wraps, 7 short-way wraps.  Q = 7
 // because the lattice now divides the knot into 7 arcs — one per
@@ -888,14 +889,13 @@ export function buildCylinderLattice(
       // tube, alt-1 alongside alt-1, etc.  This is the "symmetric"
       // alignment: same arc layout on both knots, same parametric
       // position for corresponding modes.
-      // Spacing chosen so the satellite knot sits just outside the
-      // anchor's bounding sphere (R + r ≈ 21 with R = 14): close
-      // enough that the user can mentally trace which mode on the
-      // satellite corresponds to which mode on the anchor (same
-      // parametric position, same orientation), but separated enough
-      // that the two knots are visually distinct rather than nested
-      // and occluded.
-      const SATELLITE_SPACING = 24;
+      // Small offset along the modulation interval's direction —
+      // the satellite is the same knot, *barely* shifted, so it
+      // mostly nests inside the anchor's volume with each mode
+      // displaced by a constant vector toward the modulation
+      // direction.  Mentally: the user imagines copy/pasting the
+      // anchor and nudging it toward where the spoke pointed.
+      const SATELLITE_SPACING = 6;
       const dirRaw = PC_OFFSET_BY_SEMIS[((info.modSemis % 12) + 12) % 12]
         ?? [1, 0, 0];
       const dirLen = Math.hypot(dirRaw[0], dirRaw[1], dirRaw[2]) || 1;

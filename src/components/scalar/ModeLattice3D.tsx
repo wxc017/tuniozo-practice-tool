@@ -753,7 +753,7 @@ function Scene({
       })}
 
       <OrbitControls makeDefault enableDamping dampingFactor={0.15}
-        minDistance={10} maxDistance={220} />
+        minDistance={20} maxDistance={400} />
     </>
   );
 }
@@ -1082,12 +1082,12 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
   // Initial camera position — close enough to see the anchor knot
   // clearly at startup; the user zooms out (or expands neighbouring
   // roots) as they grow the structure.
-  // Sized for the bigger anchor (R=14) — fits the full anchor plus
-  // a few overlapping satellites in view at startup.  Family-lattice
-  // view uses a top-down camera since its rings live flat in XY.
+  // Sized for the bigger anchor (R=28) — fits the anchor plus the
+  // small-offset satellites at default zoom.  Family-lattice view
+  // uses a top-down camera since its rings live flat in XY.
   const cameraPos: [number, number, number] = latticeView === "family"
     ? [0, 0, 90]
-    : [40, 30, 80];
+    : [80, 60, 160];
 
   return (
     <div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded overflow-hidden">
