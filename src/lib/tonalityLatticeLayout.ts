@@ -318,3 +318,68 @@ export function findLatticeNode(
   }
   return null;
 }
+
+// Filter the full lattice down to "anchor's neighbourhood": every node
+// reachable from the anchor within `maxHops` edge steps, with positions
+// recentred so the anchor lands at world origin.  Used when the user
+// wants the lattice rendered "in reference to" their selected scale —
+// it strips away keys / families that don't directly relate.
+export function filterToAnchor(
+  lattice: TonalityLattice,
+  anchorId: string,
+  maxHops: number,
+): TonalityLattice {
+  if (!lattice.nodeMap.has(anchorId)) return lattice;
+
+  // BFS over the edge graph.
+  const reachable = new Set<string>([anchorId]);
+  let frontier: Set<string> = new Set([anchorId]);
+  for (let hop = 0; hop < maxHops; hop++) {
+    const next = new Set<string>();
+    for (const e of lattice.edges) {
+      if (frontier.has(e.fromId) && !reachable.has(e.toId)) next.add(e.toId);
+      if (frontier.has(e.toId) && !reachable.has(e.fromId)) next.add(e.fromId);
+    }
+    next.forEach(id => reachable.add(id));
+    frontier = next;
+    if (next.size === 0) break;
+  }
+
+  const anchor = lattice.nodeMap.get(anchorId)!;
+  const [aX, aY, aZ] = anchor.pos;
+
+  const nodes = lattice.nodes
+    .filter(n => reachable.has(n.id))
+    .map(n => ({
+      ...n,
+      pos: [n.pos[0] - aX, n.pos[1] - aY, n.pos[2] - aZ] as [number, number, number],
+    }));
+
+  const edges = lattice.edges.filter(e =>
+    reachable.has(e.fromId) && reachable.has(e.toId)
+  );
+
+  const nodeMap = new Map(nodes.map(n => [n.id, n]));
+
+  let minX = Infinity, maxX = -Infinity;
+  let minY = Infinity, maxY = -Infinity;
+  let minZ = Infinity, maxZ = -Infinity;
+  for (const n of nodes) {
+    if (n.pos[0] < minX) minX = n.pos[0];
+    if (n.pos[0] > maxX) maxX = n.pos[0];
+    if (n.pos[1] < minY) minY = n.pos[1];
+    if (n.pos[1] > maxY) maxY = n.pos[1];
+    if (n.pos[2] < minZ) minZ = n.pos[2];
+    if (n.pos[2] > maxZ) maxZ = n.pos[2];
+  }
+
+  return {
+    keys: lattice.keys,
+    families: lattice.families,
+    modes: lattice.modes,
+    nodes,
+    edges,
+    nodeMap,
+    bounds: { minX, maxX, minY, maxY, minZ, maxZ },
+  };
+}

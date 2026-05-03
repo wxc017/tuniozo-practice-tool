@@ -16,7 +16,7 @@ import { OrbitControls, Line, Html } from "@react-three/drei";
 import * as THREE from "three";
 import { audioEngine } from "@/lib/audioEngine";
 import {
-  buildTonalityLattice, findLatticeNode, LATTICE_FAMILIES,
+  buildTonalityLattice, findLatticeNode, filterToAnchor, LATTICE_FAMILIES,
   type TonalityLattice, type LatticeNode,
 } from "@/lib/tonalityLatticeLayout";
 import { formatHalfAccidentals, getSolfege } from "@/lib/edoData";
@@ -215,18 +215,33 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
   const [showEdges, setShowEdges] = useState<Record<string, boolean>>({
     x: true, y: true, z: true,
   });
+  // Anchor-neighbourhood radius: 0 = anchor only, 1 = direct neighbours,
+  // 2 = adds 2-hop, etc.  null = show full lattice (no filter).
+  const [anchorHops, setAnchorHops] = useState<number | null>(2);
 
-  const lattice = useMemo(() => buildTonalityLattice(edo), [edo]);
+  const fullLattice = useMemo(() => buildTonalityLattice(edo), [edo]);
 
   // Resolve the user's selected tonality from the picker into a lattice
-  // node so we can highlight it.
-  const anchorId = useMemo(() => {
+  // node so we can highlight it.  Look up against the FULL lattice
+  // first — the filter step happens after.
+  const fullAnchorId = useMemo(() => {
     if (!anchorKey) return null;
     const [familyName, modeName] = anchorKey.split("::");
     if (!familyName || !modeName) return null;
-    const node = findLatticeNode(lattice, familyName, modeName, tonicPc);
+    const node = findLatticeNode(fullLattice, familyName, modeName, tonicPc);
     return node?.id ?? null;
-  }, [lattice, anchorKey, tonicPc]);
+  }, [fullLattice, anchorKey, tonicPc]);
+
+  // Either show the whole lattice, or filter it down to "anchor's
+  // neighbourhood within N hops" centred on the anchor.
+  const lattice = useMemo(() => {
+    if (anchorHops === null || !fullAnchorId) return fullLattice;
+    return filterToAnchor(fullLattice, fullAnchorId, anchorHops);
+  }, [fullLattice, fullAnchorId, anchorHops]);
+
+  // After filtering, the anchor's id is unchanged but its position is
+  // now at world origin.
+  const anchorId = fullAnchorId;
 
   useEffect(() => {
     return () => { audioEngine.stopDrone(); };
@@ -299,8 +314,27 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
     <div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded overflow-hidden">
       <div className="px-3 py-2 flex items-center gap-2 flex-wrap border-b border-[#1a1a1a]">
         <p className="text-[10px] tracking-wider font-semibold text-[#888] mr-2">
-          TONALITY LATTICE — 15 KEYS × 7 FAMILIES × 7 MODES
+          TONALITY LATTICE
+          {anchorHops !== null && fullAnchorId
+            ? ` · ANCHOR + ${anchorHops}-HOP NEIGHBOURHOOD (${lattice.nodes.length} NODES)`
+            : ` · ALL ${lattice.nodes.length} NODES`}
         </p>
+        {/* Anchor-radius selector */}
+        <div className="flex items-center gap-1 mr-2">
+          <span className="text-[8px] text-[#444]">RADIUS</span>
+          {([1, 2, 3, null] as (number | null)[]).map((h, i) => (
+            <button key={i}
+              onClick={() => setAnchorHops(h)}
+              className="text-[9px] px-2 py-0.5 rounded border transition-colors"
+              style={{
+                borderColor: anchorHops === h ? "#7173e6" : "#222",
+                background: anchorHops === h ? "#1a1a2e" : "transparent",
+                color: anchorHops === h ? "#9999ee" : "#444",
+              }}>
+              {h === null ? "all" : `${h}`}
+            </button>
+          ))}
+        </div>
         {LATTICE_FAMILIES.map(f => (
           <button key={f.id}
             onClick={() => setShowFamilies(s => ({ ...s, [f.id]: !s[f.id] }))}
