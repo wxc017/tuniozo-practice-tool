@@ -159,129 +159,106 @@ function buildEdges(nodes: ModeNode[], anchorKey: string | null): ModeEdge[] {
   return out;
 }
 
-// Anchor-relative axis layout.  The anchor's own family always gets
-// the primary axis (+Y straight up).  Every other family is assigned
-// an axis whose polar angle from +Y grows with that family's minimum
-// alteration distance to the anchor — so 1-alteration families sit
-// near the primary axis, 2-alt families ring the equator, and 3+ alt
-// families fall toward the southern hemisphere.  Within a polar
-// "ring", families with the same min-alteration distance are spread
-// evenly around the azimuth.
+// Alteration-axis layout.  Every non-anchor mode is placed on the axis
+// dedicated to its alteration distance from the anchor — so 1-alt
+// modes (regardless of family) all line up on one axis, 2-alt on
+// another axis, and so on.  This is what makes "C Mel Minor is 1-alt
+// from C Ionian" visually obvious: it sits right next to anchor on
+// the 1-alt line, not buried halfway down a separate "Mel Minor"
+// axis.
 //
-// Along each axis the family's seven modes line up ordered BRIGHTEST
-// (closest to centre) → DARKEST (far end).  The anchor itself sits at
-// the world origin and is not duplicated on its family axis.
-// Relatives (D Dorian, E Phrygian, etc. for C Major) line up on a
-// dedicated -Y axis ordered by brightness.
+// Within each alt-axis the modes are ordered by brightness so the
+// reading direction "darker → brighter" stays consistent.
+//
+// Axis direction per alteration distance:
+//   0 (relatives, same notes) → -Y (below anchor)
+//   1                          → +Y (directly above)
+//   2                          → +X (right)
+//   3                          → -X (left)
+//   4                          → +Z (forward)
+//   5                          → -Z (back)
+//   6+                         → diagonal
 function familyAxisLayout(
   nodes: ModeNode[],
   anchorKey: string | null,
 ) {
   const anchor = anchorKey ? nodes.find(n => n.key === anchorKey) : null;
-  const anchorFamily = anchor?.family ?? FAMILY_ORDER[0];
 
-  // For each family OTHER than the anchor's, compute the minimum
-  // alteration distance from anchor to any of that family's parallel
-  // modes.  This decides the polar angle (closer to anchor = closer
-  // to the primary +Y axis).
-  const familyMinAlt = new Map<string, number>();
-  for (const family of FAMILY_ORDER) {
-    if (family === anchorFamily) continue;
-    let minD = Infinity;
-    if (anchor) {
-      for (const node of nodes) {
-        if (node.family !== family || node.isRelative) continue;
-        const d = pitchSetDistance(anchor.pitchSet, node.pitchSet);
-        if (d < minD) minD = d;
-      }
-    }
-    familyMinAlt.set(family, minD === Infinity ? 4 : minD);
-  }
-
-  // Group non-anchor families by min-alt level so families at the
-  // same level can be distributed around the azimuth at that polar
-  // angle.  Sort levels ascending.
-  const levels = new Map<number, string[]>();
-  for (const [family, minAlt] of familyMinAlt) {
-    if (!levels.has(minAlt)) levels.set(minAlt, []);
-    levels.get(minAlt)!.push(family);
-  }
-  const sortedLevels = Array.from(levels.keys()).sort((a, b) => a - b);
-
-  // Compute axis direction per family.
-  //   - Anchor's family → +Y (polar angle 0).
-  //   - Each other family → polar angle = (minAlt / 4) * 0.85 * π
-  //     (so 1-alt sits ~22°, 2-alt at ~45°, 3-alt at ~67°, 4-alt at
-  //     ~90° equator).
-  //   - Within a level, families fan evenly around the azimuth.
-  const familyDirs = new Map<string, [number, number, number]>();
-  familyDirs.set(anchorFamily, [0, 1, 0]);
-
-  for (const level of sortedLevels) {
-    const fams = levels.get(level)!;
-    const polar = Math.min(0.95 * Math.PI, (level / 4) * 0.85 * Math.PI);
-    for (let i = 0; i < fams.length; i++) {
-      const azimuth = (i / fams.length) * Math.PI * 2 + level * 0.4;
-      const sinP = Math.sin(polar);
-      const cosP = Math.cos(polar);
-      familyDirs.set(fams[i], [
-        sinP * Math.cos(azimuth),
-        cosP,
-        sinP * Math.sin(azimuth),
-      ]);
-    }
-  }
-
-  // Brightness ranks within each family (darkest = 0, brightest = 6).
-  // Ordering on axis: BRIGHTEST closest to centre → DARKEST at far end
-  // (axis position = total ranks - rank).
-  const familyRank = new Map<string, Map<string, number>>();
-  for (const family of FAMILY_ORDER) {
-    const familyModes = (PATTERN_SCALE_FAMILIES[family] ?? []).slice();
-    const bright = new Map<string, number>();
-    for (const m of familyModes) {
-      const node = nodes.find(n => n.family === family && n.mode === m && !n.isRelative);
-      bright.set(m, node?.brightness ?? 0);
-    }
-    familyModes.sort((a, b) => (bright.get(a) ?? 0) - (bright.get(b) ?? 0));
-    const rankMap = new Map<string, number>();
-    familyModes.forEach((m, idx) => rankMap.set(m, idx));
-    familyRank.set(family, rankMap);
-  }
-
-  const SPACING = 1.6;
-
-  // Place every node.
+  // Group every non-anchor node by its alteration distance to the
+  // anchor.  Anchor itself sits at the origin.
+  const byAlt = new Map<number, ModeNode[]>();
   for (const node of nodes) {
     if (anchor && node.key === anchor.key) {
       node.pos = [0, 0, 0];
       continue;
     }
+    const alt = anchor ? pitchSetDistance(anchor.pitchSet, node.pitchSet) : 1;
+    if (!byAlt.has(alt)) byAlt.set(alt, []);
+    byAlt.get(alt)!.push(node);
+  }
 
-    // Relative satellites get their own dedicated axis pointing -Y.
-    // Brightest closest to centre, darkest at the far end — same
-    // ordering convention as the family axes.
-    if (node.isRelative) {
-      const ranks = familyRank.get(node.family);
-      const rank = ranks?.get(node.mode) ?? 0;
-      const TOTAL = 7;
-      const dist = (TOTAL - rank) * SPACING;
-      node.pos = [0, -dist, 0];
-      continue;
-    }
+  // Each alteration distance gets its own world-axis direction.  This
+  // is what gives the "1-alt up, 2-alt right" reading pattern.  Higher
+  // distances (rare) cycle through diagonal directions.
+  const ALT_DIR: [number, number, number][] = [
+    [0, -1, 0],                     // 0  — relatives, same notes (below)
+    [0,  1, 0],                     // 1  — up
+    [1,  0, 0],                     // 2  — right
+    [-1, 0, 0],                     // 3  — left
+    [0,  0,  1],                    // 4  — forward
+    [0,  0, -1],                    // 5  — back
+    [ 0.7,  0.7,  0],               // 6  — diagonal up-right
+    [-0.7,  0.7,  0],               // 7  — diagonal up-left
+    [ 0.7, -0.7,  0],               // 8  — diagonal down-right
+    [-0.7, -0.7,  0],               // 9  — diagonal down-left
+  ];
 
-    const dir = familyDirs.get(node.family);
-    const ranks = familyRank.get(node.family);
-    if (!dir || !ranks) {
-      node.pos = [0, 0, 0];
-      continue;
+  const SPACING = 1.3;
+  // Number of "lanes" per axis — if more than this many modes share an
+  // alt distance, they're spread on a small disc perpendicular to the
+  // axis so they don't pile on top of each other.
+  const LANE_PERP_SPREAD = 0.85;
+
+  for (const [alt, group] of byAlt) {
+    const dir = ALT_DIR[alt] ?? ALT_DIR[ALT_DIR.length - 1];
+    // Order by brightness ascending: darker mode closer to anchor,
+    // brighter mode further out.
+    group.sort((a, b) => a.brightness - b.brightness);
+
+    // Build a perpendicular basis for spreading nodes that share the
+    // same axis position.
+    const upGuess: [number, number, number] = Math.abs(dir[1]) > 0.95 ? [1, 0, 0] : [0, 1, 0];
+    let p1: [number, number, number] = [
+      dir[1] * upGuess[2] - dir[2] * upGuess[1],
+      dir[2] * upGuess[0] - dir[0] * upGuess[2],
+      dir[0] * upGuess[1] - dir[1] * upGuess[0],
+    ];
+    const p1Len = Math.hypot(p1[0], p1[1], p1[2]) || 1;
+    p1 = [p1[0] / p1Len, p1[1] / p1Len, p1[2] / p1Len];
+    const p2: [number, number, number] = [
+      dir[1] * p1[2] - dir[2] * p1[1],
+      dir[2] * p1[0] - dir[0] * p1[2],
+      dir[0] * p1[1] - dir[1] * p1[0],
+    ];
+
+    // Place modes along the axis.  At each axial position, fan a small
+    // perpendicular ring if the axis has many modes — clusters of more
+    // than ~3 nodes per axial slot get rotated around the axis so they
+    // don't stack.
+    const N = group.length;
+    for (let i = 0; i < N; i++) {
+      const axialDist = (i + 1) * SPACING;
+      // Optional fan: nodes with the same axialDist offset get angular
+      // spread.  Here we just leave them on the axis since brightness
+      // is already a discriminator; each mode gets its own axialDist.
+      const px = dir[0] * axialDist;
+      const py = dir[1] * axialDist;
+      const pz = dir[2] * axialDist;
+      group[i].pos = [px, py, pz];
     }
-    const rank = ranks.get(node.mode) ?? 0;
-    // Brightest (highest rank) closest to centre at distance 1*SPACING;
-    // darkest (rank 0) at the far end at distance 7*SPACING.
-    const TOTAL = 7;
-    const dist = (TOTAL - rank) * SPACING;
-    node.pos = [dir[0] * dist, dir[1] * dist, dir[2] * dist];
+    // Suppress unused warnings about p2/LANE_PERP_SPREAD reserved for
+    // a future fan-out enhancement.
+    void p2; void LANE_PERP_SPREAD;
   }
 }
 
