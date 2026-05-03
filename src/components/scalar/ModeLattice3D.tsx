@@ -604,6 +604,61 @@ function Scene({
         );
       })}
 
+      {/* Synthetic interval-modulation rays.  Now that the lattice
+          only holds same-root tonalities, the cross-root modulation
+          targets (G Ionian, D Ionian, ...) aren't in nodeMap.  Draw
+          short stubs from the selected node in fixed 3D directions
+          so the user sees the interval options as labelled spokes
+          radiating from whichever node they Ctrl-clicked. */}
+      {showRays && selectedId && (() => {
+        const sourceNode = lattice.nodeMap.get(selectedId);
+        if (!sourceNode) return null;
+        const sourcePos = new THREE.Vector3(...sourceNode.pos);
+        const RAY_LENGTH = 4.0;
+        const MOD_SPOKES: Array<{ label: string; color: string; dir: [number, number, number] }> = [
+          { label: "+P5", color: "#9966ff", dir: [ 1,  0,  0] },
+          { label: "+P4", color: "#9966ff", dir: [-1,  0,  0] },
+          { label: "+M3", color: "#22ddaa", dir: [ 0,  1,  0] },
+          { label: "−M3", color: "#22ddaa", dir: [ 0, -1,  0] },
+          { label: "+m3", color: "#3aafff", dir: [ 0.7, 0,  0.7] },
+          { label: "−m3", color: "#3aafff", dir: [-0.7, 0, -0.7] },
+          { label: "+M2", color: "#ff5588", dir: [ 0,  0,  1] },
+          { label: "−M2", color: "#ff5588", dir: [ 0,  0, -1] },
+          { label: "TT",  color: "#ff9933", dir: [ 0.7,  0.5, -0.7] },
+        ];
+        return MOD_SPOKES.map((m, i) => {
+          const dirV = new THREE.Vector3(...m.dir).normalize().multiplyScalar(RAY_LENGTH);
+          const endV = sourcePos.clone().add(dirV);
+          return (
+            <group key={`spoke-${i}`}>
+              <Line
+                points={[sourceNode.pos, [endV.x, endV.y, endV.z]]}
+                color={m.color}
+                lineWidth={2.0}
+                transparent opacity={0.85}
+                renderOrder={3}
+                depthTest={false}
+                depthWrite={false} />
+              <Html position={[endV.x, endV.y, endV.z]} center distanceFactor={20}
+                    style={{ pointerEvents: "none" }}>
+                <div style={{
+                  background: "#0a0a0add",
+                  border: `1px solid ${m.color}`,
+                  color: m.color,
+                  padding: "1px 4px",
+                  borderRadius: 3,
+                  fontSize: 9,
+                  fontWeight: 700,
+                  whiteSpace: "nowrap",
+                }}>
+                  {m.label}
+                </div>
+              </Html>
+            </group>
+          );
+        });
+      })()}
+
       {/* Modulation rays from the user-selected node.  Drawn last so
           they sit on top of regular edges.  Three states per ray:
           - Destination root not expanded: dashed line ending in a
@@ -897,8 +952,7 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
     if (!sourceId) return [];
     const node = lattice.nodeMap.get(sourceId);
     if (!node) return [];
-    return computeModulationEdges(lattice, node, edo)
-      .filter(m => m.kind === "interval");
+    return computeModulationEdges(lattice, node, edo);
   }, [lattice, selectedId, anchorId, edo]);
 
   useEffect(() => {
