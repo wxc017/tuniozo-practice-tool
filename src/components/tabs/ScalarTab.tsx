@@ -45,6 +45,12 @@ export default function ScalarTab({
   const [dronedStep, setDronedStep] = useState<number | null>(null);
   const droneTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Highlighted-chord state: which chord's ⬚ button is "on".  The
+  // highlight stays lit on the keyboard until the user clicks that same
+  // button again (toggle).  Identified by `${level}-${idx}` so the same
+  // Roman numeral can appear in multiple levels without colliding.
+  const [highlightedChordKey, setHighlightedChordKey] = useState<string | null>(null);
+
   // All tonality banks for the current EDO.  showSevenths = true so the
   // chord pool exposes 7th-quality suffixes (Scalar Exploration is a
   // reference view; we want to see everything).
@@ -82,6 +88,7 @@ export default function ScalarTab({
     audioEngine.stopDrone();
     audioEngine.silencePlay();
     setDronedStep(null);
+    setHighlightedChordKey(null);
     onHighlight([]);
   }, [onHighlight]);
 
@@ -124,6 +131,7 @@ export default function ScalarTab({
     frameTimers.current = [];
     audioEngine.stopDrone();
     setDronedStep(null);
+    setHighlightedChordKey(null);
     const allSteps = [...view.scale.map(s => s.step), view.scale[0].step + edo];
     onHighlight(allSteps.map(s => baseTonic + s));
   }, [view, baseTonic, edo, onHighlight]);
@@ -140,6 +148,7 @@ export default function ScalarTab({
     frameTimers.current = [];
     audioEngine.stopDrone();
     setDronedStep(null);
+    setHighlightedChordKey(null);
     const pitches = steps.map(s => baseTonic + s);
     audioEngine.playMultiVoice(
       [{ frames: [pitches], noteDuration: 1.4, gain: playVol * 1.6 }],
@@ -150,14 +159,23 @@ export default function ScalarTab({
 
   // Sticky highlight for a chord — no audio, no auto-clear.  Stays lit
   // until the user takes another action.
-  const highlightChord = useCallback((steps: number[]) => {
+  // Toggle a chord's keyboard highlight.  If the requested chord is
+  // already the active one, clear; otherwise switch to it.  Stays on
+  // until the user clicks the same ⬚ again (or another action wipes it).
+  const toggleChordHighlight = useCallback((key: string, steps: number[]) => {
     if (!steps || steps.length === 0) return;
     frameTimers.current.forEach(id => clearTimeout(id));
     frameTimers.current = [];
     audioEngine.stopDrone();
     setDronedStep(null);
-    onHighlight(steps.map(s => baseTonic + s));
-  }, [baseTonic, onHighlight]);
+    if (highlightedChordKey === key) {
+      setHighlightedChordKey(null);
+      onHighlight([]);
+    } else {
+      setHighlightedChordKey(key);
+      onHighlight(steps.map(s => baseTonic + s));
+    }
+  }, [baseTonic, onHighlight, highlightedChordKey]);
 
   // ── Syllable interaction ─────────────────────────────────────────
   // - Quick click → play the tone (single transient note).
@@ -282,24 +300,37 @@ export default function ScalarTab({
                   {level.name.toUpperCase()}
                 </p>
                 <div className="flex flex-wrap gap-1.5">
-                  {level.chords.map((entry, i) => (
-                    <span key={`${entry.label}-${i}`} className="inline-flex items-stretch">
-                      <button
-                        onClick={() => entry.steps && playChord(entry.steps)}
-                        title={entry.steps
-                          ? `Play ${entry.label} — ${entry.steps.join(", ")}`
-                          : entry.label}
-                        className="px-3 py-1.5 text-sm font-semibold rounded-l border-y border-l border-[#2a2a2a] bg-[#141414] text-[#bbb] hover:text-white hover:border-[#444] transition-colors">
-                        {formatRomanNumeral(entry.label)}
-                      </button>
-                      <button
-                        onClick={() => entry.steps && highlightChord(entry.steps)}
-                        title={`Highlight ${entry.label} on keyboard (sticky)`}
-                        className="px-1.5 py-1.5 text-[10px] rounded-r border-y border-r border-[#2a2a2a] bg-[#0d0d0d] text-[#555] hover:text-[#aaa] hover:border-[#444] transition-colors">
-                        ⬚
-                      </button>
-                    </span>
-                  ))}
+                  {level.chords.map((entry, i) => {
+                    const key = `${level.name}-${i}`;
+                    const lit = highlightedChordKey === key;
+                    return (
+                      <span key={key} className="inline-flex items-stretch">
+                        <button
+                          onClick={() => entry.steps && playChord(entry.steps)}
+                          title={entry.steps
+                            ? `Play ${entry.label} — ${entry.steps.join(", ")}`
+                            : entry.label}
+                          className="px-3 py-1.5 text-sm font-semibold rounded-l border-y border-l border-[#2a2a2a] bg-[#141414] text-[#bbb] hover:text-white hover:border-[#444] transition-colors">
+                          {formatRomanNumeral(entry.label)}
+                        </button>
+                        <button
+                          onClick={() => entry.steps && toggleChordHighlight(key, entry.steps)}
+                          title={lit
+                            ? `Click to clear highlight on ${entry.label}`
+                            : `Highlight ${entry.label} on keyboard — stays until clicked again`}
+                          className="px-1.5 py-1.5 text-[10px] rounded-r border-y border-r transition-colors"
+                          style={lit
+                            ? { borderColor: activeFamilyColor,
+                                background: activeFamilyColor + "30",
+                                color: activeFamilyColor }
+                            : { borderColor: "#2a2a2a",
+                                background: "#0d0d0d",
+                                color: "#555" }}>
+                          ⬚
+                        </button>
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
             ))}
