@@ -575,6 +575,24 @@ function Scene({
               dashed={!expanded}
               dashScale={20}
               gapSize={0.3} />
+            {/* Alt-distance label: how many notes differ between the
+                Ctrl-clicked node and this modulation's destination. */}
+            <Html position={[rayMidV.x, rayMidV.y, rayMidV.z]} center distanceFactor={9}
+                  style={{ pointerEvents: "none" }}>
+              <div style={{
+                background: "#0a0a0acc",
+                border: `1px solid ${m.color}`,
+                color: m.color,
+                padding: "0 1px",
+                borderRadius: 1,
+                fontSize: 5,
+                fontWeight: 700,
+                lineHeight: "6px",
+                whiteSpace: "nowrap",
+              }}>
+                +{altFromSelected}
+              </div>
+            </Html>
             {!expanded && (
               <group position={[ghostV.x, ghostV.y, ghostV.z]}>
                 <mesh
