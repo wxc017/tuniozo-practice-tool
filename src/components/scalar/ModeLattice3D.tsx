@@ -328,11 +328,14 @@ function altColor(altLevel: number | undefined): string {
 
 function NodeMesh({ node, edo, isAnchor, isActive, isHovered, isSelected, onHover, onClick }: NodeMeshProps) {
   const meshRef = useRef<THREE.Mesh>(null);
-  // Colour by alt distance from anchor — drops the family-colour ramp
-  // entirely.  Brightness rank still applies a subtle dim so darker
-  // modes within an arc are slightly muted.
+  // Colour:
+  // - Alteration lattice (altLevel set): by alt distance from anchor.
+  // - Family lattice (altLevel undefined): by the family's own colour
+  //   so every node on a given ring shares its ring's hue.
+  // Brightness rank still applies a subtle dim so darker modes
+  // within an arc are slightly muted.
   const rankT = node.modeRank / 6;
-  const palette = altColor(node.altLevel);
+  const palette = node.altLevel === undefined ? node.family.color : altColor(node.altLevel);
   const baseColor = useMemo(() => {
     const c = new THREE.Color(palette);
     const neon = c.clone().lerp(new THREE.Color("#ffffff"), 0.35);
@@ -524,6 +527,30 @@ function Scene({
           points.push(sampleKnotCurve(cfg, parentCfg, u));
         }
         mid = points[Math.floor(points.length / 2)];
+      } else if (lattice.familyRings && lattice.familyRings.length > 0) {
+        // Family-lattice mode: arc the edge up out of the XY plane so
+        // cross-ring 1-alt edges don't pile up flat on top of each
+        // other.  Quadratic Bezier through a midpoint lifted in +Z by
+        // a fraction of the planar distance — keeps the lattice
+        // readable when you look at it from the default top-down view.
+        const ax = a.pos[0], ay = a.pos[1];
+        const bx = b.pos[0], by = b.pos[1];
+        const planar = Math.hypot(bx - ax, by - ay);
+        const lift = Math.max(1.5, planar * 0.4);
+        const cx = (ax + bx) / 2;
+        const cy = (ay + by) / 2;
+        const cz = lift;
+        const NS = 16;
+        points = [];
+        for (let s = 0; s <= NS; s++) {
+          const t = s / NS;
+          const omt = 1 - t;
+          const x = omt * omt * ax + 2 * omt * t * cx + t * t * bx;
+          const y = omt * omt * ay + 2 * omt * t * cy + t * t * by;
+          const z = omt * omt * 0  + 2 * omt * t * cz + t * t * 0;
+          points.push([x, y, z]);
+        }
+        mid = points[Math.floor(points.length / 2)];
       } else {
         // Fallback (shouldn't happen for y/z which are within-knot).
         points = [a.pos, b.pos];
@@ -569,6 +596,22 @@ function Scene({
                   isAnchorPc={cfg.pc === anchorRootPc} />
         );
       })}
+
+      {/* Family-lattice rings: one coloured torus per family ring,
+          mode nodes sitting on top.  Each ring's hue matches the
+          family colour so the lattice reads as concentric coloured
+          bands. */}
+      {(lattice.familyRings ?? []).map(ring => (
+        <mesh key={`ring-${ring.familyId}`} rotation={[Math.PI / 2, 0, 0]}>
+          <torusGeometry args={[ring.radius, 0.35, 16, 96]} />
+          <meshStandardMaterial
+            color={ring.color}
+            emissive={ring.color}
+            emissiveIntensity={0.55}
+            roughness={0.5} metalness={0}
+            transparent opacity={0.85} />
+        </mesh>
+      ))}
 
       {/* For every expanded cable, drop a small label at its source
           (the spot on the parent's tube the cable was spawned from)

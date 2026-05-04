@@ -203,6 +203,11 @@ export interface TonalityLattice {
   // twisted-torus-knot tube for each expanded root, with all 49
   // (family × mode) tonalities of that root sampled along the knot.
   pcKnots: Map<number, KnotConfig>;
+  // Optional metadata for the family-lattice render path: one entry
+  // per family ring, with the ring's centre radius and family colour.
+  // Renderer draws a coloured torus at each ring, with mode nodes
+  // sitting on it.
+  familyRings?: Array<{ familyId: string; color: string; radius: number }>;
   // World-space extents (for camera framing).
   bounds: { minX: number; maxX: number; minY: number; maxY: number; minZ: number; maxZ: number };
 }
@@ -616,12 +621,14 @@ export function buildFamilyLattice(
   const RING_R0 = 7;
   const nodes: LatticeNode[] = [];
   const nodeMap = new Map<string, LatticeNode>();
+  const familyRings: Array<{ familyId: string; color: string; radius: number }> = [];
 
   for (const family of families) {
     const familyModes = modes.get(family.id) ?? [];
     if (familyModes.length === 0) continue;
     const sorted = [...familyModes].sort((a, b) => b.brightness - a.brightness);
     const radius = RING_R0 + family.zOrd * RING_SPACING;
+    familyRings.push({ familyId: family.id, color: family.color, radius });
     for (let i = 0; i < sorted.length; i++) {
       const mode = sorted[i];
       const angle = (i / sorted.length) * 2 * Math.PI - Math.PI / 2;
@@ -674,6 +681,7 @@ export function buildFamilyLattice(
   return {
     keys, families, modes,
     nodes, edges, nodeMap, pcKnots: new Map(),
+    familyRings,
     bounds: { minX, maxX, minY, maxY, minZ: 0, maxZ: 0 },
   };
 }
