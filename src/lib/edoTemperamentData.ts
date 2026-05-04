@@ -253,8 +253,11 @@ const STANDARD_PRIMES = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31];
 export function edoTempersComma(edo: number, n: number, d: number): boolean {
   const commaCents = 1200 * Math.log2(n / d);
   const stepCents = 1200 / edo;
-  // The comma is tempered out if it maps to 0 steps
-  return Math.abs(Math.round(commaCents / stepCents)) === 0;
+  // The comma is tempered out if it maps to 0 steps.  Direct === 0 test
+  // (the prior Math.abs(...) wrapper was redundant — Math.round returns
+  // a signed integer, but for a tiny comma the rounded value is in
+  // {-0, 0}, both === 0).
+  return Math.round(commaCents / stepCents) === 0;
 }
 
 /** Build full comma tempering matrix for EDOs 5-99 */

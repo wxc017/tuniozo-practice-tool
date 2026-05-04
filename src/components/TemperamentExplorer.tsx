@@ -1236,7 +1236,15 @@ function ZetaIntegralViz({ edo }: { edo: number }) {
 function EdoTemper({ selectedEdo, setSelectedEdo }: { selectedEdo: number; setSelectedEdo: (edo: number) => void }) {
   const [expandedDesc, setExpandedDesc] = useState(false);
   const [activeDrones, setActiveDrones] = useState<Set<string>>(new Set());
-  const edoData = EDO_DATA.get(selectedEdo)!;
+  const edoData = EDO_DATA.get(selectedEdo);
+  if (!edoData) {
+    return (
+      <div className="p-4 text-xs text-amber-300">
+        EDO {selectedEdo} is outside the supported range (5–99).
+        Pick a different EDO from the selector.
+      </div>
+    );
+  }
   const desc = EDO_DESCRIPTIONS[selectedEdo];
   const intervals = useMemo(() => getEdoIntervals(selectedEdo), [selectedEdo]);
   const primeList = [3, 5, 7, 11, 13, 17, 19, 23, 29, 31];
