@@ -316,6 +316,35 @@ export function getSolfege(edo: number): string[] | null {
   return null;
 }
 
+// ── Andrew Heathwaite's solfege (31-EDO) ─────────────────────────────────
+// An alternative 31-EDO solfege that expands the conventional Do-Re-Mi
+// system with consistent vowel families.  Differs from the
+// SOLFEGE_31 above in having 5 syllables per scale-step group (with two
+// unisons / two octaves) and a tighter pattern matching:
+//   Between Do and Fa, intervals share syllables with their fifth-up
+//   counterparts (do→so, di→si, ro→lo, ra→le, ru→lu, re→la, ri→li,
+//   ma→ta, etc.) — useful for tetrachordal-scale and 7th-chord ear
+//   training where the upper / lower tetrachord motions mirror.
+// Source: Xenharmonic Wiki, Andrew Heathwaite's solfege article.
+const HEATHWAITE_SOLFEGE_31 = [
+  "Do", "Di",                         //  0  1   unisons
+  "Ro", "Ra", "Ru", "Re", "Ri",       //  2-6   2nds
+  "Ma", "Me", "Mu", "Mi", "Mo",       //  7-11  3rds
+  "Fe", "Fa", "Fu", "Fi",             // 12-15  4ths
+  "Se", "Su", "So", "Si",             // 16-19  5ths
+  "Lo", "Le", "Lu", "La", "Li",       // 20-24  6ths
+  "Ta", "Te", "Tu", "Ti", "To",       // 25-29  7ths
+  "Da", "Do",                         // 30-31  octaves
+];
+
+/** Heathwaite-style solfege for the EDOs where it's defined.  Returns
+ *  null for EDOs without a Heathwaite mapping (the caller should fall
+ *  back to the standard solfege). */
+export function getHeathwaiteSolfege(edo: number): string[] | null {
+  if (edo === 31) return HEATHWAITE_SOLFEGE_31;
+  return null;
+}
+
 // ── Chord shapes ───────────────────────────────────────────────────────
 // Returns: { MAJ, MIN, DIM, P5, M2, LT, m3, M3, m7, M7, P4, m6, M6, d5 }
 export function getChordShapes(edo: number) {

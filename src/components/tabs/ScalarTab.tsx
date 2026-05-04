@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { audioEngine } from "@/lib/audioEngine";
 import { useLS } from "@/lib/storage";
-import { formatHalfAccidentals, getModeDegreeMap, getSolfege } from "@/lib/edoData";
+import { formatHalfAccidentals, getModeDegreeMap, getSolfege, getHeathwaiteSolfege } from "@/lib/edoData";
+import { syllableForEdoStep } from "@/lib/microtonalSolfege";
 import { getTonalityBanks, type TonalityBank } from "@/lib/tonalityBanks";
 import { bankToScaleFamMode } from "@/lib/tonalityChordPool";
 import { jiLimitGroupsForEdo } from "@/lib/jiTonalityFamilies";
@@ -97,6 +98,17 @@ export default function ScalarTab({
 }: Props) {
   const [selected, setSelected] = useLS<string>("lt_scalar_tonality", "Major");
   const [activeFamilyColor, setActiveFamilyColor] = useState<string>("#6a9aca");
+  // Solfege system toggle.  Three options:
+  //   "standard"   — the existing EDO-specific do-re-mi-style table
+  //                   (Do / Du / Di / Ra / Rai / … in 31-EDO).
+  //   "heathwaite" — Andrew Heathwaite's 31-EDO solfege with consistent
+  //                   tetrachordal mirroring (Do / Di / Ro / Ra / …).
+  //                   Falls back to standard outside 31-EDO.
+  //   "microtonal" — IPA-derived interval-name system keyed by cents
+  //                   (Sais / Sai / Sail / Soos / …); works in any EDO.
+  const [solfegeKind, setSolfegeKind] = useLS<"standard" | "heathwaite" | "microtonal">(
+    "lt_scalar_solfege_kind", "standard"
+  );
   const frameTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // Drone state: tracks whether a syllable is currently sustained, plus
@@ -321,12 +333,47 @@ export default function ScalarTab({
             </button>
           </div>
 
-          {/* Solfège + degree row.  Click to play the tone; press-and-
+          {/* Solfege system toggle — Standard (do-re-mi), Heathwaite's
+              (31-EDO consistent-vowel system), or Microtonal IPA
+              (interval-name system from cents). */}
+          <div className="flex items-center gap-1 mb-1 flex-wrap">
+            <span className="text-[10px] text-[#666] mr-1">SOLFEGE</span>
+            {(["standard", "heathwaite", "microtonal"] as const).map(k => {
+              const active = solfegeKind === k;
+              const label = k === "standard" ? "Standard"
+                : k === "heathwaite" ? "Heathwaite"
+                : "Microtonal";
+              return (
+                <button key={k}
+                  onClick={() => setSolfegeKind(k)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors border ${
+                    active
+                      ? "bg-[#1a1a3a] border-[#5b5be6] text-[#9999ee]"
+                      : "bg-[#0e0e0e] border-[#222] text-[#555] hover:text-[#888]"
+                  }`}>
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Solfege + degree row.  Click to play the tone; press-and-
               hold ≥ 2s to start a drone on that pitch (click again to
               stop). */}
           <div className="flex flex-wrap gap-2">
             {view.scale.map(s => {
               const droning = dronedStep === s.step;
+              const microtonal = syllableForEdoStep(s.step, edo);
+              const heathwaiteTable = getHeathwaiteSolfege(edo);
+              const heathwaiteLabel = heathwaiteTable ? heathwaiteTable[s.step] : null;
+              const labelText = solfegeKind === "microtonal" ? microtonal.label
+                : solfegeKind === "heathwaite" ? (heathwaiteLabel ?? s.solfege)
+                : s.solfege;
+              const tooltipDetail = solfegeKind === "microtonal"
+                ? `${microtonal.label}  /${microtonal.ipa}/  ·  ${microtonal.category}${microtonal.subcategory ? " · " + microtonal.subcategory : ""}`
+                : solfegeKind === "heathwaite" && heathwaiteLabel
+                ? `${heathwaiteLabel} (Heathwaite)`
+                : s.solfege;
               return (
                 <button key={s.step}
                   onMouseDown={() => onSyllablePressStart(s.step)}
@@ -334,7 +381,7 @@ export default function ScalarTab({
                   onMouseLeave={onSyllablePressEnd}
                   onTouchStart={(e) => { e.preventDefault(); onSyllablePressStart(s.step); }}
                   onTouchEnd={onSyllablePressEnd}
-                  title={`Click: play ${s.solfege}.  Hold 2s: drone on ${s.solfege}.`}
+                  title={`Click: play ${tooltipDetail}.  Hold 2s: drone.`}
                   className="flex flex-col items-center px-3 py-2 rounded border transition-colors select-none"
                   style={{
                     borderColor: droning ? activeFamilyColor : activeFamilyColor + "30",
@@ -343,8 +390,13 @@ export default function ScalarTab({
                   }}>
                   <span className="text-base font-bold"
                         style={{ color: activeFamilyColor }}>
-                    {s.solfege}
+                    {labelText}
                   </span>
+                  {solfegeKind === "microtonal" && (
+                    <span className="text-[8px] text-[#666] font-mono mt-0.5">
+                      /{microtonal.ipa}/
+                    </span>
+                  )}
                   <span className="text-[10px] text-[#888] mt-0.5">
                     {formatHalfAccidentals(s.degree)}
                   </span>
