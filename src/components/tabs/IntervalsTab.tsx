@@ -2,10 +2,67 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { audioEngine } from "@/lib/audioEngine";
 import { randomChoice } from "@/lib/musicTheory";
 import { getIntervalNames } from "@/lib/edoData";
-import { getModeDegreeMap, PATTERN_SCALE_FAMILIES } from "@/lib/musicTheory";
+import { getModeDegreeMap } from "@/lib/musicTheory";
+import { jiLimitGroupsForEdo } from "@/lib/jiTonalityFamilies";
 import { useLS, registerKnownOption, unregisterKnownOptionsForPrefix } from "@/lib/storage";
 import { weightedRandomChoice, getOptionStats } from "@/lib/stats";
 import type { TabSettingsSnapshot } from "@/App";
+
+// ── LIMIT > FAMILY > MODES tonality picker (mirrors ChordsTab) ───────────
+// Same shape as Spatial Audiation's nested picker so the user sees
+// tonalities organised the same way across the Tonal Audiation tabs.
+// Each family carries the canonical PATTERN_SCALE_FAMILIES key
+// (`scaleFamily`) so the quick-fill button can look up the scale's
+// step values via getModeDegreeMap(edo, scaleFamily, modeName).
+
+interface IntervalsTonalitySection {
+  key: string;
+  label: string;
+  color: string;
+  families: { key: string; label: string; scaleFamily: string; tonalities: string[] }[];
+}
+
+const MEANTONE_LIMIT_SECTIONS: IntervalsTonalitySection[] = [
+  { key: "lim5", label: "5-LIMIT (MEANTONE)", color: "#6a9aca", families: [
+    { key: "major",    label: "MAJOR",          scaleFamily: "Major Family",
+      tonalities: ["Ionian","Dorian","Phrygian","Lydian","Mixolydian","Aeolian","Locrian"] },
+    { key: "harmonic", label: "HARMONIC MINOR", scaleFamily: "Harmonic Minor Family",
+      tonalities: ["Harmonic Minor","Locrian #6","Ionian #5","Dorian #4","Phrygian Dominant","Lydian #2","Ultralocrian"] },
+    { key: "melodic",  label: "MELODIC MINOR",  scaleFamily: "Melodic Minor Family",
+      tonalities: ["Melodic Minor","Dorian b2","Lydian Augmented","Lydian Dominant","Mixolydian b6","Locrian #2","Altered"] },
+    { key: "doubleharmonic", label: "DOUBLE HARMONIC", scaleFamily: "Double Harmonic Family",
+      tonalities: ["Double Harmonic Major","Lydian #2 #6","Ultraphrygian","Hungarian Minor","Oriental","Ionian #2 #5","Locrian bb3 bb7"] },
+  ] },
+  { key: "lim7", label: "7-LIMIT (SEPTIMAL)", color: "#7aaa6a", families: [
+    { key: "subminor",   label: "SUBMINOR DIATONIC",   scaleFamily: "Subminor Diatonic Family",
+      tonalities: ["Subminor Diatonic","Locrian s2 s5 s6","Supermajor Ionian","Dorian s3 bb4 s7","Subminor Phrygian m7","Supermajor Lydian M2 b5","Supermajor Mixolydian ##5 m7"] },
+    { key: "supermajor", label: "SUPERMAJOR DIATONIC", scaleFamily: "Supermajor Diatonic Family",
+      tonalities: ["Supermajor Diatonic","Dorian S2 ##5 S6","Subminor Phrygian","Lydian S3 b5 S7","Supermajor Mixolydian m7","Subminor Aeolian M2 bb4","Subminor Locrian m7"] },
+    { key: "subharmonic",label: "SUBHARMONIC DIATONIC M7", scaleFamily: "Subharmonic Diatonic Family",
+      tonalities: ["Subharmonic Diatonic M7","Locrian s2 s5 N6","Supermajor Ionian #5","Dorian s3 ##4 s7","Phrygian s2 N3 s6","Supermajor Lydian #2 b5","Neutral Dorian b4 bb5 bb7"] },
+  ] },
+  { key: "lim11", label: "11-LIMIT (NEUTRAL)", color: "#9a66c0", families: [
+    { key: "neutral", label: "NEUTRAL DIATONIC", scaleFamily: "Neutral Diatonic Family",
+      tonalities: ["Neutral Diatonic","Dorian N2 bb5 N6","Neutral Ionian","Ionian N3 ##4 N7","Neutral Dorian m7","Neutral Ionian M2 ##4","Neutral Dorian bb5 m7"] },
+  ] },
+];
+
+function tonalitySectionsForIntervals(edo: number): IntervalsTonalitySection[] {
+  if (edo === 41 || edo === 53) {
+    // JI tabs use the JI_LIMIT_GROUPS structure with the registered
+    // "JI Family" so getModeDegreeMap resolves each scale.
+    return jiLimitGroupsForEdo(edo).map(g => ({
+      key: `limit-${g.limit}`,
+      label: g.label,
+      color: g.color,
+      families: g.families.map(f => ({
+        key: f.key, label: f.label, scaleFamily: "JI Family",
+        tonalities: f.tonalities,
+      })),
+    }));
+  }
+  return MEANTONE_LIMIT_SECTIONS;
+}
 
 const PLAY_STYLES = ["Sequential","Dyad (2 at once)","Trichord (3 at once)","Random (2–3 at once)"];
 const DEFAULT_GAP_SEC = 0.65;
@@ -341,54 +398,46 @@ export default function IntervalsTab({
         <div className="bg-[#141414] border border-[#2a2a2a] rounded p-3 text-xs text-[#888] font-mono whitespace-pre">{infoText}</div>
       )}
 
-      {/* Tonality quick-fill — clicking auto-checks every interval that
-          appears in the chosen scale.  Saves the user from manually
-          ticking each interval when they want to drill the diatonic
-          set of a specific mode.  Excludes the unison (step 0) since
-          unison-vs-something quizzes are degenerate. */}
-      <div>
-        <p className="text-xs text-[#555] mb-2">Quick fill from a tonality:</p>
-        <div className="flex flex-wrap gap-1 mb-3">
-          {(() => {
-            // Curated common-scale list — same names work in every EDO
-            // because PATTERN_SCALE_FAMILIES is keyed by family + mode.
-            const QUICK: { family: string; mode: string; label: string; color: string }[] = [
-              { family: "Major Family",          mode: "Ionian",            label: "Major",          color: "#6a9aca" },
-              { family: "Major Family",          mode: "Aeolian",           label: "Natural Minor",  color: "#6a9aca" },
-              { family: "Major Family",          mode: "Dorian",            label: "Dorian",         color: "#6a9aca" },
-              { family: "Major Family",          mode: "Phrygian",          label: "Phrygian",       color: "#6a9aca" },
-              { family: "Major Family",          mode: "Lydian",            label: "Lydian",         color: "#6a9aca" },
-              { family: "Major Family",          mode: "Mixolydian",        label: "Mixolydian",     color: "#6a9aca" },
-              { family: "Harmonic Minor Family", mode: "Harmonic Minor",    label: "Harmonic Minor", color: "#c09050" },
-              { family: "Harmonic Minor Family", mode: "Phrygian Dominant", label: "Phrygian Dom",   color: "#c09050" },
-              { family: "Melodic Minor Family",  mode: "Melodic Minor",     label: "Melodic Minor",  color: "#c06090" },
-              { family: "Melodic Minor Family",  mode: "Lydian Dominant",   label: "Lydian Dom",     color: "#c06090" },
-              { family: "Double Harmonic Family",mode: "Double Harmonic Major", label: "Dbl Harmonic", color: "#e08040" },
-            ];
-            return QUICK.map(({ family, mode, label, color }) => {
-              // Verify the family/mode exists for this EDO (some xen
-              // families are 31-EDO only, etc.).
-              if (!PATTERN_SCALE_FAMILIES[family]?.includes(mode)) return null;
-              const map = getModeDegreeMap(edo, family, mode);
-              const steps = Object.values(map).filter(s => s > 0); // drop unison
-              if (steps.length === 0) return null;
-              return (
-                <button key={`${family}-${mode}`}
-                  onClick={() => setChecked(new Set(steps))}
-                  title={`Auto-check ${label}'s diatonic intervals (${steps.length} steps)`}
-                  className="px-2 py-1 text-[10px] rounded border border-[#2a2a2a] bg-[#111] text-[#888] hover:text-[#fff] hover:border-[#5b5be6] transition-colors"
-                  style={{ borderLeftWidth: 3, borderLeftColor: color }}>
-                  {label}
-                </button>
-              );
-            });
-          })()}
+      {/* Tonality quick-fill picker — same LIMIT > FAMILY > MODES
+          structure as Spatial Audiation (ChordsTab) so the two tabs
+          present tonalities the same way.  Click any scale to auto-
+          check every interval that appears in it.  The unison (step 0)
+          is excluded since unison-vs-other quizzes are degenerate. */}
+      <div className="bg-[#0e0e0e] border border-[#1a1a1a] rounded p-2 space-y-2">
+        <div className="flex items-center gap-2">
+          <p className="text-xs text-[#888] font-medium">QUICK FILL FROM TONALITY</p>
           <button onClick={() => setChecked(new Set())}
-            title="Clear all selected intervals"
-            className="px-2 py-1 text-[10px] rounded border border-[#2a2a2a] bg-[#111] text-[#666] hover:text-[#aaa] transition-colors">
-            Clear
-          </button>
+            className="text-[9px] text-[#555] hover:text-[#aaa] border border-[#222] rounded px-2 py-0.5 ml-auto">Clear</button>
         </div>
+        {tonalitySectionsForIntervals(edo).map(section => (
+          <div key={section.key} className="space-y-1.5">
+            <p className="text-[10px] font-bold tracking-widest border-b border-[#1a1a1a] pb-0.5"
+               style={{ color: section.color }}>{section.label}</p>
+            {section.families.map(family => (
+              <div key={family.key} className="ml-2">
+                <p className="text-[9px] mb-1 font-medium tracking-wider text-[#666]">
+                  {family.label}
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {family.tonalities.map(t => {
+                    const map = getModeDegreeMap(edo, family.scaleFamily, t);
+                    const steps = Object.values(map).filter(s => s > 0);
+                    if (steps.length === 0) return null;
+                    return (
+                      <button key={t}
+                        onClick={() => setChecked(new Set(steps))}
+                        title={`Auto-check ${t} (${steps.length} intervals)`}
+                        className="px-2 py-1 text-[10px] rounded border border-[#2a2a2a] bg-[#111] text-[#666] hover:text-[#aaa] transition-colors"
+                        style={{ borderLeftWidth: 3, borderLeftColor: section.color }}>
+                        {t}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
       </div>
 
       {/* Interval selection — toggle buttons matching the Mode ID /
