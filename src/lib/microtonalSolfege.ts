@@ -55,8 +55,8 @@ export const MICROTONAL_SOLFEGE: MicrotonalSyllable[] = [
   { category: "Second", subcategory: "Neutral — Small",      centsLow: 125,  centsHigh: 135,   label: "Soos",  ipa: "sus" },
   { category: "Second", subcategory: "Neutral — Middle",     centsLow: 135,  centsHigh: 160,   label: "Soo",   ipa: "su" },
   { category: "Second", subcategory: "Neutral — Large",      centsLow: 160,  centsHigh: 170,   label: "Sool",  ipa: "sul" },
-  { category: "Second", subcategory: "Equable Heptatonic",   centsLow: 170,  centsHigh: 182,   label: "Ha",    ipa: "ha" },
-  { category: "Second", subcategory: "Major — Small",        centsLow: 182,  centsHigh: 200,   label: "Says",  ipa: "seɪs" },
+  { category: "Second", subcategory: "Equable Heptatonic",   centsLow: 160,  centsHigh: 182,   label: "Ha",    ipa: "ha" },
+  { category: "Second", subcategory: "Major — Small",        centsLow: 180,  centsHigh: 200,   label: "Says",  ipa: "seɪs" },
   { category: "Second", subcategory: "Major — Middle",       centsLow: 200,  centsHigh: 220,   label: "Say",   ipa: "seɪ" },
   { category: "Second", subcategory: "Major — Large",        centsLow: 220,  centsHigh: 240,   label: "Sayl",  ipa: "seɪl" },
 
@@ -90,7 +90,7 @@ export const MICROTONAL_SOLFEGE: MicrotonalSyllable[] = [
 
   // Fifths (Subfifths first since they precede Fifths in the source table)
   { category: "Subfifth", subcategory: "",                   centsLow: 640,  centsHigh: 672,   label: "Fu",    ipa: "fʌ" },
-  { category: "Fifth",   subcategory: "Small",               centsLow: 672,  centsHigh: 695,   label: "Fis",   ipa: "fɪs" },
+  { category: "Fifth",   subcategory: "Small",               centsLow: 640,  centsHigh: 695,   label: "Fis",   ipa: "fɪs" },
   { category: "Fifth",   subcategory: "Middle",              centsLow: 695,  centsHigh: 709,   label: "Fi",    ipa: "fɪ" },
   { category: "Fifth",   subcategory: "Large",               centsLow: 709,  centsHigh: 732,   label: "Fil",   ipa: "fɪl" },
 
@@ -114,8 +114,8 @@ export const MICROTONAL_SOLFEGE: MicrotonalSyllable[] = [
   // Sevenths
   { category: "Seventh", subcategory: "Minor — Small",       centsLow: 960,  centsHigh: 987,   label: "Vais",  ipa: "vaɪs" },
   { category: "Seventh", subcategory: "Minor — Middle",      centsLow: 987,  centsHigh: 1000,  label: "Vai",   ipa: "vaɪ" },
-  { category: "Seventh", subcategory: "Minor — Large",       centsLow: 1000, centsHigh: 1018,  label: "Vail",  ipa: "vaɪl" },
-  { category: "Seventh", subcategory: "Equable Heptatonic",  centsLow: 1018, centsHigh: 1030,  label: "Ho",    ipa: "hɒ" },
+  { category: "Seventh", subcategory: "Minor — Large",       centsLow: 1000, centsHigh: 1025,  label: "Vail",  ipa: "vaɪl" },
+  { category: "Seventh", subcategory: "Equable Heptatonic",  centsLow: 1018, centsHigh: 1040,  label: "Ho",    ipa: "hɒ" },
   { category: "Seventh", subcategory: "Neutral — Small",     centsLow: 1030, centsHigh: 1043,  label: "Voos",  ipa: "vus" },
   { category: "Seventh", subcategory: "Neutral — Middle",    centsLow: 1043, centsHigh: 1065,  label: "Voo",   ipa: "vu" },
   { category: "Seventh", subcategory: "Neutral — Large",     centsLow: 1065, centsHigh: 1075,  label: "Vool",  ipa: "vul" },
