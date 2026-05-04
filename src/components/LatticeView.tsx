@@ -1741,8 +1741,10 @@ const TEMPER_CLASS_COLORS = [
 function MonzoNodeMesh({ node, pos, isActive, isHovered, isFocused, showLabel = true, labelLOD = false, labelDist = 15, onHover, onClick, onFocus, onCtrlClick, primes, temperedClass, classColorMap, rootPc, showNoteNames = true, showIntervals = true, showRatios = true, showMonzo = false, showHeji = false, temperedSiblings, isClassRep, isOnPath, isPathEndpoint, isPinnedPath, isHighlighted, highlightMode, isNonRepClass, showClassId, edo }: MonzoNodeMeshProps) {
   const isDimmed = (highlightMode && !isHighlighted && !isActive && !isFocused && !isOnPath) || isNonRepClass;
   // Bigger nodes by default — easier to read note labels and to
-  // track which cells light up during chord playback.
-  const baseR = node.monzo.isComma ? 0.18 : 0.36;
+  // track which cells light up during chord playback.  In EDO
+  // mode the dots get a further bump so the 12 / 31 / 41 / 53
+  // reps stand out clearly against a black background.
+  const baseR = node.monzo.isComma ? 0.18 : (edo !== undefined ? 0.55 : 0.36);
   const r = isHighlighted ? baseR * 1.3 : (isOnPath && !isPathEndpoint) ? baseR * 0.45 : baseR;
   const isUnison = node.monzo.n === 1 && node.monzo.d === 1;
 
@@ -1753,13 +1755,11 @@ function MonzoNodeMesh({ node, pos, isActive, isHovered, isFocused, showLabel = 
     if (isActive) return "#7173e6";
     if (isPathEndpoint) return "#7df";
     // EDO context: suppress the unison-tonic accent + per-class
-    // colour map.  All cells render in a single resting colour so
+    // colour map.  All cells render in a single resting colour
+    // (light enough to be unmistakable on a black background) so
     // the only thing that draws the eye is the active chord-tone
-    // pulse (isActive above) — exactly what the user asked for.
-    // Brighter than the original "#3a3a4a" so the dots stand out
-    // against the black background; was barely above background
-    // luminance and hard to spot.
-    if (edo !== undefined) return "#7a7a8a";
+    // pulse (isActive above).
+    if (edo !== undefined) return "#c8c8d0";
     if (isUnison) return "#9395ea";
     if (node.monzo.isComma) return "#553344";
     if (temperedClass !== undefined) return classColorMap.get(temperedClass) ?? "#3a3a4a";
