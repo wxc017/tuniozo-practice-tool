@@ -9,6 +9,7 @@ import { recordAnswer } from "@/lib/stats";
 import { JI_FAMILY, JI_SCALE_NAMES, getJiScaleDegrees, getJiScaleCents } from "@/lib/jiScaleData";
 import { jiLimitGroupsForEdo, limitForJiTonality } from "@/lib/jiTonalityFamilies";
 import JiScaleLattice from "@/components/JiScaleLattice";
+import { analyzeJiScale } from "@/lib/jiChordAnalysis";
 
 interface Props {
   tonicPc: number;
@@ -1097,23 +1098,69 @@ export default function ModeIdentificationTab({
             )}
           </div>
 
-          {/* JI lattice viewer — appears for any JI-family answer (the 19
-              JI scales registered in jiScaleData).  Plots each scale tone
-              on the (3-axis × 5-axis) 5-limit lattice.  Higher-prime tones
-              (7-, 11-, 13-, 17-, 19-, 23-, 29-, 31-limit) get projected
-              onto their nearest 5-limit cell with a purple chip + footnote
-              listing the exact cents and offset. */}
+          {/* JI Show Answer extras — chord-analysis box above, lattice
+              viewer below.  Both render only for JI-family scales, both
+              sized at the same fixed max-width (480 px) so they stack
+              cleanly as a matched pair. */}
           {curMode.current.family === JI_FAMILY && (() => {
             const cents = getJiScaleCents(curMode.current.name);
             const degs = getJiScaleDegrees(curMode.current.name);
+            const analysis = analyzeJiScale(curMode.current.name);
             if (!cents || !degs) return null;
             const tones = degs.map((degree, i) => ({ degree, cents: cents[i] }));
             const limit = limitForJiTonality(curMode.current.name);
+            const ROMAN = ["I","II","III","IV","V","VI","VII"];
+            const tagColor = (k: string) => {
+              if (k === "wolf") return "#cc6a8a";
+              if (k === "off-grid") return "#c8aa50";
+              if (k === "pure-3") return "#9999cc";
+              if (k === "pure-5") return "#6acca0";
+              if (k === "pure-7") return "#cc8855";
+              if (k === "pure-11") return "#9a66c0";
+              return "#888";
+            };
             return (
-              <JiScaleLattice
-                title={`5-LIMIT LATTICE PROJECTION${limit ? ` · ${limit}-limit scale` : ""}`}
-                tones={tones}
-              />
+              <div className="space-y-2">
+                {/* Chord analysis — same shape as the floating panel in
+                    ChordsTab so the user sees identical info in both
+                    places.  Tonic-relative triads with each chord's
+                    third / fifth classified as pure / wolf. */}
+                {analysis && (
+                  <div className="bg-[#0a0a0a] border border-[#5b5be6] rounded p-3" style={{ maxWidth: 480 }}>
+                    <p className="text-[10px] text-[#5b5be6] font-bold tracking-wider mb-2">
+                      CHORD ANALYSIS · {curMode.current.displayName}
+                    </p>
+                    <div className="grid grid-cols-[28px_1fr_1fr_60px] gap-x-2 gap-y-1 text-[10px]">
+                      <span className="text-[#555] font-medium">Ch</span>
+                      <span className="text-[#555] font-medium">Third</span>
+                      <span className="text-[#555] font-medium">Fifth</span>
+                      <span className="text-[#555] font-medium">Status</span>
+                      {analysis.map((row, i) => (
+                        <span key={i} style={{ display: "contents" }}>
+                          <span className="text-[#aaa] font-mono">{ROMAN[i]}</span>
+                          <span style={{ color: tagColor(row.third.kind) }}>
+                            {row.third.ratio}
+                          </span>
+                          <span style={{ color: tagColor(row.fifth.kind) }}>
+                            {row.fifth.ratio}
+                          </span>
+                          <span style={{ color: row.pure ? "#5cca5c" : "#cc6a8a", fontWeight: 600 }}>
+                            {row.pure ? "✓" : "✗ Wolf"}
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* Lattice projection — same fixed width (480 px) so the
+                    two boxes stack as a matched pair. */}
+                <div className="bg-[#0a0a0a] border border-[#5cca8a] rounded p-3" style={{ maxWidth: 480 }}>
+                  <p className="text-[10px] text-[#5cca8a] font-bold tracking-wider mb-2">
+                    5-LIMIT LATTICE PROJECTION{limit ? ` · ${limit}-limit scale` : ""}
+                  </p>
+                  <JiScaleLattice tones={tones} accent="#5cca8a" compact />
+                </div>
+              </div>
             );
           })()}
           {/* Degrees played / chord tones / scale, with characteristic tones highlighted */}
