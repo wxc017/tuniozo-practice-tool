@@ -52,6 +52,7 @@ import { recordAnswer, getDayTotals, accuracy, setImportBias, getImportBias, cle
 import { getSavedToken, downloadSync, uploadSync, clearToken } from "@/lib/googleDrive";
 import { buildSyncPayload, restoreFromSyncPayload } from "@/lib/syncData";
 import { getEDOIntervals, getLayoutFile, pcToNoteNameWithEnharmonic, formatHalfAccidentals } from "@/lib/edoData";
+import { JI_LIMIT_GROUPS } from "@/lib/jiTonalityFamilies";
 import {
   PracticeLogEntry,
   PracticeRating,
@@ -1534,18 +1535,48 @@ export default function App() {
           {(edo === 41 || edo === 53) ? (
             <div className="bg-[#111] rounded-xl border border-[#1e1e1e] p-5">
               <h2 className="font-semibold mb-4">{TONAL_TAB_TITLES[activeTab] ?? activeTab}</h2>
-              <div className="flex items-center justify-center py-16">
-                <div className="text-center max-w-md">
-                  <div className="inline-block px-4 py-2 rounded-md border border-amber-500/40 bg-amber-500/10 text-amber-300 text-xs font-semibold tracking-wider mb-4">
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <span className="px-2.5 py-1 rounded-md border border-amber-500/40 bg-amber-500/10 text-amber-300 text-[10px] font-semibold tracking-wider">
                     WORK IN PROGRESS
-                  </div>
-                  <p className="text-[#888] text-sm">
-                    {edo}-EDO support for the Tonal Audiation game modes isn't ready yet.
-                  </p>
-                  <p className="text-[#555] text-xs mt-2">
-                    Switch to 12, 17, 19, 22, or 31-EDO to use this tab. Other sections
-                    (Scalar Explorations, Harmonic Lattice, Temperament Explorer) work in {edo}-EDO.
-                  </p>
+                  </span>
+                  <span className="text-[#666] text-xs">
+                    {temperament === "pythagorean" ? "Pythagorean" : "Schismatic"} ({edo}-EDO) — limit-grouped tonality picker preview.
+                    Selecting a scale doesn't play anything yet; the JI scale data lands in the next commit.
+                  </span>
+                </div>
+
+                {/* Preview of the limit → family hierarchy for Pythagorean/
+                    Schismatic.  Same structure ChordsTab / IntervalsTab /
+                    Mode ID will use once the underlying scale data is
+                    registered in edoData.ts (step 5). */}
+                <div className="bg-[#0e0e0e] border border-[#1a1a1a] rounded p-3 space-y-3">
+                  <p className="text-[10px] text-[#555] font-medium tracking-wider">TONALITIES — {temperament.toUpperCase()}</p>
+                  {JI_LIMIT_GROUPS.map(group => (
+                    <div key={group.limit}>
+                      <div className="flex items-baseline gap-3 mb-1.5">
+                        <p className="text-[10px] font-semibold tracking-wider"
+                          style={{ color: group.color }}>{group.label}</p>
+                        <span className="text-[9px] text-[#555] italic">{group.blurb}</span>
+                      </div>
+                      <div className="ml-2 space-y-2">
+                        {group.families.map(fam => (
+                          <div key={fam.key}>
+                            <p className="text-[9px] text-[#666] font-medium tracking-wider mb-1">{fam.label}</p>
+                            <div className="flex flex-wrap gap-1">
+                              {fam.tonalities.map(t => (
+                                <button key={t}
+                                  disabled
+                                  className="px-2 py-1 text-[10px] rounded border border-[#222] bg-[#0a0a0a] text-[#555] cursor-not-allowed">
+                                  {t}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
