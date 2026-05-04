@@ -212,35 +212,35 @@ const JI_SCALES: JiScaleSpec[] = [
   // into the prime's microtonal flavour at one degree.  41-EDO
   // approximates each prime well enough to make the difference audible.
   // 23-LIMIT
-  { name: "23-Limit Major",
+  { name: "Vicesimotertial Major",
     // Standard 5-limit Major (1 9/8 5/4 4/3 3/2 5/3 …) but the 7th
     // borrows 23/12 (~1099¢) — between Just M7 (15/8 ≈ 1088¢) and Pyth
     // M7 (243/128 ≈ 1110¢), a leading-tone with 23-prime colour.
     steps: [["1",0],["2",203.9],["3",386.3],["4",498.0],["5",702.0],["6",884.4],["7",1098.9]] },
-  { name: "23-Limit Minor",
+  { name: "Vicesimotertial Minor",
     // 5-limit Minor spine; b3 lifts to 23/19 (~329¢) — sits between
     // Pyth m3 (294¢) and Just m3 (316¢), giving the b3 a brighter,
     // supraminor character without leaving minor territory.
     steps: [["1",0],["2",203.9],["b3",329.2],["4",498.0],["5",702.0],["b6",813.7],["b7",1017.6]] },
   // 29-LIMIT
-  { name: "29-Limit Major",
+  { name: "Vicenovenal Major",
     // 5-limit Major spine; b7 substitutes 29/16 (~1030¢) for 16/9 / 9/5
     // — a 29-flavoured "small minor 7th" giving a distinctive dominant-
     // bluesy colour to V7 and IV7 chords built off this scale.
     steps: [["1",0],["2",203.9],["3",386.3],["4",498.0],["5",702.0],["6",884.4],["b7",1029.6]] },
-  { name: "29-Limit Minor",
+  { name: "Vicenovenal Minor",
     // 5-limit Minor spine; b3 uses 29/24 (~328¢) and b6 uses 29/18
     // (~770¢) — both supra-flat versions of the standard minor degrees,
     // shifting the whole minor "mood" by ~10–15 cents at the modal
     // tones.  Subtle but unmistakable in 41-EDO.
     steps: [["1",0],["2",203.9],["b3",327.6],["4",498.0],["5",702.0],["b6",770.5],["b7",1017.6]] },
   // 31-LIMIT
-  { name: "31-Limit Major",
+  { name: "Trigesimoprimal Major",
     // 5-limit Major spine; the 7th uses 31/16 (~1145¢) — a "wide" major
     // 7th close to the Pythagorean 243/128 but with 31-prime character.
     // Resolves with extra urgency to the tonic.
     steps: [["1",0],["2",203.9],["3",386.3],["4",498.0],["5",702.0],["6",884.4],["7",1145.0]] },
-  { name: "31-Limit Minor",
+  { name: "Trigesimoprimal Minor",
     // 5-limit Minor spine; b3 lifts to 31/26 (~338¢) — between Just m3
     // and the neutral 11/9 — and b6 uses 31/20 (~765¢), slightly flat
     // of the just minor 6th.  The scale walks like Aeolian with two

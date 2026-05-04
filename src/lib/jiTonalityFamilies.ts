@@ -63,7 +63,7 @@ export interface JiLimitGroup {
 export const JI_LIMIT_GROUPS: JiLimitGroup[] = [
   {
     limit: 3,
-    label: "PYTHAGOREAN",
+    label: "PYTHAGOREAN (3-LIMIT)",
     color: "#c09050",
     blurb: "Pure 3:2 fifths only — thirds are 81/64 (~408¢), bright and tense.",
     families: [
@@ -81,7 +81,7 @@ export const JI_LIMIT_GROUPS: JiLimitGroup[] = [
   },
   {
     limit: 5,
-    label: "JUST INTONATION",
+    label: "JUST INTONATION (5-LIMIT)",
     color: "#6a9aca",
     blurb: "Pure 5:4 thirds + 3:2 fifths — the classical JI palette.",
     families: [
@@ -108,7 +108,7 @@ export const JI_LIMIT_GROUPS: JiLimitGroup[] = [
   },
   {
     limit: 7,
-    label: "SEPTIMAL",
+    label: "SEPTIMAL (7-LIMIT)",
     color: "#7aaa6a",
     blurb: "Adds 7:4, 7:6, 7:5 — bluesy minor-7s, subminor 3rds, septimal tritones.",
     families: [
@@ -140,7 +140,7 @@ export const JI_LIMIT_GROUPS: JiLimitGroup[] = [
   },
   {
     limit: 11,
-    label: "NEUTRAL / MAQAM",
+    label: "NEUTRAL / MAQAM (11-LIMIT)",
     color: "#9a66c0",
     blurb: "Adds 11:9 neutral third, 11:8 wide 4th — Mohajira and the Maqam palette.",
     families: [
@@ -169,7 +169,7 @@ export const JI_LIMIT_GROUPS: JiLimitGroup[] = [
   },
   {
     limit: 13,
-    label: "TRIDECIMAL",
+    label: "TRIDECIMAL (13-LIMIT)",
     color: "#c84a8a",
     blurb: "Adds 13:8 (~841¢) and 13:11 (~289¢) — the supraminor / wide-6th colour.",
     families: [
@@ -200,7 +200,7 @@ export const JI_LIMIT_GROUPS: JiLimitGroup[] = [
   },
   {
     limit: 17,
-    label: "HEPTADECIMAL",
+    label: "HEPTADECIMAL (17-LIMIT)",
     color: "#5a9aca",
     blurb: "17:16 (~105¢) gives a small supraminor 2nd; 17:9 (~1101¢) a wide leading-tone.",
     families: [
@@ -223,7 +223,7 @@ export const JI_LIMIT_GROUPS: JiLimitGroup[] = [
   },
   {
     limit: 19,
-    label: "NONADECIMAL",
+    label: "NONADECIMAL (19-LIMIT)",
     color: "#5acca0",
     blurb: "19:16 (~298¢) lands between Pythagorean and 5-limit minor 3rds; 19:15 (~409¢) gives a wide M3.",
     families: [
@@ -239,40 +239,40 @@ export const JI_LIMIT_GROUPS: JiLimitGroup[] = [
   },
   {
     limit: 23,
-    label: "VICESIMOTERTIAL",
+    label: "VICESIMOTERTIAL (23-LIMIT)",
     color: "#caac5a",
     blurb: "Major 7 lifts to 23/12; minor b3 lifts to 23/19 supraminor — recognisable Major / Minor with one 23-prime colour-tone.",
     families: [
       {
         key: "23-tertian",
         label: "TERTIAN",
-        tonalities: ["23-Limit Major", "23-Limit Minor"],
+        tonalities: ["Vicesimotertial Major", "Vicesimotertial Minor"],
       },
     ],
   },
   {
     limit: 29,
-    label: "VICENOVENAL",
+    label: "VICENOVENAL (29-LIMIT)",
     color: "#aa6a5a",
     blurb: "Major b7 borrows 29/16; Minor's b3 / b6 nudge into 29-territory at the modal tones.",
     families: [
       {
         key: "29-tertian",
         label: "TERTIAN",
-        tonalities: ["29-Limit Major", "29-Limit Minor"],
+        tonalities: ["Vicenovenal Major", "Vicenovenal Minor"],
       },
     ],
   },
   {
     limit: 31,
-    label: "TRIGESIMOPRIMAL",
+    label: "TRIGESIMOPRIMAL (31-LIMIT)",
     color: "#ca6acc",
     blurb: "Major 7 = 31/16 wide leading-tone; Minor b3 / b6 use 31-prime substitutes — Aeolian tilted into 31-flavour.",
     families: [
       {
         key: "31-tertian",
         label: "TERTIAN",
-        tonalities: ["31-Limit Major", "31-Limit Minor"],
+        tonalities: ["Trigesimoprimal Major", "Trigesimoprimal Minor"],
       },
     ],
   },
