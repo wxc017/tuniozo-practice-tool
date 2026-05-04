@@ -421,26 +421,22 @@ export function monzoTo3DHelical(
 
 /** Toroidal / Tonescape "3,5-primespace" projection.
  *
- *  When the EDO's M3-chain length (edo / gcd(edo, M3_step)) and
- *  M3-chain count (gcd(edo, M3_step)) are coprime — true for 12-EDO
- *  with M3_step=4 (chain length 3, chain count 4) — every EDO step
- *  decomposes into a unique (u_idx, v_idx) on a (count × length)
- *  grid by CRT.  Wrapping that grid onto a torus gives the
- *  Tonalsoft 12-edo 5-limit toroidal lattice exactly:
+ *  Every EDO renders as a smooth helix on a cylinder, with each
+ *  fifth advancing the major angle by 2π/edo and lifting z by one
+ *  slice.  After `edo` fifths the helix closes.  The cell's
+ *  position along the spiral is its chain-of-fifths index
+ *  k = step · P5⁻¹ (mod edo); this is the inverse of the
+ *  forward map step = k · P5_step (mod edo) that walks fifths
+ *  through every EDO class exactly once.
  *
- *    u = 2π · (step mod chain_count) / chain_count
- *    v = 2π · (step mod chain_length) / chain_length
- *
- *  Each augmented triad (M3-chain) becomes a vertical stack of
- *  `chain_length` cells at one of `chain_count` distinct major
- *  angles, and the chain of fifths weaves between them as a
- *  smooth closed spiral that visits every cell once.
- *
- *  For prime EDOs (19, 31, 41, 53 — the M3 step is coprime to
- *  the EDO so chain_count = 1), the formula degenerates to a
- *  single major-circle parameterisation: u = 2π · step / edo,
- *  v stays 0.  No torus structure is forced where the lattice
- *  doesn't have one.
+ *  Why a cylinder instead of a torus, even when the EDO is
+ *  composite: the (step mod a, step mod b) torus parameterisation
+ *  groups augmented triads into clean columns but jumps `u` by
+ *  a large angle per fifth (e.g. 270° in 12-EDO), so the P5 chain
+ *  draws as straight chord-lines slicing the surface rather than
+ *  a smooth curve.  Using k as the spine keeps each P5 step at
+ *  Δu = 2π/edo — a small, continuous advance — so the chain reads
+ *  visually as a single helical curve wrapping the cylinder.
  *
  *  Falls back to the linear sum projection when `edo` is null. */
 export function monzoTo3DToroidal(
@@ -456,44 +452,22 @@ export function monzoTo3DToroidal(
   for (let i = 0; i < primes.length; i++) step += val[i] * (exps[i] ?? 0);
   step = ((step % edo) + edo) % edo;
 
-  const m3Step = Math.round(edo * Math.log2(5 / 4));
-  const g = gcd(edo, m3Step);
-  const chainCount = g;                  // number of distinct M3-chains
-  const chainLength = edo / g;           // cells per chain
-  const R = 5.0;
-  const r = 2.0;
-
-  // CRT-decomposable case (12-EDO etc.): use (step mod chainCount,
-  // step mod chainLength) as the torus coordinates.
-  if (chainCount > 1 && chainLength > 1 && gcd(chainCount, chainLength) === 1) {
-    const u = 2 * Math.PI * (step % chainCount) / chainCount;
-    const v = 2 * Math.PI * (step % chainLength) / chainLength;
-    const x = (R + r * Math.cos(v)) * Math.cos(u);
-    const y = r * Math.sin(v);
-    const z = (R + r * Math.cos(v)) * Math.sin(u);
-    return [x, y, z];
-  }
-
-  // Prime / non-decomposable EDOs (19, 31, 41, 53 …): walk the
-  // chain of fifths as a helix on a cylinder.  Each fifth advances
-  // the major angle by 2π/edo and lifts the z height by one slice
-  // of the cylinder.  After `edo` fifths the helix closes.  The
-  // `k` index is the cell's position along the fifth chain — found
-  // by inverting the P5 step modulo the EDO so class N is at
-  // helix-index k = N · P5⁻¹ (mod edo).
+  // Modular inverse of the P5 step — small loop is fine for edo ≤ ~100.
+  const p5Step = Math.round(edo * Math.log2(3 / 2));
   let invP5 = 0;
   for (let i = 1; i < edo; i++) {
-    if (((Math.round(edo * Math.log2(3 / 2)) * i) % edo + edo) % edo === 1) {
+    if (((p5Step * i) % edo + edo) % edo === 1) {
       invP5 = i;
       break;
     }
   }
   const k = ((step * invP5) % edo + edo) % edo;
+
+  const cylR = 5.0;
+  const verticalSpan = 10.0;
   const u = 2 * Math.PI * k / edo;
-  const cylR = R + r;
-  const verticalSpan = (R + r) * 2.0;
-  const z = (k / edo) * verticalSpan;
-  return [cylR * Math.cos(u), z - verticalSpan / 2, cylR * Math.sin(u)];
+  const z = (k / edo) * verticalSpan - verticalSpan / 2;
+  return [cylR * Math.cos(u), z, cylR * Math.sin(u)];
 }
 
 // ═══════════════════════════════════════════════════════════════
