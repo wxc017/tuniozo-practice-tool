@@ -2086,15 +2086,32 @@ function MonzoScene({ lattice, topology, droneNodes, hoveredNode, onHover, onCli
     const repSet = new Set<string>();
     for (const [, keys] of members) {
       if (keys.length < 2) continue;
-      // Pick simplest ratio: smallest n*d product
+      // Two-tier rep score:
+      //   tier 0 = ratio is octave-reduced into [1, 2)
+      //   tier 1 = anything else
+      //   secondary = smallest n*d
+      // Without the in-octave tier, the picker favours cells at
+      // a=0 (since 2^0 = 1 makes n*d minimal), which collapses
+      // every rep onto the prime-2 = 0 plane and flattens the
+      // lattice.  Tonescape's TM-basis spreads cells across the
+      // prime-2 axis precisely because it picks octave-reduced
+      // representatives — that's where the toroidal 3D depth
+      // comes from.
       let bestKey = keys[0];
+      let bestTier = 2;
       let bestScore = Infinity;
       for (const k of keys) {
         const parts = k.split("/");
         const n = parseInt(parts[0], 10);
         const d = parts[1] ? parseInt(parts[1], 10) : 1;
+        const ratio = n / d;
+        const tier = (ratio >= 1 && ratio < 2) ? 0 : 1;
         const score = n * d;
-        if (score < bestScore) { bestScore = score; bestKey = k; }
+        if (tier < bestTier || (tier === bestTier && score < bestScore)) {
+          bestTier = tier;
+          bestScore = score;
+          bestKey = k;
+        }
       }
       repSet.add(bestKey);
       for (const k of keys) sibMap.set(k, keys);
