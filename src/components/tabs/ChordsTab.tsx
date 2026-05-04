@@ -1745,8 +1745,12 @@ export default function ChordsTab({
               )}
             </div>
 
-            {/* Play / Stop / Replay / Show Answer */}
-            <div className="flex gap-2 flex-wrap items-center">
+            {/* Play / Stop / Replay / Show Answer — sticky so the
+                buttons stay reachable while the user scrolls down
+                through the chord-tone reveal and harmonic lattice
+                further below.  Stays inside the section column so
+                it never overlaps content from neighbouring tabs. */}
+            <div className="flex gap-2 flex-wrap items-center sticky top-0 z-20 bg-[#0d0d0d] py-2 -mx-2 px-2 border-b border-[#1e1e1e]">
               <button onClick={startFunctionalLoop} disabled={isLooping || !canPlay}
                 title={disabledReason ?? undefined}
                 className="bg-[#e0a040] hover:bg-[#c89030] disabled:opacity-50 disabled:cursor-not-allowed text-black px-5 py-2 rounded text-sm font-bold transition-colors">
@@ -1969,9 +1973,9 @@ export default function ChordsTab({
                       column's height so the empty space below the
                       keyboard fills with a soft background instead
                       of being blank. */}
-                  <div className="lg:w-[42%] lg:flex-shrink-0 lg:self-stretch flex flex-col gap-2">
+                  <div className="lg:w-[28%] lg:flex-shrink-0 lg:self-start flex flex-col gap-2">
                     {highlightedPitches && (
-                      <div className="rounded border border-[#3a3a1a] overflow-hidden bg-[#0a0a0a] sticky top-2" style={{ maxWidth: "100%" }}>
+                      <div className="rounded border border-[#3a3a1a] overflow-hidden bg-[#0a0a0a] sticky top-2" style={{ maxWidth: "100%", maxHeight: "32vh" }}>
                         {edo === 12 && vizType === "piano" ? (
                           <PianoKeyboard highlightedPitches={highlightedPitches} onKeyClick={onKeyClick} />
                         ) : edo === 12 && vizType === "guitar" ? (
@@ -2048,7 +2052,6 @@ export default function ChordsTab({
                         </div>
                         <div style={{ width: "100%", height: "70vh", overflow: "hidden" }}>
                           <LatticeView
-                            externalHighlights={allTraceKeys}
                             activeNodeKeys={activeTones}
                             temperingForEdo={edo}
                             chromeless
