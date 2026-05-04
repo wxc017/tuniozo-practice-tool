@@ -171,9 +171,11 @@ function PlayBtn({ onClick, title, small }: { onClick: () => void; title?: strin
 
 // ═══════════════════════════════════════════════════════════════
 
-type SubTab = "families" | "edo-temper" | "fifth-quality" | "ring-map" | "theory";
+// "families" sub-tab removed per request — the FamiliesPanel component
+// is still defined below for potential reuse but is no longer reachable
+// from the SubTab UI.  Default sub-tab now opens directly on EDO Temper.
+type SubTab = "edo-temper" | "fifth-quality" | "ring-map" | "theory";
 const SUB_TAB_LABELS: Record<SubTab, string> = {
-  "families": "Families",
   "edo-temper": "EDO Temper",
   "fifth-quality": "Fifth Quality",
   "ring-map": "Ring Structure",
@@ -181,7 +183,7 @@ const SUB_TAB_LABELS: Record<SubTab, string> = {
 };
 
 export default function TemperamentExplorer() {
-  const [subTab, setSubTab] = useState<SubTab>("families");
+  const [subTab, setSubTab] = useState<SubTab>("edo-temper");
   const [selectedEdo, setSelectedEdo] = useState(12);
 
   const navigateToEdoTemper = useCallback((edo: number) => {
@@ -200,7 +202,7 @@ export default function TemperamentExplorer() {
         ))}
       </div>
       <div className="flex-1 min-h-0 overflow-auto">
-        {subTab === "families" && <FamiliesPanel onSelectEdo={navigateToEdoTemper} />}
+        {/* Families sub-tab removed; FamiliesPanel kept defined for reuse */}
         {subTab === "edo-temper" && <EdoTemper selectedEdo={selectedEdo} setSelectedEdo={setSelectedEdo} />}
         {subTab === "fifth-quality" && <FifthQuality onSelectEdo={navigateToEdoTemper} />}
         {subTab === "ring-map" && <RingMap onSelectEdo={navigateToEdoTemper} />}
