@@ -31,10 +31,15 @@ import { limitForJiTonality } from "@/lib/jiTonalityFamilies";
 import { tracePathDrifts, driftCentsToSteps, stripChordLabel } from "@/lib/jiLattice";
 import FloatingPanel from "@/components/FloatingPanel";
 import JiScaleLattice from "@/components/JiScaleLattice";
+import PianoKeyboard from "@/components/PianoKeyboard";
 
 const JI_SCALE_NAMES_SET = new Set(JI_SCALE_NAMES);
 
-interface Props {
+interface SharedHighlightProps {
+  highlightedPitches?: Set<number>;
+}
+
+interface Props extends SharedHighlightProps {
   tonicPc: number;
   lowestPitch: number;
   highestPitch: number;
@@ -174,7 +179,7 @@ function tonalitySectionsForEdo(edo: number): TonalitySection[] {
 const STANDARD_THIRD_QUALITIES = new Set(["sus2", "min3", "maj3", "sus4"]);
 
 export default function ChordsTab({
-  tonicPc, lowestPitch, highestPitch, edo, onHighlight, responseMode, onResult, onPlay, lastPlayed, ensureAudio, playVol = 0.55, layoutPitchRange, tabSettingsRef, answerButtons
+  tonicPc, lowestPitch, highestPitch, edo, onHighlight, responseMode, onResult, onPlay, lastPlayed, ensureAudio, playVol = 0.55, layoutPitchRange, tabSettingsRef, answerButtons, highlightedPitches,
 }: Props) {
   const frameTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -1960,10 +1965,37 @@ export default function ChordsTab({
               );
             })()}
 
-            {/* Floating lattice box — top-right of viewport, appears when
-                Show Answer is open.  Shows the JI lattice for the active
-                tonality (if it's a JI scale) so the user can see the
-                scale's lattice positions alongside the chord-tone reveal. */}
+            {/* Floating mini visualizer — top-right, ~25 vw wide.
+                Mirrors the main keyboard so the user can see what's
+                being highlighted while scrolled past the sticky
+                visualizer at the top of the page.  Only renders when
+                Show Answer is open and we're in 12-EDO (PianoKeyboard
+                is 12-EDO native).  In other EDOs the chord-tone
+                buttons in the answer reveal already serve the
+                visualization role. */}
+            {fhShowAnswer && fhAnswer && edo === 12 && highlightedPitches && (
+              <FloatingPanel
+                position="top-right"
+                title="VISUALIZER"
+                accent="#5b5be6"
+                storageKey="lt_crd_answer_viz_collapsed"
+                topOffset={20}
+              >
+                <div style={{ transform: "scale(0.55)", transformOrigin: "top left", width: "180%" }}>
+                  <PianoKeyboard
+                    highlightedPitches={highlightedPitches}
+                    pitchMin={tonicPc - 12}
+                    pitchMax={tonicPc + 24}
+                  />
+                </div>
+              </FloatingPanel>
+            )}
+
+            {/* Floating lattice box — top-right of viewport, stacked
+                below the mini visualizer.  Shows the JI lattice for the
+                active tonality (if it's a JI scale) so the user can see
+                the scale's lattice positions alongside the chord-tone
+                reveal. */}
             {fhShowAnswer && fhAnswer?.scaleTonality && (() => {
               const cents = getJiScaleCents(fhAnswer.scaleTonality);
               const degs = getJiScaleDegrees(fhAnswer.scaleTonality);
@@ -1975,7 +2007,7 @@ export default function ChordsTab({
                   title={`SCALE LATTICE · ${fhAnswer.scaleTonality}`}
                   accent="#c8a850"
                   storageKey="lt_crd_answer_lattice_collapsed"
-                  topOffset={80}
+                  topOffset={edo === 12 ? 200 : 80}
                 >
                   <JiScaleLattice tones={tones} accent="#c8a850" compact />
                 </FloatingPanel>

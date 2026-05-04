@@ -681,6 +681,11 @@ export default function App() {
     tabSettingsRef,
     layoutPitchRange: layoutPitchRange ?? undefined,
     answerButtons,
+    // Live highlighted-pitches set so a tab can mirror the main keyboard
+    // in a mini-visualizer overlay when the user scrolls past the
+    // sticky keyboard at the top.  ChordsTab uses this in its
+    // Show-Answer floating panel.
+    highlightedPitches: highlighted,
   };
 
   const tabs = (["intervals","chords","modeid","melody","jazz","patterns","drone"] as Tab[]);
