@@ -223,3 +223,172 @@ export function tracePathDrifts(progression: string[]): number[] {
 export function driftCentsToSteps(driftCents: number, edo: number): number {
   return Math.round((driftCents / 1200) * edo);
 }
+
+// ── Per-note voicings (for limit-aware Adaptive JI retuning) ────────────
+//
+// Each chord quality maps to a list of per-voice lattice positions
+// relative to the chord ROOT.  This lets the chord-pool retuning do two
+// things the old triad-only adaptiveTriadFor() couldn't:
+//   1. Handle 4-note (and longer) voicings — dom7's 7/4 gets a real
+//      lattice position, not silently dropped.
+//   2. Reach into higher prime axes — septimal dom7 (4:5:6:7) places
+//      the 7th on the 7-axis, undecimal neutral chord (4:9/2:11/2)
+//      uses the 11-axis for its third, etc.
+//
+// When the lattice walker (tracePath) accumulates motions, voices that
+// traverse higher-prime axes carry the comma activity — the audible
+// septimal pump on V7→IV in 7-limit, the undecimal pump on neutral
+// chord resolutions in 11-limit, and so on.
+
+export interface ChordVoicing {
+  /** Quality identifier (e.g. "major", "septimal-dom7", "neutral-triad"). */
+  quality: string;
+  /** Per-voice lattice positions, relative to chord root.  voices[0]
+   *  is always the chord root at [0, ...] (origin). */
+  voices: LatticePos[];
+}
+
+/** Catalog of pure-ratio voicings indexed by quality.  The 5-limit
+ *  voicing is the default; higher-prime variants are listed alongside
+ *  with explicit "septimal-" / "neutral-" / "tridecimal-" prefixes.
+ *
+ *  Lattice convention (all positions are root-relative):
+ *    [3-axis, 5-axis, 7-axis, 11-axis, 13-axis, ...]
+ *  Trailing zeros may be omitted; padPos() pads to canonical length. */
+export const VOICING_CATALOG: Record<string, ChordVoicing> = {
+  // ── 5-limit triads (the universal defaults) ───────────────────────────
+  // 4:5:6 major
+  major: { quality: "major", voices: [[0, 0], [0, +1], [+1, 0]] },
+  // 10:12:15 minor (m3 = 6/5, P5 = 3/2)
+  minor: { quality: "minor", voices: [[0, 0], [+1, -1], [+1, 0]] },
+  // Diminished: m3 + diminished-5th (36/25 = stacked m3s)
+  dim: { quality: "dim", voices: [[0, 0], [+1, -1], [+2, -2]] },
+  // Augmented: M3 + aug-5th (25/16 = stacked M3s)
+  aug: { quality: "aug", voices: [[0, 0], [0, +1], [0, +2]] },
+
+  // ── 5-limit 7th chords ────────────────────────────────────────────────
+  // 8:10:12:15 maj7 (M7 = 15/8)
+  maj7: { quality: "maj7", voices: [[0, 0], [0, +1], [+1, 0], [+1, +1]] },
+  // Just minor 7 chord: 1, 6/5, 3/2, 9/5 — has m3 + P5 + Just m7
+  min7: { quality: "min7", voices: [[0, 0], [+1, -1], [+1, 0], [+2, -1]] },
+  // 5-limit (Pythagorean) dom7: 1, 5/4, 3/2, 16/9 — m7 = 16/9 = 3^-2
+  dom7: { quality: "dom7", voices: [[0, 0], [0, +1], [+1, 0], [-2, 0]] },
+  // Half-diminished: m3, dim5, m7
+  m7b5: { quality: "m7b5", voices: [[0, 0], [+1, -1], [+2, -2], [+2, -1]] },
+  // Fully diminished: stacked m3s = 1, 6/5, 36/25, 216/125
+  dim7: { quality: "dim7", voices: [[0, 0], [+1, -1], [+2, -2], [+3, -3]] },
+
+  // ── 7-limit (septimal) ────────────────────────────────────────────────
+  // 4:5:6:7 — the harmonic dom7 (m7 = 7/4 instead of 16/9)
+  "septimal-dom7": { quality: "septimal-dom7", voices: [[0, 0], [0, +1], [+1, 0], [0, 0, +1]] },
+  // 6:7:9 subminor triad — m3 = 7/6, P5 = 3/2
+  "septimal-subminor": { quality: "septimal-subminor", voices: [[0, 0], [+1, 0, -1], [+1, 0]] },
+  // 14:18:21 supermajor triad — M3 = 9/7, P5 = 3/2
+  "septimal-supermajor": { quality: "septimal-supermajor", voices: [[0, 0], [+2, 0, -1], [+1, 0]] },
+  // 7-limit "subminor 7" — root + 7/6 + 3/2 + 7/4
+  "septimal-min7": { quality: "septimal-min7", voices: [[0, 0], [+1, 0, -1], [+1, 0], [0, 0, +1]] },
+
+  // ── 11-limit (neutral) ────────────────────────────────────────────────
+  // Neutral triad: root + 11/9 + 3/2.  11/9 = 11 / 3^2 → lattice [-2, 0, 0, +1].
+  "neutral-triad": { quality: "neutral-triad", voices: [[0, 0], [-2, 0, 0, +1], [+1, 0]] },
+  // 11-limit "wide-4" sus chord: root + 11/8 + 3/2.  11/8 → lattice [0, 0, 0, +1].
+  "wide-sus": { quality: "wide-sus", voices: [[0, 0], [0, 0, 0, +1], [+1, 0]] },
+
+  // ── 13-limit (tridecimal) ─────────────────────────────────────────────
+  // Tridecimal triad — uses 13/8 as a wide M6-ish substitute for the 5th.
+  "tridecimal-triad": { quality: "tridecimal-triad", voices: [[0, 0], [0, +1], [0, 0, 0, 0, +1]] },
+};
+
+/** Bucket a third interval (in cents) into a quality category. */
+function classifyThird(cents: number): "sub3" | "m3" | "N3" | "M3" | "sup3" | "?" {
+  if (cents < 280) return "sub3";
+  if (cents < 332) return "m3";
+  if (cents < 372) return "N3";
+  if (cents < 422) return "M3";
+  if (cents < 460) return "sup3";
+  return "?";
+}
+/** Bucket a fifth interval (in cents) into a quality category. */
+function classifyFifth(cents: number): "d5" | "P5" | "A5" | "?" {
+  if (cents < 670) return "d5";
+  if (cents < 715) return "P5";
+  if (cents < 750) return "A5";
+  return "?";
+}
+/** Bucket a seventh interval (in cents).  Distinguishes septimal 7/4
+ *  (~969¢) from Pythagorean 16/9 (~996¢) and the major 7th. */
+function classifySeventh(cents: number): "harm7" | "m7" | "M7" | "?" {
+  if (cents < 985) return "harm7";   // 7/4 territory
+  if (cents < 1060) return "m7";     // 16/9 / 9/5
+  if (cents < 1130) return "M7";     // 15/8
+  return "?";
+}
+
+/** Identify a chord's quality from its EDO-step intervals (root-relative).
+ *  Returns one of the keys in VOICING_CATALOG, or null if no match.
+ *  The returned quality is what voicingFor() should be called with. */
+export function chordQualityFromSteps(steps: number[], edo: number): string | null {
+  if (steps.length < 3) return null;
+  const root = steps[0];
+  const t3c = ((steps[1] - root) / edo) * 1200;
+  const t5c = ((steps[2] - root) / edo) * 1200;
+  const t7c = steps.length >= 4 ? ((steps[3] - root) / edo) * 1200 : null;
+  const t3 = classifyThird(t3c);
+  const t5 = classifyFifth(t5c);
+  // Triads
+  if (t7c === null) {
+    if (t3 === "M3" && t5 === "P5") return "major";
+    if (t3 === "m3" && t5 === "P5") return "minor";
+    if (t3 === "m3" && t5 === "d5") return "dim";
+    if (t3 === "M3" && t5 === "A5") return "aug";
+    if (t3 === "N3" && t5 === "P5") return "neutral-triad";
+    if (t3 === "sub3" && t5 === "P5") return "septimal-subminor";
+    if (t3 === "sup3" && t5 === "P5") return "septimal-supermajor";
+    return null;
+  }
+  // 7th chords
+  const t7 = classifySeventh(t7c);
+  if (t3 === "M3" && t5 === "P5") {
+    if (t7 === "harm7") return "septimal-dom7";
+    if (t7 === "m7") return "dom7";
+    if (t7 === "M7") return "maj7";
+  }
+  if (t3 === "m3" && t5 === "P5") {
+    if (t7 === "harm7") return "septimal-min7";
+    if (t7 === "m7") return "min7";
+  }
+  if (t3 === "m3" && t5 === "d5") {
+    if (t7 === "m7") return "m7b5";
+    if (t7 === "harm7" || t7 === "M7") return "dim7";  // includes the bb7 = M6 enharmonic
+  }
+  return null;
+}
+
+/** Look up the per-note voicing for a quality.  Returns null when the
+ *  quality isn't in the catalog (caller should fall back to leaving the
+ *  chord unretuned). */
+export function voicingFor(quality: string): ChordVoicing | null {
+  return VOICING_CATALOG[quality] ?? null;
+}
+
+/** Convert a voicing's per-voice lattice positions to per-voice cent
+ *  offsets from the chord root.  Each cents value sits in [0, 1200). */
+export function voicingToCents(voicing: ChordVoicing): number[] {
+  return voicing.voices.map(v => latticeToCents(v));
+}
+
+/** Convert a voicing to per-voice EDO-step offsets from the chord root.
+ *  Octave bumps are applied so each voice ascends from the previous one
+ *  (so a triad voicing returns [0, M3-step, P5-step], not [0, M3, P5%edo]). */
+export function voicingToSteps(voicing: ChordVoicing, edo: number): number[] {
+  const cents = voicingToCents(voicing);
+  let prev = 0;
+  return cents.map((c, i) => {
+    if (i === 0) { prev = 0; return 0; }
+    let step = Math.round((c / 1200) * edo);
+    // Ensure ascending: if step lands below previous voice, bump octave(s).
+    while (step <= prev) step += edo;
+    prev = step;
+    return step;
+  });
+}

@@ -23,7 +23,8 @@ import { xenIntervalsForEdo, bankToScaleFamMode } from "@/lib/tonalityChordPool"
 import { formatRomanNumeral } from "@/lib/formatRoman";
 import { JI_LIMIT_GROUPS, jiLimitGroupsForEdo } from "@/lib/jiTonalityFamilies";
 import { JI_SCALE_NAMES, getJiScaleCents, getJiScaleDegrees } from "@/lib/jiScaleData";
-import { analyzeJiScale, adaptiveTriadFor, COMMA_DRIFT_CATALOG } from "@/lib/jiChordAnalysis";
+import { analyzeJiScale, COMMA_DRIFT_CATALOG } from "@/lib/jiChordAnalysis";
+import { chordQualityFromSteps, voicingFor, voicingToSteps } from "@/lib/jiLattice";
 import { limitForJiTonality } from "@/lib/jiTonalityFamilies";
 import { tracePathDrifts, driftCentsToSteps, stripChordLabel } from "@/lib/jiLattice";
 import FloatingPanel from "@/components/FloatingPanel";
@@ -510,28 +511,32 @@ export default function ChordsTab({
       }
     }
     // Adaptive JI retuning: in 41/53 EDO with adaptive mode on, replace
-    // each triad's third and fifth with pure JI ratios computed from the
-    // chord root.  Quality (M/m/dim/etc.) is inferred from the frozen
-    // chord's third/fifth so the substitution preserves the chord
-    // identity.  4-note voicings retune the triad portion only — the 7th
-    // and any extensions stay where the scale puts them.
+    // each chord's voices with pure-ratio positions taken from the
+    // VOICING_CATALOG.  Quality (M/m/dim/dom7/septimal-dom7/neutral/etc.)
+    // is inferred from the chord's frozen step intervals; the matching
+    // voicing then provides a per-note lattice position which is
+    // converted back to absolute step values.  Unlike the old triad-only
+    // adaptive retuning, this honours higher-prime intervals — septimal
+    // dom7 stays 4:5:6:7, neutral triads stay at 11/9, etc.
+    //
+    // Chords with no matching catalog voicing pass through unchanged
+    // (better an unmodified frozen chord than a wrong substitution).
     if (jiMode === "adaptive" && (edo === 41 || edo === 53)) {
       const out: Record<string, number[]> = {};
       for (const [label, steps] of Object.entries(map)) {
         if (steps.length < 3) { out[label] = steps; continue; }
+        const quality = chordQualityFromSteps(steps, edo);
+        const voicing = quality ? voicingFor(quality) : null;
+        if (!voicing) { out[label] = steps; continue; }
+        const voiceSteps = voicingToSteps(voicing, edo);
         const root = steps[0];
-        const thirdC = ((steps[1] - root) / edo) * 1200;
-        const fifthC = ((steps[2] - root) / edo) * 1200;
-        // Inline classification — avoids exposing private analyzer state
-        const cls = (c: number) => ({ cents: c, ratio: "", name: "", kind: "off-grid" as const });
-        const adaptive = adaptiveTriadFor(cls(thirdC), cls(fifthC), edo);
-        if (!adaptive) { out[label] = steps; continue; }
-        out[label] = [
-          root,
-          root + adaptive.steps[1],
-          root + adaptive.steps[2],
-          ...steps.slice(3),
-        ];
+        // Use voicing for the first N voices we have offsets for; keep
+        // any remaining scale tones (extensions beyond the 7th) as-is.
+        const retuned = voiceSteps.map(off => root + off);
+        if (steps.length > voiceSteps.length) {
+          retuned.push(...steps.slice(voiceSteps.length));
+        }
+        out[label] = retuned;
       }
       return out;
     }
