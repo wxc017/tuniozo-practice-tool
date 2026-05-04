@@ -3651,7 +3651,10 @@ function EdoTonnetzSvg({
 type ViewMode = "lattice" | "harmonic" | "otonal" | "comma" | "chain" | "monzo";
 
 const MODE_LABELS: Record<ViewMode, string> = {
-  lattice: "Tonnetz",
+  lattice: "Lattice",          // renamed from "Tonnetz" so the first tab
+                                // reads as the canonical lattice view —
+                                // it's still the Tonnetz internally, the
+                                // label just matches the conceptual name.
   monzo: "Monzo Lattice",
   harmonic: "Harmonic Series",
   otonal: "Otonal / Utonal",
