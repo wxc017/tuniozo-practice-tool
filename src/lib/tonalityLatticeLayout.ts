@@ -617,13 +617,12 @@ export function buildFamilyLattice(
   const tonicKeyIdx = keys.findIndex(k => k.pc === tonicNorm);
   const tonicKey = tonicKeyIdx >= 0 ? keys[tonicKeyIdx] : keys[8];
 
-  // Tube radius has to be coordinated with the renderer's
-  // torusGeometry.  Keep tubes thinner than node spheres (~0.55)
-  // so nodes read as the prominent points and rings as connecting
-  // tracks underneath.
-  const FAMILY_RING_TUBE = 0.3;
-  const RING_SPACING = 6.5;
-  const RING_R0 = 7;
+  // Tighter packing: rings closer together, smaller inner radius,
+  // so the whole lattice fits a more readable area without forcing
+  // the user to zoom out.  Tube stays thin so node spheres dominate.
+  const FAMILY_RING_TUBE = 0.18;
+  const RING_SPACING = 3.5;
+  const RING_R0 = 4;
   const nodes: LatticeNode[] = [];
   const nodeMap = new Map<string, LatticeNode>();
   const familyRings: Array<{ familyId: string; color: string; radius: number }> = [];
@@ -633,7 +632,10 @@ export function buildFamilyLattice(
     if (familyModes.length === 0) continue;
     const sorted = [...familyModes].sort((a, b) => b.brightness - a.brightness);
     const radius = RING_R0 + family.zOrd * RING_SPACING;
-    familyRings.push({ familyId: family.id, color: family.color, radius });
+    // Rings render grey — colour now lives on the 1-alt edges,
+    // with rings as a neutral backbone so the coloured edges read
+    // as the structural information.
+    familyRings.push({ familyId: family.id, color: "#666", radius });
     for (let i = 0; i < sorted.length; i++) {
       const mode = sorted[i];
       const angle = (i / sorted.length) * 2 * Math.PI - Math.PI / 2;
@@ -669,9 +671,15 @@ export function buildFamilyLattice(
       for (const v of pcSets[i]) if (!pcSets[j].has(v)) symdiff++;
       for (const v of pcSets[j]) if (!pcSets[i].has(v)) symdiff++;
       if (symdiff / 2 === 1) {
+        // Edge colour picks the brighter of the two endpoint
+        // families (lower zOrd) so cross-family connections carry
+        // visual info; same-family edges (rare) keep that family's
+        // colour.
+        const a = nodes[i], b = nodes[j];
+        const edgeFamily = a.family.zOrd <= b.family.zOrd ? a.family : b.family;
         edges.push({
-          fromId: nodes[i].id, toId: nodes[j].id,
-          type: "y", alt: 1, color: "#aabbcc",
+          fromId: a.id, toId: b.id,
+          type: "y", alt: 1, color: edgeFamily.color,
         });
       }
     }

@@ -352,8 +352,13 @@ function NodeMesh({ node, edo, isAnchor, isActive, isHovered, isSelected, onHove
   });
 
   // Anchor (the user's picker selection) is *much* bigger than the
-  // other nodes so it always reads as the lattice's centre of attention.
-  const r = isAnchor ? 0.55 : 0.22;
+  // other nodes so it always reads as the lattice's centre of
+  // attention.  Family-lattice (no altLevel) bumps every node so
+  // the spheres dominate the slim rings underneath.
+  const isFamilyView = node.altLevel === undefined;
+  const r = isFamilyView
+    ? (isAnchor ? 0.7 : 0.45)
+    : (isAnchor ? 0.55 : 0.22);
 
   return (
     <group position={node.pos}>
@@ -420,11 +425,11 @@ function NodeMesh({ node, edo, isAnchor, isActive, isHovered, isSelected, onHove
           // by sight without hovering.
           <div style={{
             color: palette,
-            opacity: 0.92,
-            fontSize: 13,
+            opacity: 0.95,
+            fontSize: isFamilyView ? 22 : 13,
             fontWeight: 700,
             whiteSpace: "nowrap",
-            transform: "translate(0, -22px)",
+            transform: isFamilyView ? "translate(0, -34px)" : "translate(0, -22px)",
             textShadow: "0 0 6px #000, 0 0 6px #000",
             letterSpacing: 0.3,
           }}>
@@ -605,13 +610,13 @@ function Scene({
           puts the ring in XY, matching the node-pos plane. */}
       {(lattice.familyRings ?? []).map(ring => (
         <mesh key={`ring-${ring.familyId}`}>
-          <torusGeometry args={[ring.radius, 0.3, 12, 128]} />
+          <torusGeometry args={[ring.radius, 0.18, 10, 128]} />
           <meshStandardMaterial
             color={ring.color}
             emissive={ring.color}
-            emissiveIntensity={0.5}
-            roughness={0.55} metalness={0}
-            transparent opacity={0.95} />
+            emissiveIntensity={0.15}
+            roughness={0.7} metalness={0}
+            transparent opacity={0.85} />
         </mesh>
       ))}
 
@@ -1163,7 +1168,7 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
   // are active — the alteration lattice scales up (R 14 → 28) when
   // satellites exist, so the camera pulls back accordingly.
   const cameraPos: [number, number, number] = latticeView === "family"
-    ? [0, 0, 90]
+    ? [0, 0, 50]
     : pcExpansionInfo.size > 0
       ? [80, 60, 160]
       : [40, 30, 80];
