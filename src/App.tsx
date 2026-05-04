@@ -70,7 +70,7 @@ import {
 
 const EDO_OPTIONS = [12, 17, 19, 31, 41, 53];
 
-type VisualizerType = "lumatone" | "piano" | "guitar" | "bass";
+export type VisualizerType = "lumatone" | "piano" | "guitar" | "bass";
 const VIZ_LABELS: Record<VisualizerType, string> = {
   lumatone: "Lumatone",
   piano: "Piano",
@@ -701,6 +701,14 @@ export default function App() {
     // sticky keyboard at the top.  ChordsTab uses this in its
     // Show-Answer floating panel.
     highlightedPitches: highlighted,
+    // Main-visualizer state forwarded so a tab can render the same
+    // visualizer it already shows at the top — used by ChordsTab to
+    // mount a bottom-right floating mirror of the main keyboard while
+    // Show Answer is open and the sticky main keyboard is scrolled
+    // out of view.
+    vizType,
+    layout,
+    onKeyClick: (key: ComputedKey) => { void ensureAudio().then(() => handleKeyClick(key)); },
   };
 
   const tabs = (["intervals","chords","modeid","melody","jazz","patterns","drone"] as Tab[]);
@@ -1037,7 +1045,7 @@ export default function App() {
           (not nested in the header) so its `sticky top-0` containing block
           spans the full scroll range. Only shown in tonal audiation. */}
       {(section === "ear-trainer" || section === "scalar-exploration") && (
-        <div className="sticky top-0 z-30 bg-[#0d0d0d] border-b border-[#1e1e1e] px-4 pt-2 pb-2 flex-shrink-0">
+        <div id="main-visualizer" className="sticky top-0 z-30 bg-[#0d0d0d] border-b border-[#1e1e1e] px-4 pt-2 pb-2 flex-shrink-0">
           {edo === 12 && vizType === "piano" ? (
             <PianoKeyboard highlightedPitches={highlighted}
               onKeyClick={async (k) => { await ensureAudio(); handleKeyClick(k as ComputedKey); }} />

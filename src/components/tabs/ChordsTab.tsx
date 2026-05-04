@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, lazy, Suspense } from "react";
 import { audioEngine } from "@/lib/audioEngine";
 import { useLS, registerKnownOption, unregisterKnownOptionsForPrefix } from "@/lib/storage";
 import type { TabSettingsSnapshot } from "@/App";
@@ -26,24 +26,32 @@ import { formatRomanNumeral } from "@/lib/formatRoman";
 import { JI_LIMIT_GROUPS, jiLimitGroupsForEdo } from "@/lib/jiTonalityFamilies";
 import { JI_SCALE_NAMES, getJiScaleCents, getJiScaleDegrees } from "@/lib/jiScaleData";
 import { analyzeJiScale, COMMA_DRIFT_CATALOG } from "@/lib/jiChordAnalysis";
-import { chordQualityFromSteps, voicingFor, voicingToSteps } from "@/lib/jiLattice";
+import { chordQualityFromSteps, voicingFor, voicingToSteps, coerceTo5Limit } from "@/lib/jiLattice";
 import { limitForJiTonality } from "@/lib/jiTonalityFamilies";
 import { tracePathDrifts, driftCentsToSteps, stripChordLabel } from "@/lib/jiLattice";
 import FloatingPanel from "@/components/FloatingPanel";
 import JiScaleLattice from "@/components/JiScaleLattice";
 import PianoKeyboard from "@/components/PianoKeyboard";
-import { speakSyllable } from "@/lib/solfegeSpeech";
+import GuitarFretboard from "@/components/GuitarFretboard";
+import BassFretboard from "@/components/BassFretboard";
+import LumatoneKeyboard from "@/components/LumatoneKeyboard";
+import type { LayoutResult, ComputedKey } from "@/lib/lumatoneLayout";
+import type { VisualizerType } from "@/App";
+import { piperSpeak } from "@/lib/piperSpeech";
+
+// LatticeView is the full Harmonic-Lattice 3D viewer (~6k lines + Three.js
+// scene); lazy-import so the JS only loads when the user actually opens
+// Show Answer — most chord-tab sessions never need it.
+const LatticeView = lazy(() => import("@/components/LatticeView"));
 
 const JI_SCALE_NAMES_SET = new Set(JI_SCALE_NAMES);
 
 // ── Inline TTS helper ────────────────────────────────────────────────────
-// Speaks the supplied text via the browser's Web Speech API.  When an
-// IPA string is provided we still pass the orthographic `text` to
-// SpeechSynthesisUtterance — the Web Speech API doesn't natively
-// pronounce IPA characters, but the IPA shows in the tooltip as the
-// authoritative pronunciation reference.  stopPropagation on
-// mousedown/click prevents the parent <button> (which plays the
-// chord-tone pitch) from firing simultaneously.
+// Speaks the supplied text via piper-wasm (neural TTS).  Falls back to
+// the Web Speech API automatically inside piperSpeak if piper hasn't
+// loaded or the model fetch fails.  stopPropagation on mousedown/click
+// prevents the parent <button> (which plays the chord-tone pitch) from
+// firing simultaneously.
 function SaySpan({
   text, ipa, className, title,
 }: { text: string; ipa: string | null; className?: string; title?: string }) {
@@ -56,13 +64,7 @@ function SaySpan({
       onClick={e => {
         e.stopPropagation();
         e.preventDefault();
-        // For microtonal syllables we pass the IPA so speakSyllable
-        // can substitute its English-orthography equivalent (Sais →
-        // 'sice', Vail → 'vile' etc.) and the TTS engine produces the
-        // intended IPA sound instead of reading the syllable like an
-        // English word.  Heathwaite syllables (Do / Re / Mi …) pass
-        // the text directly since their orthography already matches.
-        speakSyllable(text, ipa ? { ipa } : undefined);
+        piperSpeak(text, ipa ? { ipa } : undefined);
       }}
       title={title ?? `Hear "${text}"${ipa ? ` /${ipa}/` : ""} spoken`}
       className={className}
@@ -74,6 +76,19 @@ function SaySpan({
 
 interface SharedHighlightProps {
   highlightedPitches?: Set<number>;
+  /** Active main-visualizer type, forwarded from App so the floating
+   *  mini-visualizer can mirror whatever the user has selected at the
+   *  top of the page. */
+  vizType?: VisualizerType;
+  /** Computed Lumatone layout when vizType === "lumatone".  Forwarded
+   *  from App so the floating mini-visualizer can render Lumatone too. */
+  layout?: LayoutResult | null;
+  /** Click handler shared with the main visualizer so notes pressed on
+   *  the floating mirror behave identically to the sticky one.  All
+   *  on-screen visualizers (PianoKeyboard, GuitarFretboard,
+   *  BassFretboard, LumatoneKeyboard) emit a `ComputedKey`-shaped
+   *  payload so a single typed callback covers every viz. */
+  onKeyClick?: (key: ComputedKey) => void;
 }
 
 interface Props extends SharedHighlightProps {
@@ -216,7 +231,7 @@ function tonalitySectionsForEdo(edo: number): TonalitySection[] {
 const STANDARD_THIRD_QUALITIES = new Set(["sus2", "min3", "maj3", "sus4"]);
 
 export default function ChordsTab({
-  tonicPc, lowestPitch, highestPitch, edo, onHighlight, responseMode, onResult, onPlay, lastPlayed, ensureAudio, playVol = 0.55, layoutPitchRange, tabSettingsRef, answerButtons, highlightedPitches,
+  tonicPc, lowestPitch, highestPitch, edo, onHighlight, responseMode, onResult, onPlay, lastPlayed, ensureAudio, playVol = 0.55, layoutPitchRange, tabSettingsRef, answerButtons, highlightedPitches, vizType, layout, onKeyClick,
 }: Props) {
   const frameTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -233,13 +248,19 @@ export default function ChordsTab({
   // Derived below from `checkedByTonality` ∪ approach chords across all
   // active tonalities.
   const [regMode, setRegMode] = useLS<string>("lt_crd_regMode", "Fixed Register");
-  // JI progression mode (only meaningful in 41/53 EDO).  "frozen" uses
-  // the scale's actual step values so chords on certain scale degrees
-  // contain wolf intervals (the syntonic comma manifests on the ii of a
-  // 5-limit major, etc.).  "adaptive" retunes each chord's third and
-  // fifth to pure JI ratios on the fly — every chord is internally
-  // consonant but progressions can drift the tonal centre by a comma.
-  const [jiMode, setJiMode] = useLS<"frozen" | "adaptive">("lt_crd_jiMode", "frozen");
+  // JI progression mode (only meaningful in 41/53 EDO).
+  //   "frozen"   — scale's actual step values; wolves are baked in on
+  //                certain scale degrees and the tonic stays put.
+  //   "adaptive" — chord *shapes* stay at their EDO frozen tunings, but
+  //                each chord's whole position drifts according to the
+  //                accumulated lattice walk through the progression.
+  //                The user hears the comma pump as a tonic that drifts,
+  //                without each chord's interior being forced pure.
+  //   "pure5"    — each chord retuned to pure 3+5-limit ratios (no
+  //                septimal/undecimal/tridecimal axes), AND drift is
+  //                applied.  Demonstrates the classical syntonic-comma
+  //                pump in the cleanest form.
+  const [jiMode, setJiMode] = useLS<"frozen" | "adaptive" | "pure5">("lt_crd_jiMode", "frozen");
   // Active tab index in the chord-analysis floating panel — only used
   // when multiple JI tonalities are selected.  Reset to 0 when the
   // selected set changes.
@@ -333,6 +354,34 @@ export default function ChordsTab({
   const [loopInfo, setLoopInfo] = useState<string>("");
   const [fhDetailInfo, setFhDetailInfo] = useState<string>("");
   const [fhShowAnswer, setFhShowAnswer] = useState(false);
+  // Visibility of App.tsx's sticky main-visualizer (`#main-visualizer`).
+  // The floating mini-visualizer in Show Answer only appears when the
+  // main one has scrolled out of view, so the user always sees the
+  // live highlighted pitches but never two simultaneous mirrors of
+  // the same keyboard.  Tracked via IntersectionObserver against the
+  // global element id set in App.tsx.
+  const [mainVizVisible, setMainVizVisible] = useState(true);
+  useEffect(() => {
+    const target = typeof document !== "undefined" ? document.getElementById("main-visualizer") : null;
+    if (!target) return;
+    const obs = new IntersectionObserver(([entry]) => {
+      setMainVizVisible(entry.isIntersecting);
+    }, { threshold: 0 });
+    obs.observe(target);
+    return () => obs.disconnect();
+  }, []);
+  // Show Answer brings up the full Harmonic-Lattice overlay anchored at
+  // the top of the viewport (2/3 viewport width).  This local toggle
+  // lets the user dismiss the lattice independently of the show-answer
+  // reveal below — collapsing it here keeps the chord-tone reveal
+  // visible without re-hiding the answer.
+  const [latticeOverlayOpen, setLatticeOverlayOpen] = useState(true);
+  useEffect(() => {
+    // Re-open the lattice overlay automatically each time the user
+    // reveals a fresh answer, so dismissing it once doesn't permanently
+    // suppress it.
+    if (fhShowAnswer) setLatticeOverlayOpen(true);
+  }, [fhShowAnswer]);
   // Structured answer data — drives the rebuilt Show Answer reveal
   // (clickable tones + Heathwaite + Microtonal solfege per note + a
   // floating lattice box at top showing the active scale's lattice).
@@ -576,28 +625,24 @@ export default function ChordsTab({
         if (!map[k]) map[k] = v;
       }
     }
-    // Adaptive JI retuning: in 41/53 EDO with adaptive mode on, replace
-    // each chord's voices with pure-ratio positions taken from the
-    // VOICING_CATALOG.  Quality (M/m/dim/dom7/septimal-dom7/neutral/etc.)
-    // is inferred from the chord's frozen step intervals; the matching
-    // voicing then provides a per-note lattice position which is
-    // converted back to absolute step values.  Unlike the old triad-only
-    // adaptive retuning, this honours higher-prime intervals — septimal
-    // dom7 stays 4:5:6:7, neutral triads stay at 11/9, etc.
-    //
-    // Chords with no matching catalog voicing pass through unchanged
-    // (better an unmodified frozen chord than a wrong substitution).
-    if (jiMode === "adaptive" && (edo === 41 || edo === 53)) {
+    // Per-chord pure-ratio retuning is now scoped to "pure5" mode only.
+    // Adaptive mode keeps each chord's interior at its frozen EDO tuning
+    // and lets the comma drift (applied later per-chord in
+    // buildLoopFrames) carry the lattice motion.  Pure5 retunes each
+    // chord to its 3+5-limit voicing — septimal/undecimal/tridecimal
+    // qualities are coerced down to their classical cousin via
+    // coerceTo5Limit; qualities with no clean 5-limit substitute (e.g.
+    // neutral triads) pass through unchanged.
+    if (jiMode === "pure5" && (edo === 41 || edo === 53)) {
       const out: Record<string, number[]> = {};
       for (const [label, steps] of Object.entries(map)) {
         if (steps.length < 3) { out[label] = steps; continue; }
-        const quality = chordQualityFromSteps(steps, edo);
+        const rawQuality = chordQualityFromSteps(steps, edo);
+        const quality = rawQuality ? coerceTo5Limit(rawQuality) : null;
         const voicing = quality ? voicingFor(quality) : null;
         if (!voicing) { out[label] = steps; continue; }
         const voiceSteps = voicingToSteps(voicing, edo);
         const root = steps[0];
-        // Use voicing for the first N voices we have offsets for; keep
-        // any remaining scale tones (extensions beyond the 7th) as-is.
         const retuned = voiceSteps.map(off => root + off);
         if (steps.length > voiceSteps.length) {
           retuned.push(...steps.slice(voiceSteps.length));
@@ -1050,7 +1095,7 @@ export default function ChordsTab({
     // (e.g. I-vi-ii-V-I), each chord after the pump carries a syntonic-
     // comma offset that shifts its absolute pitch by a few cents — this
     // is the audible drift.  Frozen mode keeps drifts at 0.
-    const useLattice = jiMode === "adaptive" && (edo === 41 || edo === 53);
+    const useLattice = (jiMode === "adaptive" || jiMode === "pure5") && (edo === 41 || edo === 53);
     const driftsCents = useLattice ? tracePathDrifts(progression) : null;
     if (useLattice && driftsCents) {
       latticeDriftsRef.current = { progression, drifts: driftsCents };
@@ -1570,25 +1615,31 @@ export default function ChordsTab({
         );
       })()}
 
-      {/* JI progression mode selector (41/53 EDO only).  Two genuinely
-          separate modes — distinct visual treatment so the user knows
-          which world they're in:
-            FROZEN   — scale-anchored chord pool; wolves are baked in.
-                       Border + accent in muted blue.
-            ADAPTIVE — each triad retuned to pure ratios from its root.
-                       Border + accent in green; the Comma Drift Reference
-                       panel appears below to make the trade-off explicit. */}
-      {(edo === 41 || edo === 53) && (
-        <div className={`rounded border-2 p-3 transition-colors ${
-          jiMode === "frozen"
-            ? "border-[#3a3a8a] bg-[#0e0e1a]"
-            : "border-[#3a8a5a] bg-[#0e1a14]"
-        }`}>
+      {/* JI progression mode selector (41/53 EDO only).  Three modes:
+            FROZEN   — scale-anchored chord pool; wolves baked in; tonic
+                       stays put.  Muted blue accent.
+            ADAPTIVE — chord shapes stay at their frozen EDO tunings, but
+                       the whole progression drifts as the lattice walks
+                       through it (comma pumps audibly shift the tonic).
+                       Green accent.
+            PURE 3/5 — each chord retuned to pure 3+5-limit ratios; drift
+                       still applies.  Demonstrates the classical
+                       syntonic-comma pump in its cleanest form.
+                       Gold accent. */}
+      {(edo === 41 || edo === 53) && (() => {
+        const modeBorderBg = jiMode === "frozen"
+          ? "border-[#3a3a8a] bg-[#0e0e1a]"
+          : jiMode === "adaptive"
+            ? "border-[#3a8a5a] bg-[#0e1a14]"
+            : "border-[#8a7a3a] bg-[#1a1810]";
+        return (
+        <div className={`rounded border-2 p-3 transition-colors ${modeBorderBg}`}>
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-[10px] text-[#888] font-semibold tracking-wider mr-1">PROGRESSION MODE</p>
             {([
-              { id: "frozen",   label: "Frozen JI Progressions",   color: "#5b5be6" },
-              { id: "adaptive", label: "Adaptive JI Progressions", color: "#5cca8a" },
+              { id: "frozen",   label: "Frozen JI Progressions",       color: "#5b5be6" },
+              { id: "adaptive", label: "Adaptive (Drift Only)",        color: "#5cca8a" },
+              { id: "pure5",    label: "Pure 3/5-limit",               color: "#c8a850" },
             ] as const).map(opt => (
               <button key={opt.id}
                 onClick={() => setJiMode(opt.id)}
@@ -1605,10 +1656,13 @@ export default function ChordsTab({
           <p className="text-[10px] text-[#888] italic mt-2">
             {jiMode === "frozen"
               ? "Each scale's chord pool uses the scale's actual step values verbatim.  One chord per scale wolfs (look for ✗ in the analysis below) — that's the syntonic comma made audible.  Tonic stays put."
-              : "Each triad's third + fifth get retuned to pure ratios from the chord root.  Wolves disappear — but in true Adaptive JI, chord progressions can drift the tonic.  See the Comma Drift Reference panel below for which cadences pump and by how much."}
+              : jiMode === "adaptive"
+                ? "Chord shapes stay at their frozen EDO tunings — no per-chord pure-ratio forcing.  Instead, the lattice walk through the progression accumulates comma drift, which shifts each chord's whole position.  The tonic actually drifts as the cadence pumps."
+                : "Each chord retuned to pure 3+5-limit ratios from its root (septimal/undecimal qualities collapse onto their 5-limit cousin).  Drift still applies — every classical syntonic pump audibly shifts the tonic by 81/80 ≈ 21.5¢."}
           </p>
         </div>
-      )}
+        );
+      })()}
 
       {/* Comma Drift Reference catalog removed — the Live Lattice
           Trace now lives inside the Show Answer reveal further down,
@@ -1820,6 +1874,89 @@ export default function ChordsTab({
               {answerButtons}
             </div>
 
+            {/* Harmonic-Lattice top overlay — fixed-position panel
+                anchored at the top of the viewport, taking 2/3 of the
+                viewport width so the chord-tone reveal underneath
+                still has room to breathe.  Mounts the full
+                Harmonic-Lattice 3D viewer (lazy-loaded so the JS only
+                downloads on first reveal).  Dismissible per-reveal so
+                the user can collapse it and inspect the chord tones
+                below; re-opens automatically the next time Show Answer
+                fires.  Z-index sits above sticky chrome (z-30) but
+                below modals (z-50). */}
+            {fhShowAnswer && fhAnswer && latticeOverlayOpen && (
+              <div
+                style={{
+                  position: "fixed",
+                  top: 12,
+                  left: "16.67vw",
+                  width: "66.66vw",
+                  height: "60vh",
+                  zIndex: 40,
+                  background: "#0a0a0a",
+                  border: "1px solid #5b5be6",
+                  borderRadius: 8,
+                  boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+                  display: "flex",
+                  flexDirection: "column",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "6px 12px",
+                    background: "#5b5be618",
+                    borderBottom: "1px solid #5b5be633",
+                    flexShrink: 0,
+                  }}
+                >
+                  <span style={{ color: "#5b5be6", fontSize: 10, fontWeight: 700, letterSpacing: 1, flex: 1 }}>
+                    HARMONIC LATTICE
+                  </span>
+                  <button
+                    onClick={() => setLatticeOverlayOpen(false)}
+                    style={{
+                      background: "transparent",
+                      border: "1px solid #5b5be6",
+                      color: "#5b5be6",
+                      fontSize: 10,
+                      fontWeight: 700,
+                      padding: "2px 8px",
+                      borderRadius: 4,
+                      cursor: "pointer",
+                    }}
+                    title="Close lattice overlay"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div style={{ flex: 1, minHeight: 0, overflow: "auto", position: "relative" }}>
+                  <Suspense fallback={
+                    <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#666", fontSize: 11 }}>
+                      Loading harmonic lattice…
+                    </div>
+                  }>
+                    <LatticeView />
+                  </Suspense>
+                </div>
+              </div>
+            )}
+            {/* Re-open button when the overlay is dismissed but Show
+                Answer is still active — small inline button above the
+                chord-tone reveal so the user can pull the lattice back
+                up without re-triggering Show Answer. */}
+            {fhShowAnswer && fhAnswer && !latticeOverlayOpen && (
+              <button
+                onClick={() => setLatticeOverlayOpen(true)}
+                className="text-[10px] text-[#5b5be6] hover:text-[#8a8aff] border border-[#5b5be6] hover:border-[#8a8aff] px-2 py-1 rounded transition-colors self-start"
+              >
+                ▾ Open Harmonic Lattice
+              </button>
+            )}
+
             {/* Answer — only visible after clicking Show Answer.
                 Per-chord rows with clickable tone buttons; each tone
                 shows its interval-from-tonic name plus both solfege
@@ -1858,11 +1995,12 @@ export default function ChordsTab({
                       />
                     </div>
                   )}
-                  {/* Live lattice trace — only meaningful in Adaptive
-                      JI on 41/53-EDO.  Shows each chord in the
-                      progression with its accumulated drift in cents,
-                      colour-coded green / amber / pink by magnitude. */}
-                  {jiMode === "adaptive" && (edo === 41 || edo === 53) && (() => {
+                  {/* Live lattice trace — meaningful in Adaptive and
+                      Pure 3/5-limit modes on 41/53-EDO.  Shows each
+                      chord in the progression with its accumulated
+                      drift in cents, colour-coded green / amber / pink
+                      by magnitude. */}
+                  {(jiMode === "adaptive" || jiMode === "pure5") && (edo === 41 || edo === 53) && (() => {
                     void latticeRevision;
                     const trace = latticeDriftsRef.current;
                     if (!trace) return null;
@@ -1971,26 +2109,45 @@ export default function ChordsTab({
               );
             })()}
 
-            {/* Floating mini-visualizer — top-right of viewport, mirrors
-                the main keyboard with the live highlighted pitches so
-                the user can see what's being played while scrolled past
-                the sticky keyboard at the top.  PianoKeyboard's SVG uses
-                viewBox + width=100% so it scales to the panel width
-                without horizontal scrolling.  12-EDO only since
-                PianoKeyboard is 12-EDO native. */}
-            {fhShowAnswer && fhAnswer && edo === 12 && highlightedPitches && (
+            {/* Floating mini-visualizer — bottom-right of viewport,
+                mirrors whatever main visualizer the user has selected
+                (piano / guitar / bass / lumatone, any EDO).  Shown only
+                when Show Answer is open AND the sticky main visualizer
+                at the top has scrolled out of view, so the user can
+                still see live highlighted pitches without ever rendering
+                two stacked mirrors of the same keyboard. */}
+            {fhShowAnswer && fhAnswer && highlightedPitches && !mainVizVisible && (
               <FloatingPanel
-                position="top-right"
+                position="bottom-right"
                 title="VISUALIZER"
                 accent="#5b5be6"
                 storageKey="lt_crd_answer_viz_collapsed"
-                topOffset={20}
+                bottomOffset={16}
               >
-                <PianoKeyboard
-                  highlightedPitches={highlightedPitches}
-                  pitchMin={tonicPc - 12}
-                  pitchMax={tonicPc + 24}
-                />
+                {edo === 12 && vizType === "piano" ? (
+                  <PianoKeyboard
+                    highlightedPitches={highlightedPitches}
+                    onKeyClick={onKeyClick}
+                  />
+                ) : edo === 12 && vizType === "guitar" ? (
+                  <GuitarFretboard
+                    highlightedPitches={highlightedPitches}
+                    onKeyClick={onKeyClick}
+                  />
+                ) : edo === 12 && vizType === "bass" ? (
+                  <BassFretboard
+                    highlightedPitches={highlightedPitches}
+                    onKeyClick={onKeyClick}
+                  />
+                ) : layout ? (
+                  <LumatoneKeyboard
+                    layout={layout}
+                    highlightedPitches={highlightedPitches}
+                    onKeyClick={onKeyClick}
+                  />
+                ) : (
+                  <div className="text-[10px] text-[#666] italic">Loading keyboard…</div>
+                )}
               </FloatingPanel>
             )}
 

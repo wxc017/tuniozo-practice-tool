@@ -371,6 +371,51 @@ export function voicingFor(quality: string): ChordVoicing | null {
   return VOICING_CATALOG[quality] ?? null;
 }
 
+/** Coerce a higher-limit chord quality down to its closest 3+5-limit
+ *  equivalent.  Used by the "Pure 3/5-limit" chord mode where the user
+ *  wants pure-ratio retuning but only on the 3-axis (Pythagorean) and
+ *  5-axis (classical JI) — septimal/undecimal/tridecimal chords get
+ *  collapsed onto their closest classical cousin so the pump phenomena
+ *  the mode demonstrates remain limited to the syntonic comma family.
+ *  Returns null when no clean classical substitute exists (caller
+ *  leaves the chord at its frozen EDO tuning in that case). */
+export function coerceTo5Limit(quality: string): string | null {
+  switch (quality) {
+    // 5-limit qualities pass through.
+    case "major":
+    case "minor":
+    case "dim":
+    case "aug":
+    case "maj7":
+    case "min7":
+    case "dom7":
+    case "m7b5":
+    case "dim7":
+      return quality;
+    // Septimal qualities map to their closest classical cousin.
+    case "septimal-dom7":      return "dom7";
+    case "septimal-min7":      return "min7";
+    case "septimal-subminor":  return "minor";
+    case "septimal-supermajor":return "major";
+    // No clean 5-limit substitute: leave the chord frozen.
+    case "neutral-triad":
+    case "tridecimal-triad":
+    case "wide-sus":
+      return null;
+    default:
+      return null;
+  }
+}
+
+/** Whether a lattice position uses any axis above the 5-limit (axes
+ *  beyond the first two — 7-axis through 31-axis).  The "Pure 3/5-limit"
+ *  drift trace uses this to project higher-prime motions onto their
+ *  3+5 components (i.e. clamp those axes to zero) so the drift remains
+ *  in the syntonic-comma family the mode is restricted to. */
+export function projectTo5Limit(pos: LatticePos): LatticePos {
+  return [pos[0] ?? 0, pos[1] ?? 0];
+}
+
 /** Convert a voicing's per-voice lattice positions to per-voice cent
  *  offsets from the chord root.  Each cents value sits in [0, 1200). */
 export function voicingToCents(voicing: ChordVoicing): number[] {
