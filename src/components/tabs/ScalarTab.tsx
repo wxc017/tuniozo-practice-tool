@@ -4,6 +4,7 @@ import { useLS } from "@/lib/storage";
 import { formatHalfAccidentals, getModeDegreeMap, getSolfege } from "@/lib/edoData";
 import { getTonalityBanks, type TonalityBank } from "@/lib/tonalityBanks";
 import { bankToScaleFamMode } from "@/lib/tonalityChordPool";
+import { jiLimitGroupsForEdo } from "@/lib/jiTonalityFamilies";
 import { formatRomanNumeral } from "@/lib/formatRoman";
 import ModeLattice3D from "../scalar/ModeLattice3D";
 
@@ -17,7 +18,9 @@ interface Props {
   playVol?: number;
 }
 
-const TONALITY_FAMILIES: { key: string; label: string; color: string; tonalities: string[] }[] = [
+interface TonalityFamilyGroup { key: string; label: string; color: string; tonalities: string[] }
+
+const TONALITY_FAMILIES: TonalityFamilyGroup[] = [
   { key: "major",    label: "MAJOR",          color: "#6a9aca",
     tonalities: ["Major","Dorian","Phrygian","Lydian","Mixolydian","Aeolian","Locrian"] },
   { key: "harmonic", label: "HARMONIC MINOR", color: "#c09050",
@@ -42,6 +45,52 @@ const TONALITY_FAMILIES: { key: string; label: string; color: string; tonalities
       "Whole-Half Diminished (Half-Flat)",
     ] },
 ];
+
+// ── LIMIT > FAMILY > MODES sectioning (mirrors ChordsTab) ────────────────
+// Same structure as Spatial Audiation (ChordsTab) so the two tabs feel
+// like a single picker.  Meantone EDOs (12 / 19 / 31) get the existing
+// flat TONALITY_FAMILIES grouped into limit sections; JI EDOs (41 / 53)
+// get the JI_LIMIT_GROUPS structure with sub-families per limit.
+
+interface TonalitySection {
+  key: string;
+  label: string;
+  color: string;
+  families: { key: string; label: string; tonalities: string[] }[];
+}
+
+const MEANTONE_LIMIT_SECTIONS: { key: string; label: string; color: string; familyKeys: string[] }[] = [
+  { key: "lim5",  label: "5-LIMIT (MEANTONE)", color: "#6a9aca",
+    familyKeys: ["major", "harmonic", "melodic", "doubleharmonic"] },
+  { key: "lim7",  label: "7-LIMIT (SEPTIMAL)", color: "#7aaa6a",
+    familyKeys: ["subminor", "supermajor", "subharmonic"] },
+  { key: "lim11", label: "11-LIMIT (NEUTRAL)", color: "#9a66c0",
+    familyKeys: ["neutral"] },
+  { key: "sym",   label: "SYMMETRIC",          color: "#5ab9b0",
+    familyKeys: ["symmetric"] },
+];
+
+function tonalitySectionsForEdo(edo: number): TonalitySection[] {
+  if (edo === 41 || edo === 53) {
+    return jiLimitGroupsForEdo(edo).map(g => ({
+      key: `limit-${g.limit}`,
+      label: g.label,
+      color: g.color,
+      families: g.families.map(f => ({ key: f.key, label: f.label, tonalities: f.tonalities })),
+    }));
+  }
+  return MEANTONE_LIMIT_SECTIONS
+    .map(sec => ({
+      key: sec.key,
+      label: sec.label,
+      color: sec.color,
+      families: sec.familyKeys
+        .map(fk => TONALITY_FAMILIES.find(f => f.key === fk))
+        .filter((f): f is TonalityFamilyGroup => !!f)
+        .map(f => ({ key: f.key, label: f.label, tonalities: f.tonalities })),
+    }))
+    .filter(sec => sec.families.length > 0);
+}
 
 export default function ScalarTab({
   tonicPc, lowestPitch, highestPitch, edo, onHighlight, ensureAudio, playVol = 0.55,
@@ -355,32 +404,42 @@ export default function ScalarTab({
         </div>
       )}
 
-      {/* ── Tonality picker (large buttons, single-select) ────────── */}
+      {/* ── Tonality picker (large buttons, single-select) — LIMIT >
+          FAMILY > MODES hierarchy mirroring Spatial Audiation. ── */}
       <div className="bg-[#0e0e0e] border border-[#1a1a1a] rounded p-3 space-y-3">
-        {TONALITY_FAMILIES.map(group => {
-          const available = group.tonalities.filter(t => banksByName[t]);
-          if (available.length === 0) return null;
+        {tonalitySectionsForEdo(edo).map(section => {
+          const usableFamilies = section.families
+            .map(f => ({ ...f, tonalities: f.tonalities.filter(t => banksByName[t]) }))
+            .filter(f => f.tonalities.length > 0);
+          if (usableFamilies.length === 0) return null;
           return (
-            <div key={group.key}>
-              <p className="text-[10px] mb-1.5 font-semibold tracking-wider"
-                 style={{ color: group.color }}>{group.label}</p>
-              <div className="flex flex-wrap gap-1.5">
-                {available.map(t => {
-                  const on = selected === t;
-                  return (
-                    <button key={t}
-                      onClick={() => { setSelected(t); setActiveFamilyColor(group.color); }}
-                      className={`px-3 py-2 text-sm font-semibold rounded border transition-colors ${
-                        on ? "" : "bg-[#111] border-[#2a2a2a] text-[#888] hover:text-[#ccc] hover:border-[#444]"
-                      }`}
-                      style={on
-                        ? { backgroundColor: group.color + "30", borderColor: group.color, color: group.color }
-                        : undefined}>
-                      {formatHalfAccidentals(t)}
-                    </button>
-                  );
-                })}
-              </div>
+            <div key={section.key} className="space-y-1.5">
+              <p className="text-[10px] font-bold tracking-widest border-b border-[#1a1a1a] pb-0.5"
+                 style={{ color: section.color }}>{section.label}</p>
+              {usableFamilies.map(family => (
+                <div key={family.key} className="ml-2">
+                  <p className="text-[9px] mb-1 font-medium tracking-wider text-[#666]">
+                    {family.label}
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {family.tonalities.map(t => {
+                      const on = selected === t;
+                      return (
+                        <button key={t}
+                          onClick={() => { setSelected(t); setActiveFamilyColor(section.color); }}
+                          className={`px-3 py-2 text-sm font-semibold rounded border transition-colors ${
+                            on ? "" : "bg-[#111] border-[#2a2a2a] text-[#888] hover:text-[#ccc] hover:border-[#444]"
+                          }`}
+                          style={on
+                            ? { backgroundColor: section.color + "30", borderColor: section.color, color: section.color }
+                            : undefined}>
+                          {formatHalfAccidentals(t)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           );
         })}
