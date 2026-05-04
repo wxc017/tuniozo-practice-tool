@@ -22,10 +22,12 @@ import { getTonalityBanks, getApproachChords, APPROACH_KINDS, APPROACH_LABELS, t
 import { xenIntervalsForEdo, bankToScaleFamMode } from "@/lib/tonalityChordPool";
 import { formatRomanNumeral } from "@/lib/formatRoman";
 import { JI_LIMIT_GROUPS, jiLimitGroupsForEdo } from "@/lib/jiTonalityFamilies";
-import { JI_SCALE_NAMES } from "@/lib/jiScaleData";
+import { JI_SCALE_NAMES, getJiScaleCents, getJiScaleDegrees } from "@/lib/jiScaleData";
 import { analyzeJiScale, adaptiveTriadFor, COMMA_DRIFT_CATALOG } from "@/lib/jiChordAnalysis";
 import { limitForJiTonality } from "@/lib/jiTonalityFamilies";
 import { tracePathDrifts, driftCentsToSteps, stripChordLabel } from "@/lib/jiLattice";
+import FloatingPanel from "@/components/FloatingPanel";
+import JiScaleLattice from "@/components/JiScaleLattice";
 
 const JI_SCALE_NAMES_SET = new Set(JI_SCALE_NAMES);
 
@@ -1343,6 +1345,84 @@ export default function ChordsTab({
 
   return (
     <div className="space-y-5">
+      {/* JI floating side-panels — chord-analysis table (top-right) and
+          5-limit lattice viewer (bottom-right).  Both render only when at
+          least one JI tonality is selected in 41/53 EDO.  Capped at
+          25 vw width by FloatingPanel so the in-flow tonality picker /
+          chord pool below stays readable. */}
+      {selectedJiTonalities.length > 0 && (() => {
+        // Pick the first selected JI tonality as the analysis target.
+        // Multiple selections collapse to the first; keeps the panel
+        // tractable rather than rendering N stacked tables.
+        const tonality = selectedJiTonalities[0];
+        const analysis = analyzeJiScale(tonality);
+        const cents = getJiScaleCents(tonality);
+        const degs = getJiScaleDegrees(tonality);
+        const ROMAN = ["I","II","III","IV","V","VI","VII"];
+        const tagColor = (k: string) => {
+          if (k === "wolf") return "#cc6a8a";
+          if (k === "off-grid") return "#c8aa50";
+          if (k === "pure-3") return "#9999cc";
+          if (k === "pure-5") return "#6acca0";
+          if (k === "pure-7") return "#cc8855";
+          if (k === "pure-11") return "#9a66c0";
+          return "#888";
+        };
+        return (
+          <>
+            {analysis && (
+              <FloatingPanel
+                position="top-right"
+                title={`CHORD ANALYSIS · ${tonality}`}
+                accent="#5b5be6"
+                storageKey="lt_crd_analysis_panel_collapsed"
+              >
+                <div className="grid grid-cols-[28px_1fr_1fr_60px] gap-x-2 gap-y-1 text-[10px]">
+                  <span className="text-[#555] font-medium">Ch</span>
+                  <span className="text-[#555] font-medium">Third</span>
+                  <span className="text-[#555] font-medium">Fifth</span>
+                  <span className="text-[#555] font-medium">Status</span>
+                  {analysis.map((row, i) => {
+                    const numeral = ROMAN[i];
+                    return (
+                      <span key={i} style={{ display: "contents" }}>
+                        <span className="text-[#aaa] font-mono">{numeral}</span>
+                        <span style={{ color: tagColor(row.third.kind) }}>
+                          {row.third.ratio}
+                        </span>
+                        <span style={{ color: tagColor(row.fifth.kind) }}>
+                          {row.fifth.ratio}
+                        </span>
+                        <span style={{ color: row.pure ? "#5cca5c" : "#cc6a8a", fontWeight: 600 }}>
+                          {row.pure ? "✓" : "✗ Wolf"}
+                        </span>
+                      </span>
+                    );
+                  })}
+                </div>
+                <p className="text-[9px] text-[#555] italic mt-2">
+                  Hover the picker below to switch which JI tonality this panel analyses.
+                </p>
+              </FloatingPanel>
+            )}
+            {cents && degs && (
+              <FloatingPanel
+                position="bottom-right"
+                title={`5-LIMIT LATTICE · ${tonality}`}
+                accent="#5cca8a"
+                storageKey="lt_crd_lattice_panel_collapsed"
+              >
+                <JiScaleLattice
+                  tones={degs.map((degree, i) => ({ degree, cents: cents[i] }))}
+                  accent="#5cca8a"
+                  compact={false}
+                />
+              </FloatingPanel>
+            )}
+          </>
+        );
+      })()}
+
       {/* JI progression mode selector (41/53 EDO only).  Two genuinely
           separate modes — distinct visual treatment so the user knows
           which world they're in:
@@ -1487,60 +1567,10 @@ export default function ChordsTab({
           interval catalog, marks pure vs wolf positions.  Same data
           regardless of EDO (41 vs 53) since the analysis lives on the
           underlying JI ratios, not the EDO step rounding. */}
-      {selectedJiTonalities.length > 0 && (
-        <div className="bg-[#0e0e0e] border border-[#1a1a1a] rounded p-3 space-y-3">
-          <p className="text-[10px] text-[#888] font-medium tracking-wider">CHORD ANALYSIS</p>
-          {selectedJiTonalities.map(tonality => {
-            const analysis = analyzeJiScale(tonality);
-            if (!analysis) return null;
-            const ROMAN = ["I","II","III","IV","V","VI","VII"];
-            return (
-              <div key={tonality}>
-                <p className="text-[11px] text-[#aaa] font-medium mb-1">{tonality}</p>
-                <div className="grid grid-cols-[40px_70px_120px_120px_90px_1fr] gap-x-2 gap-y-0.5 text-[10px]">
-                  <span className="text-[#555] font-medium">Chord</span>
-                  <span className="text-[#555] font-medium">Quality</span>
-                  <span className="text-[#555] font-medium">Third</span>
-                  <span className="text-[#555] font-medium">Fifth</span>
-                  <span className="text-[#555] font-medium">Status</span>
-                  <span></span>
-                  {analysis.map((row, i) => {
-                    const numeral = ROMAN[i];
-                    const tagFor = (k: string) => {
-                      if (k === "wolf") return { color: "#cc6a8a", label: "WOLF" };
-                      if (k === "off-grid") return { color: "#c8aa50", label: "off" };
-                      if (k === "pure-3") return { color: "#9999cc", label: "3-lim" };
-                      if (k === "pure-5") return { color: "#6acca0", label: "5-lim" };
-                      if (k === "pure-7") return { color: "#cc8855", label: "7-lim" };
-                      if (k === "pure-11") return { color: "#9a66c0", label: "11-lim" };
-                      return { color: "#888", label: k };
-                    };
-                    const tThird = tagFor(row.third.kind);
-                    const tFifth = tagFor(row.fifth.kind);
-                    const statusColor = row.pure ? "#5cca5c" : "#cc6a8a";
-                    return (
-                      <span key={i} style={{ display: "contents" }}>
-                        <span className="text-[#aaa] font-mono">{numeral}{row.rootDegree !== "1" ? <span className="text-[#555]"> ({row.rootDegree})</span> : null}</span>
-                        <span className="text-[#888]">{row.quality}</span>
-                        <span style={{ color: tThird.color }}>
-                          {row.third.name} <span className="opacity-60">({row.third.ratio})</span>
-                        </span>
-                        <span style={{ color: tFifth.color }}>
-                          {row.fifth.name} <span className="opacity-60">({row.fifth.ratio})</span>
-                        </span>
-                        <span style={{ color: statusColor, fontWeight: 600 }}>
-                          {row.pure ? "✓ Pure" : "✗ Wolf"}
-                        </span>
-                        <span></span>
-                      </span>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {/* The chord-analysis table and the JI lattice viewer are now
+          rendered as floating panels (top-right + bottom-right) instead
+          of consuming in-flow space.  See the FloatingPanel section
+          below the picker. */}
 
       {/* Tonality multi-select — family-grouped boxes (Mode ID style).
           Click a mode to add it to the pool. At play time a random
@@ -1639,11 +1669,10 @@ export default function ChordsTab({
             {/* ── Texture Layers ── */}
             <div className="flex gap-4 flex-wrap items-end">
               <div>
-                <p className="text-[10px] text-[#886622] mb-1 font-medium">TEXTURE LAYERS</p>
+                <p className="text-[10px] text-[#886622] mb-1 font-medium">TEXTURE</p>
                 <div className="flex gap-3">
                   {([
                     { layer: "harmony" as const, vol: harmonyVol, setVol: setHarmonyVol },
-                    { layer: "bass" as const, vol: bassVol, setVol: setBassVol },
                   ]).map(({ layer, vol, setVol }) => {
                     const checked = textureLayers.has(layer);
                     return (
@@ -1667,9 +1696,13 @@ export default function ChordsTab({
                   })}
                 </div>
               </div>
-              {textureLayers.has("bass") && (
+              {/* Bass layer + BASS MODE selector intentionally removed —
+                  Tonal Audiation chord progressions are harmony-only.
+                  The bassLineMode state still exists but is never read by
+                  the playback path (textureLayers no longer admits "bass"),
+                  so the bass-line generator is effectively a no-op. */}
+              {false && (
                 <div>
-                  <p className="text-[10px] text-[#886622] mb-1 font-medium">BASS MODE</p>
                   <div className="flex gap-1">
                     {(["root", "root-fifth", "passing", "walking"] as const).map(m => {
                       const active = bassLineMode === m;

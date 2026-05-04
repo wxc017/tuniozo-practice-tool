@@ -175,6 +175,7 @@ export const JI_LIMIT_GROUPS: JiLimitGroup[] = [
         label: "MAQAM",
         tonalities: [
           "Maqam Sikah",
+          "Maqam Awj Iraq",
         ],
       },
     ],
@@ -209,12 +210,12 @@ export const JI_LIMIT_GROUPS: JiLimitGroup[] = [
     limit: 23,
     label: "23-LIMIT (Vicesimotertial)",
     color: "#caac5a",
-    blurb: "Demonstrative — 23:19 (~329¢) supraminor 3rd, 23:14 (~859¢) wide minor 6th.",
+    blurb: "Major 7 lifts to 23/12; minor b3 lifts to 23/19 supraminor — recognisable Major / Minor with one 23-prime colour-tone.",
     families: [
       {
-        key: "23-demo",
-        label: "DEMO",
-        tonalities: ["23-Limit Demo"],
+        key: "23-tertian",
+        label: "TERTIAN",
+        tonalities: ["23-Limit Major", "23-Limit Minor"],
       },
     ],
   },
@@ -222,12 +223,12 @@ export const JI_LIMIT_GROUPS: JiLimitGroup[] = [
     limit: 29,
     label: "29-LIMIT (Vicenovenal)",
     color: "#aa6a5a",
-    blurb: "Demonstrative — 29:24 (~328¢), 29:18 (~770¢), 29:16 (~1030¢) all distinct.",
+    blurb: "Major b7 borrows 29/16; Minor's b3 / b6 nudge into 29-territory at the modal tones.",
     families: [
       {
-        key: "29-demo",
-        label: "DEMO",
-        tonalities: ["29-Limit Demo"],
+        key: "29-tertian",
+        label: "TERTIAN",
+        tonalities: ["29-Limit Major", "29-Limit Minor"],
       },
     ],
   },
@@ -235,12 +236,12 @@ export const JI_LIMIT_GROUPS: JiLimitGroup[] = [
     limit: 31,
     label: "31-LIMIT (Trigesimoprimal)",
     color: "#ca6acc",
-    blurb: "Demonstrative — 31:26 (~338¢), 31:20 (~766¢), 31:19 (~896¢) — three 31-prime tones.",
+    blurb: "Major 7 = 31/16 wide leading-tone; Minor b3 / b6 use 31-prime substitutes — Aeolian tilted into 31-flavour.",
     families: [
       {
-        key: "31-demo",
-        label: "DEMO",
-        tonalities: ["31-Limit Demo"],
+        key: "31-tertian",
+        label: "TERTIAN",
+        tonalities: ["31-Limit Major", "31-Limit Minor"],
       },
     ],
   },

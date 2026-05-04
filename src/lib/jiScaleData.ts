@@ -139,6 +139,12 @@ const JI_SCALES: JiScaleSpec[] = [
     // the b3 (16/13 ≈ 359¢) sits a touch lower than the 11-limit
     // neutral 3rd (11/9 ≈ 347¢), giving a darker, more melodic colour.
     steps: [["1",0],["2",203.9],["b3",359.5],["4",498.0],["5",702.0],["b6",840.5],["b7",1049.4]] },
+  { name: "Maqam Awj Iraq",
+    // 13-limit Iraqi Maqam — named for the "Awj" (apex) tone in the upper
+    // tetrachord.  Uses 16/13 (~359¢) as the neutral 3rd plus 13/9
+    // (~637¢) as a tridecimal augmented-4th alternative; closes with
+    // 13/8 (~841¢) at the 6th.  Distinct from Sikah in its sharpened 4.
+    steps: [["1",0],["2",203.9],["b3",359.5],["#4",636.6],["5",702.0],["b6",840.5],["b7",996.1]] },
 
   // ── 17-LIMIT (Heptadecimal) ──────────────────────────────────────────
   // 17/16 (~105¢) sits between the just minor 2nd (16/15 ≈ 112¢) and
@@ -155,26 +161,48 @@ const JI_SCALES: JiScaleSpec[] = [
   { name: "Nonadecimal Minor",
     steps: [["1",0],["2",203.9],["b3",297.5],["4",498.0],["5",702.0],["b6",813.7],["b7",996.1]] },
 
-  // ── 23 / 29 / 31-LIMIT (demonstrative) ───────────────────────────────
-  // No established repertoire uses these primes as a scale's organising
-  // principle — they're included so the user can audition each prime's
-  // characteristic interval colour.  Each scale anchors a 5-limit
-  // diatonic spine and substitutes one or two degrees with the higher-
-  // prime version (e.g. 23/19 in place of the 6/5 minor third).  41-EDO
-  // approximates 23 well, 29 / 31 less so but still distinguishable.
-  { name: "23-Limit Demo",
-    // 23/19 (~329¢) supraminor 3rd + 23/14 (~859¢) wide minor 6th.
-    steps: [["1",0],["2",203.9],["b3",329.2],["4",498.0],["5",702.0],["6",859.4],["b7",996.1]] },
-  { name: "29-Limit Demo",
-    // Anchored on the diatonic 2 / 4 / 5 spine; 29-prime colour at b3
-    // (29/24 ≈ 328¢) and b6 (29/18 ≈ 770¢) so the scale walks like a
-    // recognisable minor with two notes shifted into 29-territory.
-    steps: [["1",0],["2",203.9],["b3",327.6],["4",498.0],["5",702.0],["b6",770.5],["b7",1029.6]] },
-  { name: "31-Limit Demo",
-    // Same diatonic 2 / 4 / 5 spine; 31-prime colour at b3 (31/26 ≈ 338¢)
-    // and b6 (31/20 ≈ 766¢) — sounds like a minor scale tilted into a
-    // distinct 31-flavour without abandoning its tonal centre.
-    steps: [["1",0],["2",203.9],["b3",338.0],["4",498.0],["5",702.0],["b6",765.5],["b7",895.7]] },
+  // ── 23 / 29 / 31-LIMIT (Major + Minor with higher-prime colour) ──────
+  // No established repertoire treats these primes as scale generators,
+  // so the scales here use a 5-limit Major or Minor spine and
+  // substitute ONE characteristic note with the higher-prime interval.
+  // The result reads as a recognisable Major or Minor that's tilted
+  // into the prime's microtonal flavour at one degree.  41-EDO
+  // approximates each prime well enough to make the difference audible.
+  // 23-LIMIT
+  { name: "23-Limit Major",
+    // Standard 5-limit Major (1 9/8 5/4 4/3 3/2 5/3 …) but the 7th
+    // borrows 23/12 (~1099¢) — between Just M7 (15/8 ≈ 1088¢) and Pyth
+    // M7 (243/128 ≈ 1110¢), a leading-tone with 23-prime colour.
+    steps: [["1",0],["2",203.9],["3",386.3],["4",498.0],["5",702.0],["6",884.4],["7",1098.9]] },
+  { name: "23-Limit Minor",
+    // 5-limit Minor spine; b3 lifts to 23/19 (~329¢) — sits between
+    // Pyth m3 (294¢) and Just m3 (316¢), giving the b3 a brighter,
+    // supraminor character without leaving minor territory.
+    steps: [["1",0],["2",203.9],["b3",329.2],["4",498.0],["5",702.0],["b6",813.7],["b7",1017.6]] },
+  // 29-LIMIT
+  { name: "29-Limit Major",
+    // 5-limit Major spine; b7 substitutes 29/16 (~1030¢) for 16/9 / 9/5
+    // — a 29-flavoured "small minor 7th" giving a distinctive dominant-
+    // bluesy colour to V7 and IV7 chords built off this scale.
+    steps: [["1",0],["2",203.9],["3",386.3],["4",498.0],["5",702.0],["6",884.4],["b7",1029.6]] },
+  { name: "29-Limit Minor",
+    // 5-limit Minor spine; b3 uses 29/24 (~328¢) and b6 uses 29/18
+    // (~770¢) — both supra-flat versions of the standard minor degrees,
+    // shifting the whole minor "mood" by ~10–15 cents at the modal
+    // tones.  Subtle but unmistakable in 41-EDO.
+    steps: [["1",0],["2",203.9],["b3",327.6],["4",498.0],["5",702.0],["b6",770.5],["b7",1017.6]] },
+  // 31-LIMIT
+  { name: "31-Limit Major",
+    // 5-limit Major spine; the 7th uses 31/16 (~1145¢) — a "wide" major
+    // 7th close to the Pythagorean 243/128 but with 31-prime character.
+    // Resolves with extra urgency to the tonic.
+    steps: [["1",0],["2",203.9],["3",386.3],["4",498.0],["5",702.0],["6",884.4],["7",1145.0]] },
+  { name: "31-Limit Minor",
+    // 5-limit Minor spine; b3 lifts to 31/26 (~338¢) — between Just m3
+    // and the neutral 11/9 — and b6 uses 31/20 (~765¢), slightly flat
+    // of the just minor 6th.  The scale walks like Aeolian with two
+    // notes nudged into 31-territory.
+    steps: [["1",0],["2",203.9],["b3",338.0],["4",498.0],["5",702.0],["b6",765.5],["b7",1017.6]] },
 ];
 
 // ── Build per-EDO ScaleFamilyMaps ────────────────────────────────────────
