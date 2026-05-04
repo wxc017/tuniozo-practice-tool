@@ -1746,18 +1746,16 @@ export default function ChordsTab({
               )}
             </div>
 
-            {/* Play / Stop / Replay / Show Answer — fixed to the
-                viewport so the controls stay anchored at the top of
-                the page even as the user scrolls past the chord-tone
-                reveal and the full-width harmonic lattice.  Sticky
-                doesn't work here because the ear-trainer tabs sit
-                inside their own overflow-y-auto container in App.tsx
-                (line 1247), which scopes top-0 to that container's
-                inner edge — well below the page top.  Fixed bypasses
-                the nested scroll entirely.  A matching-height spacer
-                div keeps subsequent content from sliding under the
-                bar on first paint. */}
-            <div className="flex gap-2 flex-wrap items-center fixed top-0 left-0 right-0 z-50 bg-[#0d0d0d] py-2 px-4 border-b border-[#1e1e1e] shadow-lg shadow-black/60">
+            {/* Play / Stop / Replay / Show Answer — sticky so the
+                row appears in its natural place initially, pins to
+                the top of the ear-trainer tabs scroll container the
+                moment the user scrolls past it, and releases the
+                instant the surrounding Progressions card scrolls
+                out (which is exactly when the harmonic lattice at
+                the bottom of the card has scrolled past the top of
+                the viewport).  z-50 so the row paints above the
+                LatticeView 3D canvas's stacking context. */}
+            <div className="flex gap-2 flex-wrap items-center sticky top-0 z-50 bg-[#0d0d0d] py-2 -mx-4 px-4 border-b border-[#1e1e1e] shadow-md shadow-black/40">
               <button onClick={startFunctionalLoop} disabled={isLooping || !canPlay}
                 title={disabledReason ?? undefined}
                 className="bg-[#e0a040] hover:bg-[#c89030] disabled:opacity-50 disabled:cursor-not-allowed text-black px-5 py-2 rounded text-sm font-bold transition-colors">
@@ -1786,10 +1784,6 @@ export default function ChordsTab({
               )}
               {answerButtons}
             </div>
-            {/* Spacer matching the fixed control bar's height so the
-                answer reveal below doesn't slide underneath it on
-                first paint. */}
-            <div aria-hidden className="h-12" />
 
             {/* Answer — only visible after clicking Show Answer.
                 Per-chord rows with clickable tone buttons; each tone
