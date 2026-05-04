@@ -28,7 +28,7 @@ import { JI_SCALE_NAMES, getJiScaleCents, getJiScaleDegrees } from "@/lib/jiScal
 import { analyzeJiScale, COMMA_DRIFT_CATALOG } from "@/lib/jiChordAnalysis";
 import { chordQualityFromSteps, voicingFor, voicingToSteps, coerceTo5Limit } from "@/lib/jiLattice";
 import { limitForJiTonality } from "@/lib/jiTonalityFamilies";
-import { tracePathDrifts, driftCentsToSteps, stripChordLabel, chordQualityFromSteps } from "@/lib/jiLattice";
+import { tracePathDrifts, driftCentsToSteps, stripChordLabel } from "@/lib/jiLattice";
 import FloatingPanel from "@/components/FloatingPanel";
 import JiScaleLattice from "@/components/JiScaleLattice";
 import PianoKeyboard from "@/components/PianoKeyboard";
@@ -350,44 +350,12 @@ export default function ChordsTab({
   const [loopInfo, setLoopInfo] = useState<string>("");
   const [fhDetailInfo, setFhDetailInfo] = useState<string>("");
   const [fhShowAnswer, setFhShowAnswer] = useState(false);
-  // Visibility of App.tsx's sticky main-visualizer (`#main-visualizer`).
-  // The floating mini-visualizer in Show Answer only appears when the
-  // main one has scrolled out of view, so the user always sees the
-  // live highlighted pitches but never two simultaneous mirrors of
-  // the same keyboard.  Tracked via IntersectionObserver against the
-  // global element id set in App.tsx.
-  const [mainVizVisible, setMainVizVisible] = useState(true);
-  useEffect(() => {
-    const target = typeof document !== "undefined" ? document.getElementById("main-visualizer") : null;
-    if (!target) return;
-    const obs = new IntersectionObserver(([entry]) => {
-      setMainVizVisible(entry.isIntersecting);
-    }, { threshold: 0 });
-    obs.observe(target);
-    return () => obs.disconnect();
-  }, []);
-  // Show Answer brings up the full Harmonic-Lattice overlay anchored at
-  // the top of the viewport (2/3 viewport width).  This local toggle
-  // lets the user dismiss the lattice independently of the show-answer
-  // reveal below — collapsing it here keeps the chord-tone reveal
-  // visible without re-hiding the answer.
-  const [latticeOverlayOpen, setLatticeOverlayOpen] = useState(true);
-  useEffect(() => {
-    // Re-open the lattice overlay automatically each time the user
-    // reveals a fresh answer, so dismissing it once doesn't permanently
-    // suppress it.
-    if (fhShowAnswer) setLatticeOverlayOpen(true);
-  }, [fhShowAnswer]);
   // Index of the chord whose lattice node is currently lit during
-  // playback.  Driven by the same chord-onset timer that highlightAll
-  // Voices uses (see playLoopIteration) so the lattice walk on screen
-  // is synchronized with what the user hears.  -1 means no chord is
-  // active right now.
+  // playback.  Driven by the same chord-onset timer that
+  // highlightAllVoices uses (see playLoopIteration) so the lattice
+  // walk on screen is synchronized with what the user hears.  -1
+  // means no chord is active right now.
   const [currentChordIdx, setCurrentChordIdx] = useState(-1);
-  // Stable ref so playback timers can read the current progression
-  // length without forcing the playback callbacks to re-create
-  // whenever the progression changes.
-  const currentLoopLenRef = useRef(0);
   // Structured answer data — drives the rebuilt Show Answer reveal
   // (clickable tones + Heathwaite + Microtonal solfege per note + a
   // floating lattice box at top showing the active scale's lattice).
@@ -1110,7 +1078,6 @@ export default function ChordsTab({
     // visualization).  `drifts` is null in Frozen mode to make the
     // distinction explicit for downstream consumers.
     latticeDriftsRef.current = { progression, drifts: driftsCents };
-    currentLoopLenRef.current = progression.length;
     setLatticeRevision(v => v + 1);
 
     // Thread each chord's voicing into the next so voiceChord can run its
@@ -1893,118 +1860,6 @@ export default function ChordsTab({
               {answerButtons}
             </div>
 
-            {/* Harmonic-Lattice top overlay — fixed-position panel
-                anchored at the top of the viewport, taking 2/3 of the
-                viewport width so the chord-tone reveal underneath
-                still has room to breathe.  Mounts the full
-                Harmonic-Lattice 3D viewer (lazy-loaded so the JS only
-                downloads on first reveal).  Dismissible per-reveal so
-                the user can collapse it and inspect the chord tones
-                below; re-opens automatically the next time Show Answer
-                fires.  Z-index sits above sticky chrome (z-30) but
-                below modals (z-50). */}
-            {fhShowAnswer && fhAnswer && latticeOverlayOpen && (
-              <div
-                style={{
-                  position: "fixed",
-                  top: 12,
-                  left: "16.67vw",
-                  width: "66.66vw",
-                  height: "60vh",
-                  zIndex: 40,
-                  background: "#0a0a0a",
-                  border: "1px solid #5b5be6",
-                  borderRadius: 8,
-                  boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
-                  display: "flex",
-                  flexDirection: "column",
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "6px 12px",
-                    background: "#5b5be618",
-                    borderBottom: "1px solid #5b5be633",
-                    flexShrink: 0,
-                  }}
-                >
-                  <span style={{ color: "#5b5be6", fontSize: 10, fontWeight: 700, letterSpacing: 1, flex: 1 }}>
-                    HARMONIC LATTICE
-                  </span>
-                  <button
-                    onClick={() => setLatticeOverlayOpen(false)}
-                    style={{
-                      background: "transparent",
-                      border: "1px solid #5b5be6",
-                      color: "#5b5be6",
-                      fontSize: 10,
-                      fontWeight: 700,
-                      padding: "2px 8px",
-                      borderRadius: 4,
-                      cursor: "pointer",
-                    }}
-                    title="Close lattice overlay"
-                  >
-                    ✕
-                  </button>
-                </div>
-                <div style={{ flex: 1, minHeight: 0, overflow: "auto", position: "relative" }}>
-                  {(() => {
-                    // Build the focused chord-trace lattice from the
-                    // last-played progression.  Each chord's voicing
-                    // quality is inferred from its played pitches via
-                    // chordQualityFromSteps so the lattice can plot the
-                    // full chord (root + 3rd + 5th + 7th when present),
-                    // not just the root.
-                    const prog = fhAnswer?.progression ?? null;
-                    if (!prog || prog.length === 0) {
-                      return (
-                        <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#555", fontSize: 11 }}>
-                          No progression to trace yet.
-                        </div>
-                      );
-                    }
-                    const qualities = (fhAnswer?.chords ?? []).map(c => {
-                      const inferred = chordQualityFromSteps(c.notes, edo);
-                      if (inferred) return inferred;
-                      // Fall back to Roman-numeral case heuristics so
-                      // chords whose voicings aren't classifiable still
-                      // get a sensible voicing on the lattice.
-                      const stripped = stripChordLabel(c.numeral);
-                      if (stripped.endsWith("°")) return "dim";
-                      if (stripped.endsWith("ø")) return "m7b5";
-                      const isMajor = /^[A-Z]/.test(stripped);
-                      return isMajor ? "major" : "minor";
-                    });
-                    return (
-                      <ChordTraceLattice
-                        progression={prog}
-                        qualities={qualities}
-                        currentIdx={currentChordIdx}
-                        accent="#5cca8a"
-                      />
-                    );
-                  })()}
-                </div>
-              </div>
-            )}
-            {/* Re-open button when the overlay is dismissed but Show
-                Answer is still active — small inline button above the
-                chord-tone reveal so the user can pull the lattice back
-                up without re-triggering Show Answer. */}
-            {fhShowAnswer && fhAnswer && !latticeOverlayOpen && (
-              <button
-                onClick={() => setLatticeOverlayOpen(true)}
-                className="text-[10px] text-[#5b5be6] hover:text-[#8a8aff] border border-[#5b5be6] hover:border-[#8a8aff] px-2 py-1 rounded transition-colors self-start"
-              >
-                ▾ Open Harmonic Lattice
-              </button>
-            )}
-
             {/* Answer — only visible after clicking Show Answer.
                 Per-chord rows with clickable tone buttons; each tone
                 shows its interval-from-tonic name plus both solfege
@@ -2026,21 +1881,25 @@ export default function ChordsTab({
                       </p>
                     )}
                   </div>
-                  {/* Embedded visualizer — mirrors the main visualizer at
-                      the top of the page so the user can see what's
-                      highlighted while scrolled down to read the answer.
-                      PianoKeyboard's SVG uses viewBox + width="100%" so
-                      it scales to fit the box without horizontal scroll.
-                      Restricted to 12-EDO since PianoKeyboard is 12-EDO
-                      native; for 31-EDO/etc. the chord-tone buttons below
-                      already serve the visualization role. */}
-                  {edo === 12 && highlightedPitches && (
-                    <div className="rounded border border-[#3a3a1a] overflow-hidden" style={{ maxWidth: "100%" }}>
-                      <PianoKeyboard
-                        highlightedPitches={highlightedPitches}
-                        pitchMin={tonicPc - 12}
-                        pitchMax={tonicPc + 24}
-                      />
+                  {/* Embedded visualizer — mirrors whichever main
+                      visualizer the user has selected (piano, guitar,
+                      bass, or Lumatone) for any EDO.  Lives inline
+                      inside the Show Answer box so the user gets a
+                      large, persistent live view of highlighted
+                      pitches without any floating chrome. */}
+                  {highlightedPitches && (
+                    <div className="rounded border border-[#3a3a1a] overflow-hidden bg-[#0a0a0a]" style={{ maxWidth: "100%" }}>
+                      {edo === 12 && vizType === "piano" ? (
+                        <PianoKeyboard highlightedPitches={highlightedPitches} onKeyClick={onKeyClick} />
+                      ) : edo === 12 && vizType === "guitar" ? (
+                        <GuitarFretboard highlightedPitches={highlightedPitches} onKeyClick={onKeyClick} />
+                      ) : edo === 12 && vizType === "bass" ? (
+                        <BassFretboard highlightedPitches={highlightedPitches} onKeyClick={onKeyClick} />
+                      ) : layout ? (
+                        <LumatoneKeyboard layout={layout} highlightedPitches={highlightedPitches} onKeyClick={onKeyClick} />
+                      ) : (
+                        <div className="text-[10px] text-[#666] italic p-3">Loading keyboard…</div>
+                      )}
                     </div>
                   )}
                   {/* Live lattice trace — meaningful in Adaptive and
@@ -2154,53 +2013,40 @@ export default function ChordsTab({
                       </div>
                     </div>
                   ))}
+                  {/* Inline Harmonic-Lattice section — replaces the
+                      old fixed-position top overlay.  Sits at the
+                      bottom of the Show Answer box so the user can
+                      scroll through the chord-tone reveal first, then
+                      see the lattice walk for the same progression
+                      with EDO tempering applied. */}
+                  {fhAnswer.progression.length > 0 && (() => {
+                    const qualities = (fhAnswer.chords ?? []).map(c => {
+                      const inferred = chordQualityFromSteps(c.notes, edo);
+                      if (inferred) return inferred;
+                      const stripped = stripChordLabel(c.numeral);
+                      if (stripped.endsWith("°")) return "dim";
+                      if (stripped.endsWith("ø")) return "m7b5";
+                      const isMajor = /^[A-Z]/.test(stripped);
+                      return isMajor ? "major" : "minor";
+                    });
+                    return (
+                      <div className="rounded border border-[#3a3a5a] bg-[#0a0a14] p-3 mt-2">
+                        <p className="text-[10px] text-[#7a7af0] font-semibold tracking-wider mb-2">HARMONIC LATTICE</p>
+                        <div style={{ width: "100%", height: "55vh", overflow: "auto" }}>
+                          <ChordTraceLattice
+                            progression={fhAnswer.progression}
+                            qualities={qualities}
+                            currentIdx={currentChordIdx}
+                            edo={edo}
+                            accent="#7a7af0"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })()}
-
-            {/* Floating mini-visualizer — bottom-right of viewport,
-                mirrors whatever main visualizer the user has selected
-                (piano / guitar / bass / lumatone, any EDO).  Shown only
-                when Show Answer is open AND the sticky main visualizer
-                at the top has scrolled out of view, so the user can
-                still see live highlighted pitches without ever rendering
-                two stacked mirrors of the same keyboard. */}
-            {fhShowAnswer && fhAnswer && highlightedPitches && !mainVizVisible && (
-              <FloatingPanel
-                position="bottom-right"
-                title="VISUALIZER"
-                accent="#5b5be6"
-                storageKey="lt_crd_answer_viz_collapsed"
-                bottomOffset={16}
-                maxWidth="92vw"
-                maxHeight="42vh"
-              >
-                {edo === 12 && vizType === "piano" ? (
-                  <PianoKeyboard
-                    highlightedPitches={highlightedPitches}
-                    onKeyClick={onKeyClick}
-                  />
-                ) : edo === 12 && vizType === "guitar" ? (
-                  <GuitarFretboard
-                    highlightedPitches={highlightedPitches}
-                    onKeyClick={onKeyClick}
-                  />
-                ) : edo === 12 && vizType === "bass" ? (
-                  <BassFretboard
-                    highlightedPitches={highlightedPitches}
-                    onKeyClick={onKeyClick}
-                  />
-                ) : layout ? (
-                  <LumatoneKeyboard
-                    layout={layout}
-                    highlightedPitches={highlightedPitches}
-                    onKeyClick={onKeyClick}
-                  />
-                ) : (
-                  <div className="text-[10px] text-[#666] italic">Loading keyboard…</div>
-                )}
-              </FloatingPanel>
-            )}
 
             {/* Floating lattice box — top-right of viewport, stacked
                 below the mini-visualizer.  Shows the JI lattice for
