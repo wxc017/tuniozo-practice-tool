@@ -176,15 +176,14 @@ const JI_SCALES: JiScaleSpec[] = [
   // pure unison.  Useful as a "small leading-tone" in scales where the
   // 5-limit b2 feels too wide.  41-EDO approximates 17/16 cleanly.
   { name: "Heptadecimal Major",
-    // 17/9 leading-tone (~1101¢) — slightly flat of the 5-limit Just M7
-    // (15/8 ≈ 1088¢)... wait, 17/9 is actually wider than 15/8.  17/9
-    // gives a stronger pull to tonic than 15/8.
+    // 5-limit Major spine; the 7th uses 17/9 (~1101¢) — wider than the
+    // Just M7 (15/8 ≈ 1088¢), which gives a stronger pull-to-tonic
+    // resolution thanks to the larger semitone cap.
     steps: [["1",0],["2",203.9],["3",386.3],["4",498.0],["5",702.0],["6",884.4],["7",1101.0]] },
   { name: "Heptadecimal Minor",
-    // 5-limit minor spine; b2 lifts to 17/16 (~105¢) — small supraminor
-    // 2nd, brighter than the standard b2.  b6 uses 17/10 (~919¢ – wait,
-    // that's the M6 region) — let me use a proper b6: keep at 8/5.
-    // 17-prime colour at the b2 only.
+    // 5-limit Minor spine; b2 lifts to 17/16 (~105¢) — a small supraminor
+    // 2nd, brighter than the standard 16/15 b2.  17-prime colour at the
+    // b2 only; the rest of the scale stays 5-limit.
     steps: [["1",0],["b2",105.0],["b3",315.6],["4",498.0],["5",702.0],["b6",813.7],["b7",1017.6]] },
   { name: "Heptadecimal Hijaz",
     // Hijaz with 17-limit b2 (17/16 instead of the standard 16/15).
@@ -214,9 +213,10 @@ const JI_SCALES: JiScaleSpec[] = [
   // 23-LIMIT
   { name: "Vicesimotertial Major",
     // Standard 5-limit Major (1 9/8 5/4 4/3 3/2 5/3 …) but the 7th
-    // borrows 23/12 (~1099¢) — between Just M7 (15/8 ≈ 1088¢) and Pyth
-    // M7 (243/128 ≈ 1110¢), a leading-tone with 23-prime colour.
-    steps: [["1",0],["2",203.9],["3",386.3],["4",498.0],["5",702.0],["6",884.4],["7",1098.9]] },
+    // borrows 23/12 (~1126¢) — wider than both Just M7 (15/8 ≈ 1088¢)
+    // and Pyth M7 (243/128 ≈ 1110¢), giving an extra-stretched
+    // leading-tone with 23-prime colour.
+    steps: [["1",0],["2",203.9],["3",386.3],["4",498.0],["5",702.0],["6",884.4],["7",1126.3]] },
   { name: "Vicesimotertial Minor",
     // 5-limit Minor spine; b3 lifts to 23/19 (~329¢) — sits between
     // Pyth m3 (294¢) and Just m3 (316¢), giving the b3 a brighter,

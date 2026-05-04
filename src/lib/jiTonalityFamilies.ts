@@ -241,7 +241,7 @@ export const JI_LIMIT_GROUPS: JiLimitGroup[] = [
     limit: 23,
     label: "VICESIMOTERTIAL (23-LIMIT)",
     color: "#caac5a",
-    blurb: "Major 7 lifts to 23/12; minor b3 lifts to 23/19 supraminor — recognisable Major / Minor with one 23-prime colour-tone.",
+    blurb: "Major 7 = 23/12 (~1126¢, extra-stretched leading-tone); Minor b3 = 23/19 supraminor — Major / Minor with one 23-prime colour-tone each.",
     families: [
       {
         key: "23-tertian",

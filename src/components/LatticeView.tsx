@@ -3650,12 +3650,14 @@ function EdoTonnetzSvg({
 
 type ViewMode = "lattice" | "harmonic" | "otonal" | "comma" | "chain" | "monzo";
 
+// Tab order matters: Object.keys() iterates in insertion order, and the
+// tab row uses that to render.  monzo (renamed "Lattice") is first so
+// the section opens on the prime-factor lattice — what most users mean
+// when they say "the harmonic lattice" — and the Tonnetz triadic graph
+// sits in second position.
 const MODE_LABELS: Record<ViewMode, string> = {
-  lattice: "Lattice",          // renamed from "Tonnetz" so the first tab
-                                // reads as the canonical lattice view —
-                                // it's still the Tonnetz internally, the
-                                // label just matches the conceptual name.
-  monzo: "Monzo Lattice",
+  monzo: "Lattice",            // the prime-factor JI lattice — default
+  lattice: "Tonnetz",          // Riemannian triadic graph — moved to 2nd
   harmonic: "Harmonic Series",
   otonal: "Otonal / Utonal",
   comma: "Comma",
@@ -3688,7 +3690,7 @@ export default function LatticeView() {
   const [droneNodes, setDroneNodes] = useState<Set<string>>(new Set());
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [audioReady, setAudioReady] = useState(false);
-  const [viewMode, setViewMode] = useState<ViewMode>("lattice");
+  const [viewMode, setViewMode] = useState<ViewMode>("monzo");
   // labelMode removed — ChainSvg now hardcoded to "intervals"
   const [cameraResetKey, setCameraResetKey] = useState(0);
 
