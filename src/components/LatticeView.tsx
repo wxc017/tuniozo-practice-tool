@@ -44,6 +44,22 @@ import {
 import { accidentalText } from "@/lib/hejiNotation";
 import { COMMA_DB, edoTempersComma } from "@/lib/edoTemperamentData";
 
+/** Pick a small set of 5-limit commas that vanish in the given EDO,
+ *  forming a spanning kernel basis.  The 5-limit lattice has rank 2,
+ *  so two independent commas collapse the lattice to its EDO classes
+ *  exactly; we hand-feed three of the simplest vanishing 5-limit
+ *  commas so the projection has redundant data even if one of them
+ *  is linearly dependent.  This drives the Tonescape-style toroidal
+ *  shape: P5 chain + M3 chain both wrap, producing a torus. */
+function fiveLimitCommasForEdo(edo: number): { n: number; d: number; name: string }[] {
+  return COMMA_DB
+    .filter(c => c.category === "5-limit")
+    .filter(c => edoTempersComma(edo, c.n, c.d))
+    .sort((a, b) => a.cents - b.cents)
+    .slice(0, 3)
+    .map(c => ({ n: c.n, d: c.d, name: c.name }));
+}
+
 // ── Cents → nearest 12-TET note + deviation ─────────────────────
 // ═══════════════════════════════════════════════════════════════
 // Arrow-key panning: moves orbit center in camera-relative dirs
@@ -1711,6 +1727,10 @@ interface MonzoNodeMeshProps {
   isNonRepClass?: boolean;
   /** Show equivalence class ID on label */
   showClassId?: boolean;
+  /** EDO denominator for class labels — when set, the class ID is
+   *  rendered as `N\edo` instead of `class N` so the user reads it as
+   *  a tempered pitch step rather than an opaque cluster index. */
+  edo?: number;
 }
 
 const TEMPER_CLASS_COLORS = [
@@ -1718,10 +1738,12 @@ const TEMPER_CLASS_COLORS = [
   "#ff8844", "#44ff88", "#8844ff", "#ffaa66", "#66ffaa", "#aa66ff",
 ];
 
-function MonzoNodeMesh({ node, pos, isActive, isHovered, isFocused, showLabel = true, labelLOD = false, labelDist = 15, onHover, onClick, onFocus, onCtrlClick, primes, temperedClass, classColorMap, rootPc, showNoteNames = true, showIntervals = true, showRatios = true, showMonzo = false, showHeji = false, temperedSiblings, isClassRep, isOnPath, isPathEndpoint, isPinnedPath, isHighlighted, highlightMode, isNonRepClass, showClassId }: MonzoNodeMeshProps) {
+function MonzoNodeMesh({ node, pos, isActive, isHovered, isFocused, showLabel = true, labelLOD = false, labelDist = 15, onHover, onClick, onFocus, onCtrlClick, primes, temperedClass, classColorMap, rootPc, showNoteNames = true, showIntervals = true, showRatios = true, showMonzo = false, showHeji = false, temperedSiblings, isClassRep, isOnPath, isPathEndpoint, isPinnedPath, isHighlighted, highlightMode, isNonRepClass, showClassId, edo }: MonzoNodeMeshProps) {
   const isDimmed = (highlightMode && !isHighlighted && !isActive && !isFocused && !isOnPath) || isNonRepClass;
-  const baseR = node.monzo.isComma ? 0.12 : 0.2;
-  const r = isHighlighted ? baseR * 1.25 : (isOnPath && !isPathEndpoint) ? baseR * 0.45 : baseR;
+  // Bigger nodes by default — easier to read note labels and to
+  // track which cells light up during chord playback.
+  const baseR = node.monzo.isComma ? 0.18 : 0.36;
+  const r = isHighlighted ? baseR * 1.3 : (isOnPath && !isPathEndpoint) ? baseR * 0.45 : baseR;
   const isUnison = node.monzo.n === 1 && node.monzo.d === 1;
 
   const color = useMemo(() => {
@@ -1892,7 +1914,7 @@ function MonzoNodeMesh({ node, pos, isActive, isHovered, isFocused, showLabel = 
                 fontFamily: "Inter, system-ui, sans-serif",
                 fontWeight: 700,
               }}>
-                class {temperedClass}
+                {edo ? `${temperedClass}\\${edo}` : `class ${temperedClass}`}
               </div>
             )}
             {hasTemperedSiblings && !isHovered && (
@@ -2305,11 +2327,19 @@ function MonzoScene({ lattice, topology, droneNodes, hoveredNode, onHover, onCli
         // In path mode with no hover/pinned, show nothing
         if (pathMode && !combinedEdgeSet) return null;
         const posMap = layers.classes ? lattice.jiPositions : (topoPositions ?? lattice.positions);
+        // Same class-rep filter the node loop uses, so M3/P5 edges
+        // only connect cells the user can actually see.
+        const edoClassRepFilter = lattice.classMap.size > 0
+          && lattice.config.temperedCommas.length === 0;
+        const isHidden = (key: string) => edoClassRepFilter
+          && siblingsMap.has(key)
+          && !classRepSet.has(key);
         const byPrime = new Map<number, [number, number, number][]>();
         for (const edge of lattice.edges) {
           if (edge.type !== "generator") continue;
           if (pathMode && combinedEdgeSet && !combinedEdgeSet.has(edge)) continue;
           if (dedupVisibleSet.size > 0 && (!dedupVisibleSet.has(edge.from) || !dedupVisibleSet.has(edge.to))) continue;
+          if (isHidden(edge.from) || isHidden(edge.to)) continue;
           const a = posMap.get(edge.from), b = posMap.get(edge.to);
           if (!a || !b) continue;
           if (!byPrime.has(edge.prime)) byPrime.set(edge.prime, []);
@@ -2384,10 +2414,20 @@ function MonzoScene({ lattice, topology, droneNodes, hoveredNode, onHover, onCli
       {/* Nodes:
            - Classes ON: show ALL nodes at their JI positions to visualize equivalence classes.
            - Dedupe ON: keep only one node per unique tempered position (simplest ratio wins).
-           - Default (both off): show all nodes at their tempered positions (duplicates stack). */}
+           - Default (both off): show all nodes at their tempered positions (duplicates stack).
+           - EDO class-rep filter: when val-based classes are active
+             (lattice.classMap has entries) AND no commas were
+             projected, drop every cell that's a non-rep member of
+             a multi-cell class.  This is what produces the
+             Tonescape-style 12-cells-for-12-EDO layout: one
+             simplest-ratio rep per equivalence class. */}
       {layers.nodes && lattice.nodes
         .filter(node => {
           if (dedupVisibleSet.size > 0 && !dedupVisibleSet.has(node.key)) return false;
+          if (lattice.classMap.size > 0
+              && lattice.config.temperedCommas.length === 0
+              && siblingsMap.has(node.key)
+              && !classRepSet.has(node.key)) return false;
           return true;
         })
         .map(node => {
@@ -2427,6 +2467,7 @@ function MonzoScene({ lattice, topology, droneNodes, hoveredNode, onHover, onCli
           highlightMode={!!highlightedRatios && highlightedRatios.size > 0}
           isNonRepClass={false}
           showClassId={layers.classes}
+          edo={lattice.config.edo}
         />);
       })}
 
@@ -3701,14 +3742,21 @@ interface LatticeViewProps {
    *  caller animate a step-by-step walk by changing this value over
    *  time.  Pass null / undefined when no step is active. */
   activeNodeKey?: string | null;
-  /** When supplied, the monzo lattice auto-tempers itself for this EDO:
-   *  every comma in COMMA_DB that vanishes in the EDO is added to
-   *  `temperedCommas`, and `monzoConfig.edo` is wired through so the
-   *  equivalence classes use val-based classification.  The result is
-   *  a 3D lattice that physically collapses cells the EDO maps to the
-   *  same step — i.e. meantone EDOs squash 81/80, schismatic EDOs
-   *  squash 32805/32768, 12-EDO squashes everything in sight, etc.
-   *  Drives the "you can understand tuning systems" view. */
+  /** Multiple node keys for the currently active step.  When supplied,
+   *  takes precedence over `activeNodeKey` — used by the chord-trace
+   *  overlay to light up every chord-tone (root + 3rd + 5th + 7th)
+   *  simultaneously, mirroring what the keyboard highlights during
+   *  playback.  Pass an empty Set / undefined when nothing is active. */
+  activeNodeKeys?: Set<string>;
+  /** When supplied, the monzo lattice's equivalence-class assignment
+   *  switches to val-based for this EDO — i.e. every JI cell is
+   *  coloured by which one of `edo` pitch classes it maps to, while
+   *  the lattice itself stays at full rank in 3D.  Tonescape-style:
+   *  the chain of fifths in 12-EDO becomes a visible helix because
+   *  the cells keep their JI positions; only their colour grouping
+   *  reflects the EDO collapse.  No `temperedCommas` are applied —
+   *  collapsing the lattice rank produces a degenerate line that
+   *  hides which structures the temperament actually preserves. */
   temperingForEdo?: number;
   /** When true, hide all controls (header, mode-tabs, drone /
    *  preset / temper / tuning panel, layers, etc.) and render only
@@ -3719,21 +3767,24 @@ interface LatticeViewProps {
   chromeless?: boolean;
 }
 
-export default function LatticeView({ externalHighlights, activeNodeKey, temperingForEdo, chromeless = false }: LatticeViewProps = {}) {
+export default function LatticeView({ externalHighlights, activeNodeKey, activeNodeKeys, temperingForEdo, chromeless = false }: LatticeViewProps = {}) {
   const [droneNodes, setDroneNodes] = useState<Set<string>>(new Set());
-  // When the parent supplies an `activeNodeKey`, surface it through the
-  // standard droneNodes set so it picks up the same pulsing/highlight
-  // visual treatment a clicked node gets.  Each change replaces the
-  // drone set with just the active key — the parent retains exclusive
-  // control of which step is "live" without us having to teach the
-  // scene a new highlight category.  Internal user clicks (which also
-  // mutate droneNodes) are clobbered while the external override is
-  // active, which matches the rest of the externalHighlights override
-  // semantics.
+  // When the parent supplies `activeNodeKeys` (plural) or
+  // `activeNodeKey` (singular), surface them through the standard
+  // droneNodes set so they pick up the same pulsing/highlight visual
+  // treatment a clicked node gets.  Plural takes precedence so the
+  // chord-trace overlay can light up every chord tone simultaneously
+  // (root + 3rd + 5th + 7th) while playback advances.  Internal user
+  // clicks are clobbered while the external override is active, which
+  // matches the rest of the externalHighlights override semantics.
   useEffect(() => {
+    if (activeNodeKeys !== undefined) {
+      setDroneNodes(new Set(activeNodeKeys));
+      return;
+    }
     if (activeNodeKey === undefined) return;
     setDroneNodes(activeNodeKey ? new Set([activeNodeKey]) : new Set());
-  }, [activeNodeKey]);
+  }, [activeNodeKey, activeNodeKeys]);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const [audioReady, setAudioReady] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("monzo");
@@ -3849,40 +3900,70 @@ export default function LatticeView({ externalHighlights, activeNodeKey, temperi
   const [monzoConfig, setMonzoConfig] = useState<LatticeConfig>(PRESET_CONFIGS["7-limit"]);
 
   // ── EDO auto-tempering ─────────────────────────────────────────────
-  // When the parent supplies `temperingForEdo`, configure monzoConfig
-  // so the 3D lattice physically collapses cells the EDO maps to the
-  // same step.  We restrict the comma set to a small "characteristic"
-  // shortlist (syntonic, schisma, septimal kleisma, septimal comma):
-  // adding every COMMA_DB entry that vanishes would over-temper a
-  // 2D-or-3D lattice down to a point.  This shortlist is enough to
-  // classify each EDO into its temperament family — meantone EDOs
-  // collapse 81/80, schismatic EDOs collapse 32805/32768, 12-EDO
-  // collapses everything (which is exactly what 12-EDO does), and
-  // higher EDOs in unusual families pass through unmodified at 5/7
-  // limit so the user can still see most cells distinct.
+  // Inspired by Tonalsoft's Tonescape: when an EDO is the active
+  // tuning, we DON'T collapse the JI lattice down to a low-rank
+  // quotient — that just produces a straight line for meantone EDOs
+  // and destroys the spatial information the user wants to see.
+  // Instead, we keep the lattice at its full 5-/7-limit dimension
+  // and only set `monzoConfig.edo`, which switches equivalence-class
+  // assignment to val-based (mapping each lattice node to one of
+  // exactly `edo` classes).  Cells that share an EDO step then share
+  // a class colour while staying at their pure-JI positions in 3D —
+  // 12-EDO's chain of fifths becomes a visible helix/spiral instead
+  // of a degenerate line, schismatic EDOs show their near-equivalent
+  // paths as parallel ribbons, and the user can actually read what
+  // the temperament preserves.  Bounds are widened on the 3-axis so
+  // the spiral has room to wrap several times without being clipped.
   useEffect(() => {
     if (typeof temperingForEdo !== "number") return;
-    const KEY_COMMAS: { n: number; d: number; name: string }[] = [
-      { n: 81,    d: 80,    name: "Syntonic comma (81/80)"      },
-      { n: 32805, d: 32768, name: "Schisma (32805/32768)"        },
-      { n: 225,   d: 224,   name: "Septimal kleisma (225/224)"   },
-      { n: 64,    d: 63,    name: "Septimal comma (64/63)"       },
-    ];
-    const commas = KEY_COMMAS.filter(c => edoTempersComma(temperingForEdo, c.n, c.d));
+    // Tonescape "3,5-primespace toroidal lattice", matched to the
+    // tonespace XML files shipped with Tonalsoft Tonescape Studio.
+    // Per those files: each cell at (a, b, c) is positioned by its
+    // monzo coordinates directly via the standard linear prime-axis
+    // projection — no parametric torus formula, no V⊥ collapse.
+    // The toroidal *shape* emerges from the topology: with the
+    // EDO's val driving class assignment and the simplest cell per
+    // class chosen as the rep, the 12 (or 31, 41, 53…) reps land
+    // at scattered 3D positions and the prime-axis edges connecting
+    // them sweep out the torus.  We supply temperedCommas only as
+    // metadata / hints; positions are not collapsed.
     setMonzoConfig(prev => ({
       ...prev,
-      primes: [2, 3, 5, 7],
-      bounds: { 2: [-1, 1], 3: [-4, 4], 5: [-2, 2], 7: [-1, 1] },
+      primes: [2, 3, 5],
+      bounds: { 2: [-1, 1], 3: [-6, 6], 5: [-3, 3] },
       octaveEquivalence: true,
       showPrime2: false,
       edo: temperingForEdo,
-      temperedCommas: commas,
+      temperedCommas: [],
+      gridType: "square",
     }));
-    setMonzoPreset(`${temperingForEdo}-EDO auto-tempered`);
+    setMonzoGridType("square");
+    setMonzoPreset(`${temperingForEdo}-EDO 3,5-primespace toroidal lattice`);
+    // EDO context: keep prime edges visible (the M3 / P5 chains are
+    // exactly what makes the toroidal structure legible), and
+    // surface note names + class IDs so each cell reads as a real
+    // pitch.  Hide the busier monzo / HEJI / interval / ratio
+    // overlays so the torus stays uncluttered.
+    setMonzoLayers(prev => ({
+      ...prev,
+      classes: true,
+      noteNames: true,
+      primeEdges: true,
+      temperedEdges: false,
+      intervals: false,
+      ratios: false,
+      monzo: false,
+      heji: false,
+    }));
   }, [temperingForEdo]);
   // monzoLabelMode removed — now individual layer toggles
   const [monzoShowTopo, setMonzoShowTopo] = useState(true);
-  const [monzoGridType, setMonzoGridType] = useState<GridType>("square");
+  // Default to the Tonescape-style helical projection so anyone
+  // opening the lattice — embedded or standalone — gets the
+  // spiral / helix view automatically.  Square / triangle remain
+  // available as manual overrides for users who explicitly want a
+  // flat 2D-ish layout.
+  const [monzoGridType, setMonzoGridType] = useState<GridType>("helical");
   const [customCommaInput, setCustomCommaInput] = useState("");
   const [jumpRatioInput, setJumpRatioInput] = useState("");
 
@@ -5411,14 +5492,14 @@ export default function LatticeView({ externalHighlights, activeNodeKey, temperi
             {/* Grid type toggle */}
             <div className="flex flex-wrap gap-1.5 items-center">
               <span className="text-[10px] text-[#555] uppercase tracking-wider mr-1">Grid</span>
-              {(["square", "triangle"] as const).map(gt => (
+              {(["helical", "square", "triangle"] as const).map(gt => (
                 <button key={gt} onClick={() => setMonzoGridType(gt)}
                   className={`px-2 py-1 rounded text-xs font-medium transition-colors border ${
                     monzoGridType === gt
                       ? "bg-[#7173e6] text-white border-[#7173e6]"
                       : "bg-[#111] text-[#444] border-[#222] hover:text-[#aaa]"
                   }`}>
-                  {gt === "square" ? "Square (90\u00B0)" : "Triangle (60\u00B0)"}
+                  {gt === "square" ? "Square (90\u00B0)" : gt === "triangle" ? "Triangle (60\u00B0)" : "Helical (Tonescape)"}
                 </button>
               ))}
             </div>

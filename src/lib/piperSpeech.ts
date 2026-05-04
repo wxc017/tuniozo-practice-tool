@@ -143,6 +143,12 @@ export interface PiperSpeakOptions {
   ipa?: string;
 }
 
+/** Default playback rate for piper output.  The model's natural
+ *  pace on isolated single-syllable inputs is rushed (it's trained
+ *  on full-sentence prosody); 0.85 gives a clear, deliberate
+ *  pronunciation without sounding pitched-down or chopped. */
+const PIPER_PLAYBACK_RATE = 0.85;
+
 /** Speak a syllable through piper-wasm.  Falls back to the Web Speech
  *  API if piper hasn't loaded or fails for any reason — the user hears
  *  something either way. */
@@ -153,6 +159,11 @@ export async function piperSpeak(text: string, options: PiperSpeakOptions = {}):
     return;
   }
   const audio = new Audio(url);
+  audio.playbackRate = PIPER_PLAYBACK_RATE;
+  // `preservesPitch` keeps the slowed audio from sounding like a tape
+  // reel.  Browser support is fairly broad but the property is still
+  // typed loosely, hence the cast.
+  (audio as HTMLAudioElement & { preservesPitch?: boolean }).preservesPitch = true;
   audio.play().catch(err => {
     console.warn("[piperSpeech] audio.play() rejected, falling back:", err);
     fallbackSpeak(text, options.ipa ? { ipa: options.ipa } : undefined);
@@ -164,4 +175,24 @@ export async function piperSpeak(text: string, options: PiperSpeakOptions = {}):
  *  high-quality engine is active. */
 export function piperIsWarm(): boolean {
   return warmed;
+}
+
+/** Pre-generate audio for a list of texts so the first user click
+ *  doesn't pay the cold-start cost (the worker init + ONNX runtime
+ *  fetch + voice model fetch can take ~5–10 s combined the first
+ *  time).  Fire-and-forget — the returned promise resolves once
+ *  every requested syllable is cached, but callers shouldn't await
+ *  it: the UI stays usable while warming proceeds in the
+ *  background, and `piperSpeak` will still play immediately for
+ *  whichever items have already finished generating. */
+export async function piperPrewarm(texts: readonly string[]): Promise<void> {
+  for (const t of texts) {
+    if (audioCache.has(t)) continue;
+    try {
+      await piperGenerateCached(t);
+    } catch {
+      // Swallow — pre-warm is best-effort; piperSpeak will fall
+      // back to Web Speech for any text that fails to generate.
+    }
+  }
 }

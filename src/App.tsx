@@ -256,7 +256,12 @@ export default function App() {
   // infrastructure stays valid.  Reverts to the previous EDO is up to the
   // user — they can always re-pick once they leave Scalar Explorations.
   useEffect(() => {
-    if (section === "scalar-exploration" && edo !== 12 && edo !== 31) {
+    // Scalar Explorations now supports the full Tonal-Audiation EDO
+    // set (12 / 19 / 31 meantone, 41 pythagorean, 53 schismatic) —
+    // pattern-map registration extended to all of them.  Only snap
+    // when the user is on an EDO outside that supported set.
+    const SCALAR_SUPPORTED_EDOS = new Set([12, 19, 31, 41, 53]);
+    if (section === "scalar-exploration" && !SCALAR_SUPPORTED_EDOS.has(edo)) {
       setEdo(31);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -772,7 +777,7 @@ export default function App() {
                         // Scalar Explorations only supports 12 / 31 EDO
                         // (xen pattern maps registered for those).
                         // Snap if the user was on something else.
-                        if (b.id === "scalar-exploration" && edo !== 12 && edo !== 31) {
+                        if (b.id === "scalar-exploration" && ![12, 19, 31, 41, 53].includes(edo)) {
                           setEdo(31);
                         }
                         setSection(b.id);
@@ -988,32 +993,47 @@ export default function App() {
                   </button>
                 </>
               )}
+              {/* In Tonal Audiation, the EDO + Visualizer dropdowns
+                  are rendered below the temperament/tab row instead
+                  of up here so they sit next to the temperament
+                  context they belong to. */}
+              {section !== "ear-trainer" && <>
               <div className="w-px h-4 bg-[#2a2a2a]" />
               <label className="text-xs text-[#666]">EDO</label>
               {section === "scalar-exploration" ? (
                 /* Family-grouped EDO buttons — mirrors Temperament
-                   Explorer's style.  Currently only Meantone (12 / 31)
-                   is supported in Scalar Explorations because the
-                   alteration / family-lattice xen pattern maps are
-                   registered only for those two.  Other temperament
-                   families will be added when their pattern maps
-                   land. */
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] text-[#888] font-semibold tracking-wider px-1 border-l border-[#2a2a2a]">MEANTONE</span>
-                  {[12, 31].map(n => {
-                    const active = edo === n;
-                    return (
-                      <button key={n} onClick={() => setEdo(n)}
-                        title={`${n}-EDO (Meantone family)`}
-                        className={`px-2 py-0.5 rounded text-[11px] font-medium border transition-colors ${
-                          active
-                            ? "bg-[#7173e6] text-white border-[#7173e6]"
-                            : "bg-[#1a1a1a] text-[#aaa] border-[#2a2a2a] hover:text-white hover:border-[#3a3a5a]"
-                        }`}>
-                        {n}
-                      </button>
-                    );
-                  })}
+                   Explorer's style.  All five Tonal-Audiation EDOs
+                   are supported here now (Meantone 12 / 19 / 31,
+                   Pythagorean 41, Schismatic 53). */
+                <div className="flex items-center gap-2 flex-wrap">
+                  {([
+                    { fam: "MEANTONE",    color: "#cfe6ff", edos: [12, 19, 31] },
+                    { fam: "PYTHAGOREAN", color: "#e6cfa0", edos: [41]         },
+                    { fam: "SCHISMATIC",  color: "#cfe6cf", edos: [53]         },
+                  ] as const).map(group => (
+                    <div key={group.fam} className="flex items-center gap-1.5">
+                      <span
+                        className="text-[9px] font-semibold tracking-wider px-1 border-l border-[#2a2a2a]"
+                        style={{ color: group.color }}
+                      >
+                        {group.fam}
+                      </span>
+                      {group.edos.map(n => {
+                        const active = edo === n;
+                        return (
+                          <button key={n} onClick={() => setEdo(n)}
+                            title={`${n}-EDO (${group.fam.toLowerCase()} family)`}
+                            className={`px-2 py-0.5 rounded text-[11px] font-medium border transition-colors ${
+                              active
+                                ? "bg-[#7173e6] text-white border-[#7173e6]"
+                                : "bg-[#1a1a1a] text-[#aaa] border-[#2a2a2a] hover:text-white hover:border-[#3a3a5a]"
+                            }`}>
+                            {n}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <select value={edo} onChange={e => setEdo(Number(e.target.value))}
@@ -1035,6 +1055,7 @@ export default function App() {
                   </select>
                 </>
               )}
+              </>}
             </div>
           </div>
           </>)}
@@ -1249,6 +1270,28 @@ export default function App() {
               {TEMPERAMENT_LABELS[t]}
             </button>
           ))}
+        </div>
+        {/* EDO + Visualizer row — moved out of the global header into
+            the Tonal Audiation body so it sits next to the
+            temperament context that gates which EDOs are available. */}
+        <div className="flex gap-2 flex-wrap items-center mb-3">
+          <span className="text-[10px] text-[#555] font-semibold tracking-wider mr-1">EDO</span>
+          <select value={edo} onChange={e => setEdo(Number(e.target.value))}
+            className="bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-white focus:outline-none">
+            {TEMPERAMENT_EDOS[temperament].map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+          {edo === 12 && (
+            <>
+              <div className="w-px h-4 bg-[#2a2a2a]" />
+              <span className="text-[10px] text-[#555] font-semibold tracking-wider mr-1">VISUALIZER</span>
+              <select value={vizType} onChange={e => setVizType(e.target.value as VisualizerType)}
+                className="bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-white focus:outline-none">
+                {(Object.keys(VIZ_LABELS) as VisualizerType[]).map(v => (
+                  <option key={v} value={v}>{VIZ_LABELS[v]}</option>
+                ))}
+              </select>
+            </>
+          )}
         </div>
         <div className="flex gap-1 flex-wrap items-center mb-4">
           <PresetBar onPresetLoaded={() => setTabKey(k => k + 1)} />

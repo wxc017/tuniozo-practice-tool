@@ -26,9 +26,9 @@ import { formatRomanNumeral } from "@/lib/formatRoman";
 import { JI_LIMIT_GROUPS, jiLimitGroupsForEdo } from "@/lib/jiTonalityFamilies";
 import { JI_SCALE_NAMES, getJiScaleCents, getJiScaleDegrees } from "@/lib/jiScaleData";
 import { analyzeJiScale, COMMA_DRIFT_CATALOG } from "@/lib/jiChordAnalysis";
-import { chordQualityFromSteps, voicingFor, voicingToSteps, coerceTo5Limit } from "@/lib/jiLattice";
+import { chordQualityFromSteps, voicingFor } from "@/lib/jiLattice";
 import { limitForJiTonality } from "@/lib/jiTonalityFamilies";
-import { tracePathDrifts, driftCentsToSteps, stripChordLabel, tracePath, latticePosToRatio } from "@/lib/jiLattice";
+import { tracePathDrifts, driftCentsToSteps, stripChordLabel, tracePath, latticeAdd, latticePosToRatio } from "@/lib/jiLattice";
 import FloatingPanel from "@/components/FloatingPanel";
 import JiScaleLattice from "@/components/JiScaleLattice";
 import PianoKeyboard from "@/components/PianoKeyboard";
@@ -37,7 +37,7 @@ import BassFretboard from "@/components/BassFretboard";
 import LumatoneKeyboard from "@/components/LumatoneKeyboard";
 import type { LayoutResult, ComputedKey } from "@/lib/lumatoneLayout";
 import type { VisualizerType } from "@/App";
-import { piperSpeak } from "@/lib/piperSpeech";
+import { piperSpeak, piperPrewarm } from "@/lib/piperSpeech";
 import LatticeView from "@/components/LatticeView";
 
 const JI_SCALE_NAMES_SET = new Set(JI_SCALE_NAMES);
@@ -51,6 +51,10 @@ const JI_SCALE_NAMES_SET = new Set(JI_SCALE_NAMES);
 function SaySpan({
   text, ipa, className, title,
 }: { text: string; ipa: string | null; className?: string; title?: string }) {
+  // Each syllable gets a small opaque box around it so it visually
+  // separates from neighbouring labels in the chord-tone reveal.
+  // The classNames passed in already control colour / size; the box
+  // styling is added on top via background + border + padding.
   return (
     <span
       role="button"
@@ -63,7 +67,7 @@ function SaySpan({
         piperSpeak(text, ipa ? { ipa } : undefined);
       }}
       title={title ?? `Hear "${text}"${ipa ? ` /${ipa}/` : ""} spoken`}
-      className={className}
+      className={`inline-block bg-white/5 border border-white/10 rounded px-1.5 py-[1px] my-[1px] ${className ?? ""}`}
     >
       {text}
     </span>
@@ -245,18 +249,24 @@ export default function ChordsTab({
   // active tonalities.
   const [regMode, setRegMode] = useLS<string>("lt_crd_regMode", "Fixed Register");
   // JI progression mode (only meaningful in 41/53 EDO).
-  //   "frozen"   — scale's actual step values; wolves are baked in on
-  //                certain scale degrees and the tonic stays put.
+  //   "frozen"   — scale's actual step values; wolves baked in on
+  //                certain scale degrees, tonic stays put.
   //   "adaptive" — chord *shapes* stay at their EDO frozen tunings, but
   //                each chord's whole position drifts according to the
   //                accumulated lattice walk through the progression.
   //                The user hears the comma pump as a tonic that drifts,
   //                without each chord's interior being forced pure.
-  //   "pure5"    — each chord retuned to pure 3+5-limit ratios (no
-  //                septimal/undecimal/tridecimal axes), AND drift is
-  //                applied.  Demonstrates the classical syntonic-comma
-  //                pump in the cleanest form.
-  const [jiMode, setJiMode] = useLS<"frozen" | "adaptive" | "pure5">("lt_crd_jiMode", "frozen");
+  // "pure5" (per-chord pure 3+5-limit retuning) was removed — both
+  // remaining modes already convey the drift behaviour cleanly without
+  // forcing-pure-ratios changing chord identities.  Stale localStorage
+  // values reading "pure5" coerce to "adaptive".
+  const [jiMode, setJiMode] = useLS<"frozen" | "adaptive">(
+    "lt_crd_jiMode",
+    "frozen",
+  );
+  useEffect(() => {
+    if ((jiMode as string) === "pure5") setJiMode("adaptive");
+  }, [jiMode, setJiMode]);
   const [extTendency, setExtTendency] = useLS<string>("lt_crd_extTend", "Any");
   // "7th" is intentionally excluded from the extension UI — the 7th is
   // already carried by seventh-chord voicing patterns (1 3 5 7, etc.).
@@ -346,12 +356,26 @@ export default function ChordsTab({
   const [loopInfo, setLoopInfo] = useState<string>("");
   const [fhDetailInfo, setFhDetailInfo] = useState<string>("");
   const [fhShowAnswer, setFhShowAnswer] = useState(false);
+  // Pre-warm piper TTS for the most common syllables on first
+  // mount so the first user click on a syllable doesn't pay the
+  // ~5–10 s cold-start cost (worker init + ONNX runtime fetch +
+  // voice model fetch).  Fires fire-and-forget — the UI stays
+  // usable while warming proceeds in the background, and unwarmed
+  // syllables fall back to Web Speech instantly via piperSpeak.
+  useEffect(() => {
+    piperPrewarm(["Do", "Re", "Mi", "Fa", "Sol", "La", "Ti"]);
+  }, []);
   // Index of the chord whose lattice node is currently lit during
   // playback.  Driven by the same chord-onset timer that
   // highlightAllVoices uses (see playLoopIteration) so the lattice
   // walk on screen is synchronized with what the user hears.  -1
   // means no chord is active right now.
   const [currentChordIdx, setCurrentChordIdx] = useState(-1);
+  // Within the active chord, which tone is currently lit on the
+  // lattice — drives the per-chord arpeggio sweep so nodes light
+  // up one at a time (root → 3rd → 5th → 7th) instead of all at
+  // once.  -1 means no tone is active.
+  const [currentToneIdx, setCurrentToneIdx] = useState(-1);
   // Structured answer data — drives the rebuilt Show Answer reveal
   // (clickable tones + Heathwaite + Microtonal solfege per note + a
   // floating lattice box at top showing the active scale's lattice).
@@ -595,32 +619,10 @@ export default function ChordsTab({
         if (!map[k]) map[k] = v;
       }
     }
-    // Per-chord pure-ratio retuning is now scoped to "pure5" mode only.
-    // Adaptive mode keeps each chord's interior at its frozen EDO tuning
-    // and lets the comma drift (applied later per-chord in
-    // buildLoopFrames) carry the lattice motion.  Pure5 retunes each
-    // chord to its 3+5-limit voicing — septimal/undecimal/tridecimal
-    // qualities are coerced down to their classical cousin via
-    // coerceTo5Limit; qualities with no clean 5-limit substitute (e.g.
-    // neutral triads) pass through unchanged.
-    if (jiMode === "pure5" && (edo === 41 || edo === 53)) {
-      const out: Record<string, number[]> = {};
-      for (const [label, steps] of Object.entries(map)) {
-        if (steps.length < 3) { out[label] = steps; continue; }
-        const rawQuality = chordQualityFromSteps(steps, edo);
-        const quality = rawQuality ? coerceTo5Limit(rawQuality) : null;
-        const voicing = quality ? voicingFor(quality) : null;
-        if (!voicing) { out[label] = steps; continue; }
-        const voiceSteps = voicingToSteps(voicing, edo);
-        const root = steps[0];
-        const retuned = voiceSteps.map(off => root + off);
-        if (steps.length > voiceSteps.length) {
-          retuned.push(...steps.slice(voiceSteps.length));
-        }
-        out[label] = retuned;
-      }
-      return out;
-    }
+    // Frozen and Adaptive both keep chord interiors at their frozen
+    // EDO tuning — Adaptive only differs by applying the chord-by-
+    // chord lattice drift offset later in buildLoopFrames.  No
+    // per-chord pure-ratio retuning happens in either mode.
     return map;
   }, [baseChordMap, tonalitySet, buildChordMapForTonality, jiMode, edo]);
 
@@ -1065,7 +1067,7 @@ export default function ChordsTab({
     // (e.g. I-vi-ii-V-I), each chord after the pump carries a syntonic-
     // comma offset that shifts its absolute pitch by a few cents — this
     // is the audible drift.  Frozen mode keeps drifts at 0.
-    const useLattice = (jiMode === "adaptive" || jiMode === "pure5") && (edo === 41 || edo === 53);
+    const useLattice = jiMode === "adaptive" && (edo === 41 || edo === 53);
     const driftsCents = useLattice ? tracePathDrifts(progression) : null;
     // Always record the progression on the lattice ref so the harmonic
     // lattice overlay can plot the chord-root walk regardless of which
@@ -1249,16 +1251,29 @@ export default function ChordsTab({
         const id = setTimeout(() => onHighlight(notes), t);
         frameTimers.current.push(id);
       }
-      // Lattice progression-trace pulse: fires once per chord onset so
-      // the harmonic-lattice overlay can light up the chord's lattice
-      // position as the user hears it.  Cleared along with the rest
-      // of frameTimers when playback stops or restarts.
-      const latticeId = setTimeout(() => setCurrentChordIdx(slot), slot * gapMs);
-      frameTimers.current.push(latticeId);
+      // Lattice highlight sweep — one node at a time per chord.
+      // Across each chord's slot the lattice walks through the
+      // chord's tones (root → 3rd → 5th → 7th) one at a time so
+      // the user can see WHICH note is sounding at each moment
+      // instead of everything lighting up at once.
+      const chordPitches = voices.chords[slot] ?? [];
+      const toneCount = Math.max(1, chordPitches.length);
+      const tonePer = gapMs / toneCount;
+      for (let j = 0; j < toneCount; j++) {
+        const tToneOnset = slot * gapMs + j * tonePer;
+        const id = setTimeout(() => {
+          setCurrentChordIdx(slot);
+          setCurrentToneIdx(j);
+        }, tToneOnset);
+        frameTimers.current.push(id);
+      }
     }
     // Drop the active highlight just after the final chord's onset so
     // the lattice doesn't stay frozen on the last node forever.
-    const clearId = setTimeout(() => setCurrentChordIdx(-1), n * gapMs + 100);
+    const clearId = setTimeout(() => {
+      setCurrentChordIdx(-1);
+      setCurrentToneIdx(-1);
+    }, n * gapMs + 100);
     frameTimers.current.push(clearId);
   }, [onHighlight, textureLayers]);
 
@@ -1527,31 +1542,25 @@ export default function ChordsTab({
           tonality and displays it inline.  See the chord-row map
           inside the Show Answer reveal further down. */}
 
-      {/* JI progression mode selector (41/53 EDO only).  Three modes:
-            FROZEN   — scale-anchored chord pool; wolves baked in; tonic
-                       stays put.  Muted blue accent.
+      {/* JI progression mode selector (41/53 EDO only).  Two modes:
+            FROZEN   — scale's actual step values verbatim; certain
+                       scale-degree triads wolf, the syntonic comma is
+                       audible.  Tonic stays put.  Muted blue accent.
             ADAPTIVE — chord shapes stay at their frozen EDO tunings, but
                        the whole progression drifts as the lattice walks
                        through it (comma pumps audibly shift the tonic).
-                       Green accent.
-            PURE 3/5 — each chord retuned to pure 3+5-limit ratios; drift
-                       still applies.  Demonstrates the classical
-                       syntonic-comma pump in its cleanest form.
-                       Gold accent. */}
+                       Green accent. */}
       {(edo === 41 || edo === 53) && (() => {
         const modeBorderBg = jiMode === "frozen"
           ? "border-[#3a3a8a] bg-[#0e0e1a]"
-          : jiMode === "adaptive"
-            ? "border-[#3a8a5a] bg-[#0e1a14]"
-            : "border-[#8a7a3a] bg-[#1a1810]";
+          : "border-[#3a8a5a] bg-[#0e1a14]";
         return (
         <div className={`rounded border-2 p-3 transition-colors ${modeBorderBg}`}>
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-[10px] text-[#888] font-semibold tracking-wider mr-1">PROGRESSION MODE</p>
             {([
-              { id: "frozen",   label: "Frozen JI Progressions",       color: "#5b5be6" },
-              { id: "adaptive", label: "Adaptive (Drift Only)",        color: "#5cca8a" },
-              { id: "pure5",    label: "Pure 3/5-limit",               color: "#c8a850" },
+              { id: "frozen",   label: "Frozen JI Progressions", color: "#5b5be6" },
+              { id: "adaptive", label: "Adaptive Drift",         color: "#5cca8a" },
             ] as const).map(opt => (
               <button key={opt.id}
                 onClick={() => setJiMode(opt.id)}
@@ -1568,9 +1577,7 @@ export default function ChordsTab({
           <p className="text-[10px] text-[#888] italic mt-2">
             {jiMode === "frozen"
               ? "Each scale's chord pool uses the scale's actual step values verbatim.  One chord per scale wolfs (look for ✗ in the analysis below) — that's the syntonic comma made audible.  Tonic stays put."
-              : jiMode === "adaptive"
-                ? "Chord shapes stay at their frozen EDO tunings — no per-chord pure-ratio forcing.  Instead, the lattice walk through the progression accumulates comma drift, which shifts each chord's whole position.  The tonic actually drifts as the cadence pumps."
-                : "Each chord retuned to pure 3+5-limit ratios from its root (septimal/undecimal qualities collapse onto their 5-limit cousin).  Drift still applies — every classical syntonic pump audibly shifts the tonic by 81/80 ≈ 21.5¢."}
+              : "Chord shapes stay at their frozen EDO tunings — no per-chord pure-ratio forcing.  Instead, the lattice walk through the progression accumulates comma drift, which shifts each chord's whole position.  The tonic actually drifts as the cadence pumps."}
           </p>
         </div>
         );
@@ -1847,7 +1854,7 @@ export default function ChordsTab({
                       chord in the progression with its accumulated
                       drift in cents, colour-coded green / amber / pink
                       by magnitude. */}
-                  {(jiMode === "adaptive" || jiMode === "pure5") && (edo === 41 || edo === 53) && (() => {
+                  {jiMode === "adaptive" && (edo === 41 || edo === 53) && (() => {
                     void latticeRevision;
                     const trace = latticeDriftsRef.current;
                     if (!trace || !trace.drifts) return null;
@@ -1971,8 +1978,15 @@ export default function ChordsTab({
                   })}
                   </div>{/* end LEFT chord-tone column */}
 
-                  {/* RIGHT column — live visualizer mirror */}
-                  <div className="lg:w-[40%] lg:flex-shrink-0 space-y-2">
+                  {/* RIGHT column — live visualizer mirror.  The
+                      visualizer is wrapped in a sticky container so
+                      it stays visible as the user scrolls through
+                      the chord-tone reveal on the left, and the
+                      column itself stretches to match the left
+                      column's height so the empty space below the
+                      keyboard fills with a soft background instead
+                      of being blank. */}
+                  <div className="lg:w-[42%] lg:flex-shrink-0 lg:self-stretch flex flex-col gap-2">
                     {highlightedPitches && (
                       <div className="rounded border border-[#3a3a1a] overflow-hidden bg-[#0a0a0a] sticky top-2" style={{ maxWidth: "100%" }}>
                         {edo === 12 && vizType === "piano" ? (
@@ -2005,12 +2019,45 @@ export default function ChordsTab({
                       that drives the keyboard highlight also drives
                       the lattice's pulsing node. */}
                   {fhAnswer.progression.length > 0 && (() => {
+                    // The lattice is the Tonescape "3,5-primespace
+                    // toroidal lattice" — 5-limit cells projected
+                    // linearly with the EDO's vanishing commas
+                    // tempered out, producing a torus where each
+                    // visible cell is one EDO equivalence class.
+                    // Class reps are picked by simplest JI ratio,
+                    // so chord tones at (0,0)=1/1, (0,1)=5/4,
+                    // (1,0)=3/2, (1,-1)=6/5, … land on the visible
+                    // nodes directly without any chain-of-fifths
+                    // remapping.
                     const positions = tracePath(fhAnswer.progression);
                     const ratioKeys = positions.map(p => latticePosToRatio(p));
-                    const highlightSet = new Set(ratioKeys);
-                    const activeKey = currentChordIdx >= 0 && currentChordIdx < ratioKeys.length
-                      ? ratioKeys[currentChordIdx]
-                      : null;
+                    // Per-chord ordered tone arrays (root → 3rd →
+                    // 5th → 7th).  Order matters so the per-tone
+                    // sequencer can step through them in order.
+                    const allTonesPerChord: string[][] = positions.map((root, i) => {
+                      const chord = fhAnswer.chords[i];
+                      let quality = chord ? chordQualityFromSteps(chord.notes, edo) : null;
+                      if (!quality) {
+                        const stripped = chord ? stripChordLabel(chord.numeral) : "";
+                        if (stripped.endsWith("°")) quality = "dim";
+                        else if (stripped.endsWith("ø")) quality = "m7b5";
+                        else quality = /^[A-Z]/.test(stripped) ? "major" : "minor";
+                      }
+                      const v = voicingFor(quality) ?? voicingFor("major")!;
+                      return v.voices.map(vp => latticePosToRatio(latticeAdd(root, vp)));
+                    });
+                    // Union of all chord-tone keys = the full trace
+                    // (used for the persistent dim-highlight set).
+                    const allTraceKeys = new Set<string>(ratioKeys);
+                    for (const arr of allTonesPerChord) for (const k of arr) allTraceKeys.add(k);
+                    // Active set = single tone at (chord, tone) cursor.
+                    // Empty when nothing is playing.
+                    const chordTones = currentChordIdx >= 0 && currentChordIdx < allTonesPerChord.length
+                      ? allTonesPerChord[currentChordIdx]
+                      : [];
+                    const activeTones = currentToneIdx >= 0 && currentToneIdx < chordTones.length
+                      ? new Set<string>([chordTones[currentToneIdx]])
+                      : new Set<string>();
                     return (
                       <div className="rounded border border-[#3a3a5a] bg-[#0a0a14] mt-2 overflow-hidden">
                         <div className="px-3 py-2 border-b border-[#3a3a5a] flex items-baseline gap-2">
@@ -2021,8 +2068,8 @@ export default function ChordsTab({
                         </div>
                         <div style={{ width: "100%", height: "70vh", overflow: "hidden" }}>
                           <LatticeView
-                            externalHighlights={highlightSet}
-                            activeNodeKey={activeKey}
+                            externalHighlights={allTraceKeys}
+                            activeNodeKeys={activeTones}
                             temperingForEdo={edo}
                             chromeless
                           />

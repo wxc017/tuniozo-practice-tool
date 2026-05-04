@@ -3,7 +3,7 @@ import { audioEngine } from "@/lib/audioEngine";
 import { useLS } from "@/lib/storage";
 import { formatHalfAccidentals, getModeDegreeMap, getSolfege, getHeathwaiteSolfege, getBaseChords, getChordShapes } from "@/lib/edoData";
 import { syllableForEdoStep } from "@/lib/microtonalSolfege";
-import { piperSpeak } from "@/lib/piperSpeech";
+import { piperSpeak, piperPrewarm } from "@/lib/piperSpeech";
 import { getTonalityBanks, type TonalityBank } from "@/lib/tonalityBanks";
 import { bankToScaleFamMode } from "@/lib/tonalityChordPool";
 import { jiLimitGroupsForEdo } from "@/lib/jiTonalityFamilies";
@@ -131,6 +131,16 @@ export default function ScalarTab({
   const [solfegeKind, setSolfegeKind] = useLS<"heathwaite" | "microtonal">(
     "lt_scalar_solfege_kind", "heathwaite"
   );
+  // 19-EDO has no Heathwaite table; coerce the kind so the syllables
+  // shown match what's actually defined.
+  useEffect(() => {
+    if (edo === 19 && solfegeKind === "heathwaite") setSolfegeKind("microtonal");
+  }, [edo, solfegeKind, setSolfegeKind]);
+  // Pre-warm piper TTS on mount so the first syllable click doesn't
+  // pay the worker-cold-start latency.  Fire-and-forget.
+  useEffect(() => {
+    piperPrewarm(["Do", "Re", "Mi", "Fa", "Sol", "La", "Ti"]);
+  }, []);
   const frameTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   // Drone state: tracks whether a syllable is currently sustained, plus
@@ -345,56 +355,67 @@ export default function ScalarTab({
   return (
     <div className="space-y-4">
       {/* ── Tuning-family EDO selector — Temperament-Explorer style.
-          Currently shows just MEANTONE since that's the only family
-          whose alteration / family-lattice xen pattern maps are
-          registered for Scalar Explorations.  Pythagorean (41) /
-          Schismatic (53) families will be added when their pattern
-          maps land. ── */}
+          Three families now supported here, mirroring Tonal Audiation:
+          Meantone (12 / 19 / 31), Pythagorean (41), Schismatic (53). ── */}
       <div className="bg-[#0e0e0e] border border-[#222] rounded p-3 space-y-2">
         <div className="text-[10px] text-[#888] uppercase tracking-wider">Tuning families</div>
-        <div className="border-l-2 border-[#2a2a4a] pl-2.5">
-          <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="text-xs font-semibold text-[#cfe6ff]">Meantone</span>
-            <span className="text-[10px] text-[#666] font-mono">5th ≈ 696–702 ¢</span>
+        {([
+          {
+            name: "Meantone",
+            tone: "#cfe6ff",
+            range: "5th ≈ 696–702 ¢",
+            blurb: "Syntonic comma vanishes; pure thirds emerge from stacks of slightly-flat fifths.  Standard Western functional harmony works without comma adjustments.",
+            edos: [
+              { n: 12, fifthCents: 700.0 },
+              { n: 19, fifthCents: 694.74 },
+              { n: 31, fifthCents: 696.77 },
+            ],
+          },
+          {
+            name: "Pythagorean",
+            tone: "#e6cfa0",
+            range: "5th ≈ 702 ¢",
+            blurb: "Pure 3:2 fifths chain unhindered; thirds stack to the Pythagorean major-3rd 81/64.  41-EDO sits a hair sharp of pure Pythagorean and supports rich 7-/11-limit JI.",
+            edos: [
+              { n: 41, fifthCents: 702.44 },
+            ],
+          },
+          {
+            name: "Schismatic",
+            tone: "#cfe6cf",
+            range: "5th ≈ 702 ¢",
+            blurb: "Schisma 32805/32768 vanishes; pure 5/4 thirds reach via 8 fifths down.  53-EDO is the canonical schismatic tuning, near-pure on 3-, 5-, and 7-limit ratios alike.",
+            edos: [
+              { n: 53, fifthCents: 701.89 },
+            ],
+          },
+        ] as const).map(group => (
+          <div key={group.name} className="border-l-2 border-[#2a2a4a] pl-2.5">
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <span className="text-xs font-semibold" style={{ color: group.tone }}>{group.name}</span>
+              <span className="text-[10px] text-[#666] font-mono">{group.range}</span>
+            </div>
+            <div className="text-[10px] text-[#777] leading-snug mb-1.5">{group.blurb}</div>
+            <div className="flex gap-1 flex-wrap">
+              {group.edos.map(({ n, fifthCents }) => {
+                const active = edo === n;
+                return (
+                  <button key={n}
+                    onClick={() => window.dispatchEvent(new CustomEvent("app-set-edo", { detail: n }))}
+                    title={`${n}-EDO · 5th = ${fifthCents.toFixed(2)} ¢`}
+                    className={`px-2 py-0.5 text-[10px] rounded font-mono border transition-colors ${
+                      active
+                        ? "bg-[#7173e6] text-white border-[#7173e6]"
+                        : "bg-[#1a1a1a] text-[#aaa] border-[#2a2a2a] hover:text-white hover:border-[#3a3a5a]"
+                    }`}>
+                    {n}
+                    <span className="text-[8px] text-[#888] ml-1">{fifthCents.toFixed(1)}¢</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="text-[10px] text-[#777] leading-snug mb-1.5">
-            Syntonic comma vanishes; pure thirds emerge from stacks of slightly-flat fifths.
-            Standard Western functional harmony works without comma adjustments.
-          </div>
-          <div className="flex gap-1 flex-wrap">
-            {[12, 31].map(n => {
-              const active = edo === n;
-              const fifthCents = n === 12 ? 700.0 : 696.77;
-              return (
-                <button key={n}
-                  onClick={() => window.dispatchEvent(new CustomEvent("app-set-edo", { detail: n }))}
-                  title={`${n}-EDO · 5th = ${fifthCents.toFixed(2)} ¢`}
-                  className={`px-2 py-0.5 text-[10px] rounded font-mono border transition-colors ${
-                    active
-                      ? "bg-[#7173e6] text-white border-[#7173e6]"
-                      : "bg-[#1a1a1a] text-[#aaa] border-[#2a2a2a] hover:text-white hover:border-[#3a3a5a]"
-                  }`}>
-                  {n}
-                  <span className="text-[8px] text-[#888] ml-1">{fifthCents.toFixed(1)}¢</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-        <div className="border-l-2 border-[#1a1a2a] pl-2.5 opacity-50">
-          <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="text-xs font-semibold text-[#888]">Pythagorean</span>
-            <span className="text-[10px] text-[#555] font-mono">5th ≈ 702 ¢</span>
-            <span className="text-[9px] text-[#5a5a5a] italic">(coming soon)</span>
-          </div>
-        </div>
-        <div className="border-l-2 border-[#1a1a2a] pl-2.5 opacity-50">
-          <div className="flex items-baseline gap-2 flex-wrap">
-            <span className="text-xs font-semibold text-[#888]">Schismatic</span>
-            <span className="text-[10px] text-[#555] font-mono">5th ≈ 702 ¢</span>
-            <span className="text-[9px] text-[#5a5a5a] italic">(coming soon)</span>
-          </div>
-        </div>
+        ))}
       </div>
 
       {/* ── Floating chord-analysis overlay — top-right when a chord
@@ -540,10 +561,15 @@ export default function ScalarTab({
           </div>
 
           {/* Solfege system toggle — Heathwaite (default Do-Re-Mi-style)
-              or Microtonal (IPA interval-name system from cents). */}
+              or Microtonal (IPA interval-name system from cents).
+              Heathwaite has no published syllable table for 19-EDO, so
+              the option is hidden there and the kind is forced to
+              microtonal. */}
           <div className="flex items-center gap-1 mb-1 flex-wrap">
             <span className="text-[10px] text-[#666] mr-1">SOLFEGE</span>
-            {(["heathwaite", "microtonal"] as const).map(k => {
+            {(["heathwaite", "microtonal"] as const)
+              .filter(k => !(k === "heathwaite" && edo === 19))
+              .map(k => {
               const active = solfegeKind === k;
               const label = k === "heathwaite" ? "Heathwaite" : "Microtonal";
               return (
@@ -608,17 +634,14 @@ export default function ScalarTab({
                         solfegeKind === "microtonal" ? { ipa: microtonal.ipa } : undefined,
                       );
                     }}
-                    className="text-base font-bold cursor-pointer hover:underline"
+                    className="inline-block bg-white/5 border border-white/10 rounded px-2 py-0.5 text-base font-bold cursor-pointer hover:underline"
                     style={{ color: activeFamilyColor }}
                     title={`Hear "${labelText}"${solfegeKind === "microtonal" ? ` /${microtonal.ipa}/` : ""} spoken`}
                   >
                     {labelText}
                   </span>
-                  {solfegeKind === "microtonal" && (
-                    <span className="text-[8px] text-[#666] font-mono mt-0.5">
-                      /{microtonal.ipa}/
-                    </span>
-                  )}
+                  {/* IPA reference moved to tooltip only (the /xxx/
+                      display below the syllable was visual noise). */}
                   <span className="text-[10px] text-[#888] mt-0.5">
                     {formatHalfAccidentals(s.degree)}
                   </span>

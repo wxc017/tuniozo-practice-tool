@@ -174,12 +174,11 @@ function PlayBtn({ onClick, title, small }: { onClick: () => void; title?: strin
 // "families" sub-tab removed per request — the FamiliesPanel component
 // is still defined below for potential reuse but is no longer reachable
 // from the SubTab UI.  Default sub-tab now opens directly on EDO Temper.
-type SubTab = "edo-temper" | "fifth-quality" | "ring-map" | "theory";
+type SubTab = "edo-temper" | "fifth-quality" | "ring-map";
 const SUB_TAB_LABELS: Record<SubTab, string> = {
   "edo-temper": "EDO Temper",
   "fifth-quality": "Fifth Quality",
   "ring-map": "Ring Structure",
-  "theory": "Theory",
 };
 
 export default function TemperamentExplorer() {
@@ -206,7 +205,6 @@ export default function TemperamentExplorer() {
         {subTab === "edo-temper" && <EdoTemper selectedEdo={selectedEdo} setSelectedEdo={setSelectedEdo} />}
         {subTab === "fifth-quality" && <FifthQuality onSelectEdo={navigateToEdoTemper} />}
         {subTab === "ring-map" && <RingMap onSelectEdo={navigateToEdoTemper} />}
-        {subTab === "theory" && <TheoryPanel />}
       </div>
     </div>
   );
@@ -3127,237 +3125,7 @@ function RingMap({ onSelectEdo }: { onSelectEdo?: (edo: number) => void }) {
 // 5. THEORY — Tuning math reference
 // ═══════════════════════════════════════════════════════════════
 
-const TH = {
-  h: "text-sm font-bold text-[#ccc] mt-5 mb-2 first:mt-0",
-  h2: "text-xs font-bold text-[#999] mt-4 mb-1.5",
-  p: "text-xs text-[#888] leading-relaxed mb-2",
-  math: "font-mono text-[10px] bg-[#0d0d0d] border border-[#1e1e1e] rounded px-3 py-2 my-2 text-[#b0b0d0] whitespace-pre overflow-x-auto block",
-  note: "text-[10px] text-[#666] italic leading-relaxed mb-2",
-  kw: "text-[#9395ea]",
-  em: "text-[#b0b0d0] not-italic",
-  cmp: "border border-[#1e1e1e] rounded p-3 mb-3 bg-[#0a0a0a]",
-  cmpH: "text-xs font-bold mb-1.5",
-  tag: "text-[9px] font-mono px-1.5 py-0.5 rounded",
-};
+// TH (theory-panel style helper) and TheoryPanel were removed
+// alongside the Theory sub-tab — the panel and its supporting prose
+// are no longer reachable from the UI.
 
-function TheoryPanel() {
-  return (
-    <div className="p-4 max-w-3xl space-y-1">
-
-      {/* ── Shared Foundation ── */}
-      <h3 className={TH.h}>Shared Foundation: Monzos & Commas</h3>
-      <p className={TH.p}>
-        All approaches below share the same representation. A just-intonation interval is encoded as
-        a <span className={TH.kw}>monzo</span> — a vector of prime exponents. The ratio 5/4 (just major third) is
-        the monzo <span className={TH.em}>[−2, 0, 1]</span> because 5/4 = 2<sup>−2</sup>·3<sup>0</sup>·5<sup>1</sup>.
-      </p>
-      <p className={TH.p}>
-        A <span className={TH.kw}>comma</span> is a small JI interval that a temperament sets equal to unison.
-        The syntonic comma 81/80 = <span className={TH.em}>[−4, 4, −1]</span> is the gap between four just fifths
-        and a just major third (plus two octaves). Declaring it "zero" is what creates meantone temperament.
-      </p>
-      <p className={TH.p}>
-        <span className={TH.kw}>Tempering</span> means choosing new (slightly detuned) sizes for each prime so that every
-        comma evaluates to 0¢. The question is: when there are infinitely many valid detunings, which
-        one is "best"?
-      </p>
-
-      {/* ── Tonescape ── */}
-      <h3 className={TH.h}>Approach 1 — Tonescape / Direct Linear Solve</h3>
-      <p className={TH.note}>Tonalsoft Tonescape Studio (Joe Monzo, ~2005)</p>
-      <div className={TH.cmp}>
-        <p className={`${TH.cmpH} text-[#cc9966]`}>Method</p>
-        <p className={TH.p}>
-          Tonescape builds a square linear system and solves it exactly. Each prime <i>p</i> gets an
-          unknown <i>c<sub>p</sub></i> (its tempered size in cents). The constraints are:
-        </p>
-        <code className={TH.math}>{
-`Fixed octave:   [1, 0, 0, …] · c = 1200
-Comma → 0:      comma₁ · c = 0
-Comma → 0:      comma₂ · c = 0
-  ⋮`
-        }</code>
-        <p className={TH.p}>
-          For an <i>n</i>-prime system, Tonescape requires exactly <i>n</i>−1 independent commas (plus
-          the octave constraint) — giving <i>n</i> equations in <i>n</i> unknowns and a unique solution.
-          This is why Tonescape's tonespace files always specify a full "TM-basis" of commas.
-        </p>
-        <p className={`${TH.cmpH} text-[#cc9966]`}>Strengths & Limits</p>
-        <p className={TH.p}>
-          For <span className={TH.kw}>EDOs</span> (rank-1 temperaments), this is exact and agrees with every other method —
-          there is only one solution. For <span className={TH.kw}>higher-rank temperaments</span> (meantone, marvel, pajara…),
-          the system is underdetermined unless you add extra constraints. Tonescape sidesteps the
-          optimization problem entirely: it requires the user to fully specify the system rather than
-          choosing an optimal point from infinitely many valid tunings.
-        </p>
-      </div>
-
-      {/* ── Unweighted Projection ── */}
-      <h3 className={TH.h}>Approach 2 — Euclidean Projection (unweighted)</h3>
-      <p className={TH.note}>Used by this app for lattice visualization positions</p>
-      <div className={TH.cmp}>
-        <p className={`${TH.cmpH} text-[#7aaa7a]`}>Method</p>
-        <p className={TH.p}>
-          Commas span a subspace <i>V</i> in ℝ<sup>n</sup> (prime-exponent space). Tempering = projecting every
-          monzo onto <i>V</i><sup>⊥</sup>, the orthogonal complement:
-        </p>
-        <code className={TH.math}>P = I − Cᵀ(CCᵀ)⁻¹C</code>
-        <p className={TH.p}>
-          This uses the standard Euclidean inner product — all prime axes are treated as equally important.
-          Monzos differing by a comma project to the same point, which is geometrically correct, but the
-          choice of <i>where</i> they land minimizes error in <b>exponent space</b>, not in perceptual (cents) space.
-        </p>
-        <p className={`${TH.cmpH} text-[#7aaa7a]`}>Why it's used for the lattice</p>
-        <p className={TH.p}>
-          Unweighted projection preserves the natural symmetry of the prime-exponent lattice, which
-          makes the 3D visualization cleaner. The PCA step then aligns principal-variance axes with
-          x/y/z so orbiting feels smooth. For visual geometry, perceptual weighting would distort axis
-          proportions without any benefit.
-        </p>
-      </div>
-
-      {/* ── TE Projection ── */}
-      <h3 className={TH.h}>Approach 3 — Tenney-Euclidean (TE) Projection</h3>
-      <p className={TH.note}>Gene Ward Smith, Graham Breed — standard in regular temperament theory; used by this app for pitch/tuning</p>
-      <div className={TH.cmp}>
-        <p className={`${TH.cmpH} text-[#9395ea]`}>Method</p>
-        <p className={TH.p}>
-          Same projection idea, but with a <span className={TH.kw}>Tenney-weighted</span> inner product.
-          Each prime axis <i>i</i> is scaled by <i>w<sub>i</sub></i> = log<sub>2</sub>(<i>p<sub>i</sub></i>), reflecting
-          that a 1-unit exponent change in prime 2 shifts pitch by 1200¢, but in prime 5 by ~2786¢.
-          The weighted projection matrix is:
-        </p>
-        <code className={TH.math}>{
-`P_TE = I − M⁻¹Cᵀ(CM⁻¹Cᵀ)⁻¹C
-
-where  M = diag(log₂(p)²)    — the Tenney metric
-       C = comma matrix (rows = comma monzos)`
-        }</code>
-        <p className={TH.p}>
-          This minimizes the <span className={TH.kw}>RMS cents error</span> across all tempered primes, weighted by
-          complexity. Errors in smaller primes (which participate in more consonances) are penalised
-          more heavily. The resulting tuning is the TE optimum — the standard default in the xenharmonic
-          community.
-        </p>
-        <p className={`${TH.cmpH} text-[#9395ea]`}>Concrete example</p>
-        <p className={TH.p}>
-          Tempering out the syntonic comma <span className={TH.em}>[−4, 4, −1]</span> in 5-limit meantone.
-          The unweighted projection treats a 1-unit shift in the prime-2 exponent (1200¢) the same as a
-          1-unit shift in the prime-5 exponent (2786¢). So it puts too much absolute error on the
-          smaller primes. The TE projection distributes error proportionally to 1/log₂(p)², giving a
-          meantone fifth of ~696.6¢ — the least-squares optimum in perceptual space.
-        </p>
-      </div>
-
-      {/* ── Other approaches ── */}
-      <h3 className={TH.h}>Other Approaches in the Literature</h3>
-
-      <div className={TH.cmp}>
-        <p className={`${TH.cmpH} text-[#cc6666]`}>TOP — Tenney Optimal in P-norm (minimax)</p>
-        <p className={TH.note}>Paul Erlich</p>
-        <p className={TH.p}>
-          Instead of minimizing RMS error, TOP minimizes the <b>worst-case</b> relative error across all
-          intervals, weighted by Tenney height (log<sub>2</sub>(<i>n·d</i>) for ratio <i>n/d</i>). This is an
-          L<sup>∞</sup> (minimax) criterion rather than L<sup>2</sup> (least-squares). TOP tunings guarantee
-          that no single interval is egregiously out of tune, at the cost of slightly higher average error.
-          The octave is allowed to stretch or compress.
-        </p>
-      </div>
-
-      <div className={TH.cmp}>
-        <p className={`${TH.cmpH} text-[#cc6666]`}>POTE — Pure-Octave TE</p>
-        <p className={TH.p}>
-          Same as TE but with the octave constrained to exactly 1200¢. This is a common practical variant —
-          most keyboards and DAWs assume pure octaves. Mathematically, it's a constrained least-squares
-          problem: minimize TE error subject to <i>c</i><sub>2</sub> = 1200.
-        </p>
-      </div>
-
-      <div className={TH.cmp}>
-        <p className={`${TH.cmpH} text-[#cc6666]`}>CTE — Constrained TE</p>
-        <p className={TH.note}>Keenan Pepper</p>
-        <p className={TH.p}>
-          A refinement of POTE that constrains each eigenmonzo (interval mapped exactly in JI) to remain
-          pure, then minimizes TE error on the remaining degrees of freedom. This can preserve specific
-          just intervals (e.g. a pure 3/2 fifth) while optimizing the rest.
-        </p>
-      </div>
-
-      <div className={TH.cmp}>
-        <p className={`${TH.cmpH} text-[#cc6666]`}>Frobenius / Weil / Kees</p>
-        <p className={TH.p}>
-          Alternative norms for the projection. <b>Weil</b> uses max(log <i>n</i>, log <i>d</i>) instead
-          of log(<i>n·d</i>). <b>Kees</b> is Weil with octave equivalence. <b>Frobenius</b> weights by
-          1/<i>p</i> rather than 1/log <i>p</i>. Each produces slightly different optimal tunings, but TE
-          (Tenney-Euclidean, i.e. log-weighted L²) remains the community standard for general use.
-        </p>
-      </div>
-
-      {/* ── Summary table ── */}
-      <h3 className={TH.h}>Summary</h3>
-      <div className="overflow-x-auto">
-        <table className="text-[10px] border-collapse w-full">
-          <thead>
-            <tr className="text-left text-[#999] border-b border-[#222]">
-              <th className="py-1.5 pr-3">Method</th>
-              <th className="py-1.5 pr-3">Optimality</th>
-              <th className="py-1.5 pr-3">Norm</th>
-              <th className="py-1.5 pr-3">Octave</th>
-              <th className="py-1.5">Used here</th>
-            </tr>
-          </thead>
-          <tbody className="text-[#777]">
-            <tr className="border-b border-[#1a1a1a]">
-              <td className="py-1.5 pr-3 text-[#cc9966]">Tonescape</td>
-              <td className="py-1.5 pr-3">Exact (fully determined)</td>
-              <td className="py-1.5 pr-3">—</td>
-              <td className="py-1.5 pr-3">Pure</td>
-              <td className="py-1.5">—</td>
-            </tr>
-            <tr className="border-b border-[#1a1a1a]">
-              <td className="py-1.5 pr-3 text-[#7aaa7a]">Euclidean</td>
-              <td className="py-1.5 pr-3">Min RMS exponent error</td>
-              <td className="py-1.5 pr-3">L² unweighted</td>
-              <td className="py-1.5 pr-3">Free</td>
-              <td className="py-1.5"><span className={`${TH.tag} bg-[#1a2a1a] text-[#7aaa7a]`}>lattice positions</span></td>
-            </tr>
-            <tr className="border-b border-[#1a1a1a]">
-              <td className="py-1.5 pr-3 text-[#9395ea]">TE</td>
-              <td className="py-1.5 pr-3">Min RMS cents error</td>
-              <td className="py-1.5 pr-3">L² Tenney-weighted</td>
-              <td className="py-1.5 pr-3">Free</td>
-              <td className="py-1.5"><span className={`${TH.tag} bg-[#1a1a2a] text-[#9395ea]`}>pitch / tuning</span></td>
-            </tr>
-            <tr className="border-b border-[#1a1a1a]">
-              <td className="py-1.5 pr-3 text-[#cc6666]">POTE</td>
-              <td className="py-1.5 pr-3">Min RMS cents, octave fixed</td>
-              <td className="py-1.5 pr-3">L² Tenney-weighted</td>
-              <td className="py-1.5 pr-3">Pure</td>
-              <td className="py-1.5">—</td>
-            </tr>
-            <tr className="border-b border-[#1a1a1a]">
-              <td className="py-1.5 pr-3 text-[#cc6666]">TOP</td>
-              <td className="py-1.5 pr-3">Min worst-case relative error</td>
-              <td className="py-1.5 pr-3">L∞ Tenney-weighted</td>
-              <td className="py-1.5 pr-3">Free</td>
-              <td className="py-1.5">—</td>
-            </tr>
-            <tr>
-              <td className="py-1.5 pr-3 text-[#cc6666]">CTE</td>
-              <td className="py-1.5 pr-3">Min TE with eigenmonzo constraints</td>
-              <td className="py-1.5 pr-3">L² Tenney-weighted</td>
-              <td className="py-1.5 pr-3">Pure</td>
-              <td className="py-1.5">—</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <p className={`${TH.p} mt-3`}>
-        For <b>EDOs</b> (rank-1), all methods produce the same tuning — the patent val uniquely determines
-        each prime's cents value. The differences only matter for <b>higher-rank temperaments</b> (meantone,
-        miracle, pajara, etc.) where the comma kernel leaves degrees of freedom in the tuning.
-      </p>
-    </div>
-  );
-}

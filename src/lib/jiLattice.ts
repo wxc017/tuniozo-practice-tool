@@ -232,6 +232,33 @@ export function canonicalChordRoot(label: string): LatticePos {
   return CHORD_ROOT_POSITION[stripChordLabel(label)] ?? LATTICE_ORIGIN;
 }
 
+/** Map any JI lattice position to the ratio key of the chain-of-fifths
+ *  cell that occupies the same EDO pitch class.  Used by the harmonic-
+ *  lattice overlay to highlight chord tones on a Tonescape spiral —
+ *  the rendered lattice is purely the chain of fifths, so non-3-axis
+ *  cells (e.g. a just 5/4 third) don't have nodes; we look up the
+ *  fifth-chain cell that the EDO tempers them onto and highlight
+ *  THAT instead.
+ *
+ *  Mathematically: exp3 × P5_step ≡ step (mod edo).  Brute-forces a
+ *  modular inverse since edo is small.  Returns the position wrapped
+ *  into the symmetric range used by the lattice bounds, so the key
+ *  matches a cell that actually exists in the rendered scene. */
+export function chordToneToFifthChainKey(pos: LatticePos, edo: number): string {
+  const cents = latticeToCents(pos);
+  const step = ((Math.round(cents / 1200 * edo) % edo) + edo) % edo;
+  const p5Step = Math.round(edo * Math.log2(3 / 2));
+  const halfLo = Math.floor(edo / 2);
+  const halfHi = edo - halfLo - 1;
+  for (let i = 0; i < edo; i++) {
+    if ((((i * p5Step) % edo) + edo) % edo === step) {
+      const exp3 = i > halfHi ? i - edo : i;
+      return latticePosToRatio([exp3]);
+    }
+  }
+  return "1/1";
+}
+
 /** Convert a lattice position to its octave-reduced "n/d" ratio string —
  *  the same key format LatticeView's MonzoScene uses internally for
  *  `highlightedRatios`.  Powers the chord-progression highlight overlay

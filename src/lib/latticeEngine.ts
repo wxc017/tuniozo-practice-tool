@@ -54,7 +54,7 @@ export interface PrimeProjection {
 
 /** Full lattice configuration */
 /** Grid geometry: "square" uses orthogonal axes, "triangle" uses 60° angles */
-export type GridType = "square" | "triangle";
+export type GridType = "square" | "triangle" | "helical" | "toroidal";
 
 /**
  * Tuning optimization method for higher-rank temperaments.
@@ -366,6 +366,95 @@ export function monzoTo3D(
     y += exps[i] * proj[1];
     z += exps[i] * proj[2];
   }
+  return [x, y, z];
+}
+
+/** Helical / Tonescape-style projection.
+ *
+ *  This is the canonical Tonalsoft Tonescape layout: every pitch
+ *  sits on a cylinder where one full turn equals one octave, and
+ *  the vertical axis is log-frequency.  Specifically:
+ *
+ *    cents = Σ exp_i · log2(prime_i) · 1200    (total log frequency)
+ *    angle = 2π · (cents mod 1200) / 1200      (pitch class on the wheel)
+ *    y     = cents · YCENTS_PER_UNIT           (octave-by-octave rise)
+ *
+ *  Two cells separated by an octave land directly above each other.
+ *  Two cells separated by a fifth land 7/12 of a turn apart and a
+ *  bit higher.  The chain of fifths in 12-EDO (12 cells) makes 7
+ *  full rotations and rises 7 octaves — the classic Tonescape
+ *  helix.  In 41 / 53-EDO the spiral has more turns per octave
+ *  because each fifth is closer to pure 3/2.
+ *
+ *  Higher-prime axes (5, 7) are baked into `cents`, so cells off
+ *  the 3-axis still land at their honest pitch height.  No
+ *  artificial "radius modulation" — the cylinder stays a clean
+ *  cylinder, and the only thing that distinguishes cells visually
+ *  is their position on it.  `edo` is unused by the projection
+ *  itself (the cylinder is the same regardless), but it's accepted
+ *  so callers can flag context for debug / labeling. */
+export function monzoTo3DHelical(
+  exps: number[],
+  primes: number[],
+  _edo: number | null,
+): [number, number, number] {
+  let cents = 0;
+  for (let i = 0; i < primes.length; i++) {
+    const p = primes[i];
+    const exp = exps[i] ?? 0;
+    if (exp !== 0) cents += exp * 1200 * Math.log2(p);
+  }
+
+  // Spacing tuned to match the linear-lattice scale (DEFAULT_PROJECTIONS
+  // puts cells ~3 units apart per prime axis).  RADIUS sets cylinder
+  // diameter; Y_PER_OCTAVE keeps the helix from over-stretching
+  // vertically so chord-tone clusters stay close together on screen
+  // and the user can follow chord motion at a glance.
+  const RADIUS = 3.0;
+  const Y_PER_OCTAVE = 1.5;
+  const angle = 2 * Math.PI * (((cents % 1200) + 1200) % 1200) / 1200;
+  const y = (cents / 1200) * Y_PER_OCTAVE;
+  const x = RADIUS * Math.cos(angle);
+  const z = RADIUS * Math.sin(angle);
+  return [x, y, z];
+}
+
+/** Toroidal / Tonescape "3,5-primespace" projection.
+ *
+ *  Places each (3,5)-monzo cell on a torus where:
+ *    u (major angle) = 2π · exp3 · P5_step / edo
+ *    v (minor angle) = 2π · exp5 · M3_step / edo
+ *
+ *  In an EDO, both the chain of fifths and the chain of thirds
+ *  close after `edo` steps, so cells related by the EDO's vanishing
+ *  commas (e.g. 81/80 in meantone) wrap onto the same torus
+ *  coordinate — the canonical Tonalsoft "5-limit toroidal lattice"
+ *  shape.  The chain of fifths becomes a tight magenta spiral
+ *  threading the major circumference; the chain of thirds becomes a
+ *  wider green spiral around the minor circumference.
+ *
+ *  Falls back to the linear sum projection when `edo` is null. */
+export function monzoTo3DToroidal(
+  exps: number[],
+  primes: number[],
+  edo: number | null,
+): [number, number, number] {
+  if (edo === null || edo <= 0) {
+    return monzoTo3D(exps, primes, DEFAULT_PROJECTIONS);
+  }
+  const idx3 = primes.indexOf(3);
+  const idx5 = primes.indexOf(5);
+  const exp3 = idx3 >= 0 ? exps[idx3] ?? 0 : 0;
+  const exp5 = idx5 >= 0 ? exps[idx5] ?? 0 : 0;
+  const p5Step = Math.round(edo * Math.log2(3 / 2));
+  const m3Step = Math.round(edo * Math.log2(5 / 4));
+  const R = 5.0;   // major (fifth-chain) radius
+  const r = 2.0;   // minor (third-chain) radius
+  const u = 2 * Math.PI * exp3 * p5Step / edo;
+  const v = 2 * Math.PI * exp5 * m3Step / edo;
+  const x = (R + r * Math.cos(v)) * Math.cos(u);
+  const y = r * Math.sin(v);
+  const z = (R + r * Math.cos(v)) * Math.sin(u);
   return [x, y, z];
 }
 
@@ -1233,9 +1322,20 @@ export function buildLattice(config: LatticeConfig): BuiltLattice {
     }
   }
 
-  // 3) Compute tempering equivalence classes
-  //    When an EDO is specified, use the val-based approach which always gives
-  //    exactly `edo` classes. Otherwise fall back to SNF (general temperaments).
+  // 3) Compute tempering equivalence classes.
+  //    Two independent sources can drive class assignment:
+  //      - `config.edo` alone: each lattice cell gets its EDO step
+  //        as its class, but the geometry stays at full JI rank.
+  //        Tonescape-style: the spatial structure (chains of fifths,
+  //        third-stacks, etc.) stays visible; only the colouring
+  //        reflects the EDO collapse, so the user can see which
+  //        cells the temperament identifies without losing the
+  //        spatial information that makes the temperament legible.
+  //      - `temperedCommas`: the lattice geometry is also projected
+  //        onto the comma kernel's orthogonal complement, so cells
+  //        that differ by a tempered comma physically coincide in
+  //        3D.  Use this when you want to see the literal collapsed
+  //        manifold (e.g. a 1D meantone chain).
   let classMap = new Map<string, number>();
   let temperingClasses = 0;
   if (temperedCommas.length > 0) {
@@ -1244,6 +1344,9 @@ export function buildLattice(config: LatticeConfig): BuiltLattice {
     } else {
       classMap = computeTemperingClasses(monzoMap, temperedCommas, primes, octaveEquivalence);
     }
+    temperingClasses = new Set(classMap.values()).size;
+  } else if (config.edo) {
+    classMap = computeEdoClasses(monzoMap, config.edo, primes, octaveEquivalence);
     temperingClasses = new Set(classMap.values()).size;
   }
 
@@ -1256,9 +1359,23 @@ export function buildLattice(config: LatticeConfig): BuiltLattice {
   const positions = new Map<string, [number, number, number]>();
   const jiPositions = new Map<string, [number, number, number]>();
 
-  // Always compute untempered JI positions
+  // Always compute untempered JI positions.  Per-grid-type projection:
+  //   "helical"  — Tonescape pitch-helix (one full turn per octave)
+  //   "toroidal" — Tonescape 3,5-primespace torus, where the chain
+  //                of fifths and the chain of thirds both wrap
+  //                according to the EDO's val
+  //   default    — linear sum of per-prime direction vectors
+  const useHelical = config.gridType === "helical";
+  const useToroidal = config.gridType === "toroidal";
   for (const [key, monzo] of monzoMap) {
-    jiPositions.set(key, monzoTo3D(monzo.exps, primes, projections));
+    jiPositions.set(
+      key,
+      useToroidal
+        ? monzoTo3DToroidal(monzo.exps, primes, config.edo ?? null)
+        : useHelical
+          ? monzoTo3DHelical(monzo.exps, primes, config.edo ?? null)
+          : monzoTo3D(monzo.exps, primes, projections),
+    );
   }
 
   // Comma directions in 3D (for kernel visualization)

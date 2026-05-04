@@ -363,116 +363,116 @@ export function groupEdosByFifthFamily(
 export const FIFTH_TUNING_FAMILIES: FifthTuningFamily[] = [
   {
     name: "Equal heptatonic / Neutral diatonic",
-    blurb: "Seven equal steps — fifths sit at 4/7 of an octave (~685.7 ¢).",
+    blurb: "Seven equal steps; the fifth lands at 4/7 of an octave (≈ 685.71 ¢).",
     description:
-      "7-TET is the boundary case where every step is the same size, so the diatonic and chromatic intervals collapse into one neutral spectrum. Used as the reference floor of the fifth-tuning spectrum.",
+      "7-EDO is the narrow-side boundary: every step is identical, so the diatonic and chromatic categories collapse into a single neutral pitch ladder. This sits at the floor of the fifth-tuning spectrum and acts as the reference point against which everything wider is measured.",
     fifthRange: [685, 690],
     edos: [7],
   },
   {
     name: "Flattone",
-    blurb: "Narrower-than-meantone fifths; 4:7 is a diminished 7th (-9 fifths).",
+    blurb: "Fifths flatter than meantone; the 7-limit harmonic 7th lands on the diminished 7th (−9 fifths).",
     description:
-      "Flattone is technically inside the meantone spectrum but with fifths flat enough that 4:7 is best mapped to the diminished seventh rather than the augmented sixth. M2 maps closer to 9:10 than 8:9. 19-TET is the upper boundary; 26-TET is the canonical example.",
+      "Flattone is the flat fringe of meantone — fifths narrow enough that 7/4 is best read as a diminished seventh rather than an augmented sixth. The whole-tone sits closer to 10/9 than to 9/8. The upper edge is 19-EDO; 26-EDO is the canonical interior example.",
     fifthRange: [690, 696.5],
     edos: [47, 40, 33, 26, 45],
   },
   {
     name: "Meantone",
-    blurb: "Most popular tuning family — tempers 80:81, four fifths ≈ 5/4.",
+    blurb: "The dominant historical family: tempers 81/80 so four fifths land on 5/4.",
     description:
-      "Meantone tempers the syntonic comma (80:81), so four fifths land near a 5:4 major third. Tunings sit between 1/3-comma (~694.8 ¢) and 1/4-comma (~696.6 ¢), with 19-TET, 31-TET, 50-TET as standout examples.",
-    fifthRange: [696.5, 700],
+      "Meantone vanishes the syntonic comma (81/80), folding four stacked fifths onto a just 5/4 major third. The classical sweet spot runs from 1/3-comma (694.79 ¢) through 1/4-comma (696.58 ¢); 19-, 31-, and 50-EDO are the standout equal-temperament representatives.",
+    fifthRange: [696.5, 699.9],
     edos: [19, 50, 81, 31, 43, 55],
   },
   {
     name: "Dominant",
-    blurb: "12-TET — fifths essentially Pythagorean, 1/11-comma meantone.",
+    blurb: "12-EDO — fifth at 700 ¢, effectively 1/11-comma meantone.",
     description:
-      "12 equal divisions per octave, fifth at 700 ¢. Effectively meantone but with the Pythagorean comma circulated, which is why 12-TET sits at the meantone/Pythagorean boundary.",
-    fifthRange: [700, 700],
+      "Twelve equal divisions, fifth held at 700 ¢ exactly. Mathematically still meantone, but with the Pythagorean comma circulated rather than left audible, which is why 12-EDO straddles the meantone/Pythagorean boundary in practice.",
+    fifthRange: [699.9, 700.05],
     edos: [12],
   },
   {
     name: "Schismatic",
-    blurb: "Tempers 32805:32768 (schisma); 4:5 is the diminished fourth.",
+    blurb: "Vanishes the schisma (32805/32768); 5/4 reaches as a diminished 4th (−8 fifths).",
     description:
-      "Schismatic tunings sit at or just below Pythagorean, where the schisma (32805:32768) is tempered out and 4:5 is approximated by the diminished fourth (-8 fifths). 53-TET is the canonical example, very close to pure Pythagorean.",
-    fifthRange: [700, 703.6],
+      "Schismatic tunings sit at or fractionally below pure Pythagorean. The schisma (32805/32768 ≈ 1.95 ¢) is tempered out, so eight fifths down from any root land within ~2 ¢ of a just 5/4. 53-EDO is the textbook representative — fifths essentially indistinguishable from 3/2.",
+    fifthRange: [700.05, 703.6],
     edos: [53, 94, 41],
     jiAnchors: [{ name: "Pythagorean (3-limit JI)", cents: 701.955 }],
   },
   {
     name: "Gentle (Zalzalian Schismatic)",
-    blurb: "Slightly heightened Pythagorean — augmented intervals sound supraminor.",
+    blurb: "A hair sharper than Pythagorean; augmented intervals slide toward neutral.",
     description:
-      "Margo Schulter's 'gentle' region: fifths a bit wider than pure 2:3, so augmented intervals push toward neutral territory and diminished intervals push toward submajor. Suits Turkish makam and other neutral-interval musics. 17-TET sits at the upper boundary.",
-    fifthRange: [703.6, 705.9],
+      "Margo Schulter's 'gentle' region: fifths a touch wider than 3/2, so augmented intervals drift into supraminor territory and diminished intervals into submajor. The result fits Turkish makam and other neutral-third musics naturally. The upper edge is 17-EDO.",
+    fifthRange: [703.6, 705.7],
     edos: [29, 46, 63, 80],
   },
   {
     name: "Supra (boundary)",
-    blurb: "17-TET — the gentle/inverse-gentle boundary.",
+    blurb: "17-EDO — the seam between gentle and inverse gentle.",
     description:
-      "17-TET represents the boundary between gentle and inverse gentle; neutral intervals sit exactly between minor and major.",
-    fifthRange: [705.9, 705.9],
+      "17-EDO sits on the gentle / inverse-gentle border. Its neutral intervals fall halfway between minor and major; its fifth (705.88 ¢) is just past pure 3/2 by ~4 ¢.",
+    fifthRange: [705.7, 706.0],
     edos: [17],
   },
   {
     name: "Inverse gentle (Inverse Zalzalian Schismatic)",
-    blurb: "Wider fifths still — A2 reads supramajor third, d4 reads supraminor.",
+    blurb: "Wider fifths still — A2 reads as a supramajor 3rd, d4 as a supraminor 3rd.",
     description:
-      "Inverse gentle has fifths between ~706 ¢ and ~709 ¢. Compared to gentle, the dd3/A1 ordering flips: d3 < A1, d4 < A2. Around 22-TET A2 starts to read like a classic 5:4 and d4 like a classic 5:6.",
-    fifthRange: [705.9, 709],
+      "Inverse gentle covers fifths roughly 706 – 709 ¢. Relative to gentle, the dd3 / A1 ordering inverts: d3 < A1 and d4 < A2. By the time you reach 22-EDO, A2 maps onto a passable 5/4 and d4 onto a passable 6/5.",
+    fifthRange: [706.0, 709.0],
     edos: [56, 39],
   },
   {
     name: "Archy / Superpyth",
-    blurb: "Superpythagorean — major thirds approximate 7:9, minor thirds 6:7.",
+    blurb: "Superpythagorean: major thirds approximate 9/7, minor thirds 7/6.",
     description:
-      "Wide-fifth tunings where M3 ≈ 7:9 and m3 ≈ 6:7, so major triads approximate 14:18:21 and minor triads 6:7:9. The septimal (Archytan) comma 63:64 is tempered out. 22-TET and 27-TET are the most prominent examples.",
-    fifthRange: [709, 720],
+      "Wide-fifth tunings where M3 ≈ 9/7 and m3 ≈ 7/6, so major triads chase the 14:18:21 harmonic profile and minor triads chase 6:7:9. The Archytan (septimal) comma 64/63 is tempered out. 22- and 27-EDO are the most prominent representatives.",
+    fifthRange: [709.0, 720.0],
     edos: [22, 49, 27, 32, 37, 47],
   },
   {
     name: "Equal pentatonic",
-    blurb: "5-TET — five equal steps; fifth at 3/5 octave (~720 ¢).",
+    blurb: "5-EDO — five equal steps, fifth at 3/5 of an octave (720 ¢).",
     description:
-      "5-TET is the boundary at the wide end of the spectrum. The fifth lands at 720 ¢, much wider than even the most extreme superpyth.",
+      "5-EDO marks the wide-side boundary of the spectrum. The fifth lands at 720 ¢ — well past even the most extreme superpyth tuning.",
     fifthRange: [720, 720],
     edos: [5],
   },
 ];
 
 export const TEMPERAMENT_FAMILIES: TemperamentFamily[] = [
-  { name: "Meantone", commas: [{ n: 81, d: 80 }], description: "Four 3/2 fifths ≈ 5/4 major third", limit: 5 },
-  { name: "Schismatic", commas: [{ n: 32805, d: 32768 }], description: "Eight 3/2 fifths down ≈ 5/4", limit: 5 },
-  { name: "Porcupine", commas: [{ n: 250, d: 243 }], description: "Three ~10/9 steps = 4/3", limit: 5 },
-  { name: "Magic", commas: [{ n: 3125, d: 3072 }], description: "Five 5/4 thirds ≈ 3/2", limit: 5 },
-  { name: "Negri", commas: [{ n: 16875, d: 16384 }], description: "Four ~4/3 = three ~5/4 + octave", limit: 5 },
-  { name: "Kleismic", commas: [{ n: 15625, d: 15552 }], description: "Six 6/5 minor thirds ≈ 3/2", limit: 5 },
-  { name: "Diaschismic", commas: [{ n: 2048, d: 2025 }], description: "Two 5-limit tritones ≈ octave", limit: 5 },
-  { name: "Augmented", commas: [{ n: 128, d: 125 }], description: "Three 5/4 thirds = octave", limit: 5 },
-  { name: "Dimipent", commas: [{ n: 648, d: 625 }], description: "Four 6/5 thirds = octave", limit: 5 },
-  { name: "Würschmidt", commas: [{ n: 393216, d: 390625 }], description: "Eight 5/4 thirds ≈ octave + fifth", limit: 5 },
-  { name: "Tetracot", commas: [{ n: 20000, d: 19683 }], description: "Four 10/9 steps ≈ 4/3 + 25/24", limit: 5 },
-  { name: "Amity", commas: [{ n: 1600000, d: 1594323 }], description: "Five 3/2 + one 5/4 ≈ five octaves", limit: 5 },
-  { name: "Sensipent", commas: [{ n: 78732, d: 78125 }], description: "Seven 5/4 thirds ≈ two 3/2 + octave", limit: 5 },
-  { name: "Superpyth", commas: [{ n: 64, d: 63 }], description: "Septimal comma: 3^2 ≈ 2·7", limit: 7 },
-  { name: "Pajara", commas: [{ n: 2048, d: 2025 }, { n: 50, d: 49 }], description: "Period = half octave, two fifths", limit: 7 },
-  { name: "Septimal meantone", commas: [{ n: 81, d: 80 }, { n: 126, d: 125 }], description: "Meantone + starling", limit: 7 },
-  { name: "Marvel", commas: [{ n: 225, d: 224 }], description: "Septimal kleisma: 15/14 ≈ 16/15", limit: 7 },
-  { name: "Orwell", commas: [{ n: 1728, d: 1715 }], description: "Seven ~7/6 steps ≈ twelfth", limit: 7 },
-  { name: "Miracle", commas: [{ n: 225, d: 224 }, { n: 1029, d: 1024 }], description: "Generator = secor (~116.7¢)", limit: 7 },
-  { name: "Ennealimmal", commas: [{ n: 2401, d: 2400 }], description: "Period = 1/9 octave, breedsma", limit: 7 },
-  { name: "Valentine", commas: [{ n: 126, d: 125 }, { n: 1029, d: 1024 }], description: "Nine generators ≈ fifth", limit: 7 },
-  { name: "Hemifamity", commas: [{ n: 5120, d: 5103 }], description: "Hemifamity comma", limit: 7 },
-  { name: "Rodan", commas: [{ n: 245, d: 243 }], description: "Sensamagic comma", limit: 7 },
-  { name: "Myna", commas: [{ n: 126, d: 125 }, { n: 2401, d: 2400 }], description: "Five categories of thirds", limit: 7 },
-  { name: "Mohajira", commas: [{ n: 81, d: 80 }, { n: 121, d: 120 }], description: "Neutral third as generator", limit: 11 },
-  { name: "Mothra", commas: [{ n: 81, d: 80 }, { n: 99, d: 98 }], description: "Three generators ≈ fifth", limit: 11 },
-  { name: "Sensi", commas: [{ n: 126, d: 125 }, { n: 176, d: 175 }], description: "Sensipent extended to 11-limit", limit: 11 },
-  { name: "Leapday", commas: [{ n: 100, d: 99 }, { n: 225, d: 224 }], description: "29 generators/octave", limit: 11 },
+  { name: "Meantone", commas: [{ n: 81, d: 80 }], description: "Four stacked fifths land on a just 5/4 major third", limit: 5 },
+  { name: "Schismatic", commas: [{ n: 32805, d: 32768 }], description: "Eight fifths down ≈ 5/4 (schisma vanishes)", limit: 5 },
+  { name: "Porcupine", commas: [{ n: 250, d: 243 }], description: "Three ~10/9 whole-tones close on 4/3", limit: 5 },
+  { name: "Magic", commas: [{ n: 3125, d: 3072 }], description: "Five 5/4 thirds reach a perfect fifth", limit: 5 },
+  { name: "Negri", commas: [{ n: 16875, d: 16384 }], description: "Generator ≈ 127 ¢; four of them stack to 4/3", limit: 5 },
+  { name: "Kleismic", commas: [{ n: 15625, d: 15552 }], description: "Six 6/5 minor thirds reach a perfect fifth", limit: 5 },
+  { name: "Diaschismic", commas: [{ n: 2048, d: 2025 }], description: "Two 5-limit tritones (45/32) ≈ octave", limit: 5 },
+  { name: "Augmented", commas: [{ n: 128, d: 125 }], description: "Three 5/4 major thirds close the octave", limit: 5 },
+  { name: "Dimipent", commas: [{ n: 648, d: 625 }], description: "Four 6/5 minor thirds close the octave", limit: 5 },
+  { name: "Würschmidt", commas: [{ n: 393216, d: 390625 }], description: "Eight 5/4 thirds ≈ two octaves + a fifth", limit: 5 },
+  { name: "Tetracot", commas: [{ n: 20000, d: 19683 }], description: "Generator ≈ 10/9; four of them stack to 3/2", limit: 5 },
+  { name: "Amity", commas: [{ n: 1600000, d: 1594323 }], description: "Nine generators of ~7/6 ≈ a perfect 11th", limit: 5 },
+  { name: "Sensipent", commas: [{ n: 78732, d: 78125 }], description: "Seven 5/4 thirds ≈ two fifths + an octave", limit: 5 },
+  { name: "Superpyth", commas: [{ n: 64, d: 63 }], description: "Septimal comma vanishes — m3 reads as 7/6", limit: 7 },
+  { name: "Pajara", commas: [{ n: 2048, d: 2025 }, { n: 50, d: 49 }], description: "Half-octave period; two fifths per period", limit: 7 },
+  { name: "Septimal meantone", commas: [{ n: 81, d: 80 }, { n: 126, d: 125 }], description: "Meantone + starling — A6 reads as 7/4", limit: 7 },
+  { name: "Marvel", commas: [{ n: 225, d: 224 }], description: "Septimal kleisma — equates 15/14 with 16/15", limit: 7 },
+  { name: "Orwell", commas: [{ n: 1728, d: 1715 }], description: "Generator ≈ 271.6 ¢; seven of them ≈ a 12th", limit: 7 },
+  { name: "Miracle", commas: [{ n: 225, d: 224 }, { n: 1029, d: 1024 }], description: "Generator = the secor (≈ 116.7 ¢)", limit: 7 },
+  { name: "Ennealimmal", commas: [{ n: 2401, d: 2400 }], description: "1/9-octave period; breedsma vanishes", limit: 7 },
+  { name: "Valentine", commas: [{ n: 126, d: 125 }, { n: 1029, d: 1024 }], description: "Nine ~78 ¢ generators reach 3/2", limit: 7 },
+  { name: "Hemifamity", commas: [{ n: 5120, d: 5103 }], description: "Hemifamity comma vanishes (~5.8 ¢)", limit: 7 },
+  { name: "Rodan", commas: [{ n: 245, d: 243 }], description: "Sensamagic comma — 7-limit cousin of meantone", limit: 7 },
+  { name: "Myna", commas: [{ n: 126, d: 125 }, { n: 2401, d: 2400 }], description: "Distinguishes five flavours of major third", limit: 7 },
+  { name: "Mohajira", commas: [{ n: 81, d: 80 }, { n: 121, d: 120 }], description: "Neutral-third generator (≈ 11/9, 350 ¢)", limit: 11 },
+  { name: "Mothra", commas: [{ n: 81, d: 80 }, { n: 99, d: 98 }], description: "Three ~233 ¢ generators stack to a fifth", limit: 11 },
+  { name: "Sensi", commas: [{ n: 126, d: 125 }, { n: 176, d: 175 }], description: "Sensipent promoted to the 11-limit", limit: 11 },
+  { name: "Leapday", commas: [{ n: 100, d: 99 }, { n: 225, d: 224 }], description: "29 generators per octave (~41 ¢ each)", limit: 11 },
 ];
 
 // ═══════════════════════════════════════════════════════════════
@@ -1213,7 +1213,7 @@ export interface TemperScenario {
 export const TEMPER_SCENARIOS: TemperScenario[] = [
   {
     name: "Meantone (5-limit → 12/19/31-EDO)",
-    description: "Start with the pure 5-limit JI lattice. Temper out the syntonic comma (81/80) to collapse Pythagorean and just intervals. The 3-axis and 5-axis fold together — four fifths now equal a major third.",
+    description: "Begin from the open 5-limit JI lattice and vanish the syntonic comma (81/80 ≈ 21.5 ¢).  The 3- and 5-axes fuse: four stacked fifths now equal a just 5/4 major third, and the lattice collapses from rank 2 to rank 1.",
     primes: [3, 5],
     bounds: { 3: [-5, 5], 5: [-2, 2] },
     commaSequence: [
@@ -1223,7 +1223,7 @@ export const TEMPER_SCENARIOS: TemperScenario[] = [
   },
   {
     name: "Septimal meantone (7-limit)",
-    description: "Extend meantone to the 7-limit by also tempering out the starling comma (126/125). This equates the augmented sixth with the harmonic seventh.",
+    description: "Promote meantone to seven-limit by also vanishing the starling comma (126/125 ≈ 13.8 ¢).  Augmented sixths and harmonic 7ths land on the same step, so a dominant-7 chord can voice as 4:5:6:7 with no extra retuning.",
     primes: [3, 5, 7],
     bounds: { 3: [-4, 4], 5: [-2, 2], 7: [-1, 1] },
     commaSequence: [
@@ -1234,7 +1234,7 @@ export const TEMPER_SCENARIOS: TemperScenario[] = [
   },
   {
     name: "Marvel (225/224) → Miracle",
-    description: "The marvel comma equates 15/14 with 16/15. Adding the gamelisma collapses further into miracle temperament with its elegant secor generator.",
+    description: "The marvel comma (225/224 ≈ 7.7 ¢) folds 15/14 onto 16/15.  Stacking gamelisma (1029/1024) on top contracts the lattice further into miracle, the rank-2 system whose elegant 116.7 ¢ 'secor' generator threads 5-, 7-, and 11-limit JI in one chain.",
     primes: [3, 5, 7],
     bounds: { 3: [-3, 3], 5: [-2, 2], 7: [-2, 2] },
     commaSequence: [
@@ -1245,7 +1245,7 @@ export const TEMPER_SCENARIOS: TemperScenario[] = [
   },
   {
     name: "Pajara (50/49 + 64/63)",
-    description: "Pajara splits the octave in half. The jubilisma equates 7/5 with 10/7, and the septimal comma folds the 3-7 relationship.",
+    description: "Pajara halves the octave.  The jubilisma (50/49) glues 7/5 to its inversion 10/7, and the septimal comma (64/63) tightens the 3-/7-prime relationship — together they yield a period of 600 ¢ and natural 22-EDO support.",
     primes: [3, 5, 7],
     bounds: { 3: [-3, 3], 5: [-2, 2], 7: [-1, 1] },
     commaSequence: [
@@ -1256,7 +1256,7 @@ export const TEMPER_SCENARIOS: TemperScenario[] = [
   },
   {
     name: "Porcupine (250/243)",
-    description: "Three ~10/9 steps make a perfect fourth. The generator is a small neutral second around 162–164 cents.",
+    description: "Vanish the porcupine comma (250/243 ≈ 49.2 ¢) and three stacked ~10/9 whole-tones close onto a perfect fourth.  The resulting 5-limit generator is a narrow neutral second roughly 162 – 164 ¢ wide.",
     primes: [3, 5],
     bounds: { 3: [-6, 6], 5: [-3, 3] },
     commaSequence: [
@@ -1266,7 +1266,7 @@ export const TEMPER_SCENARIOS: TemperScenario[] = [
   },
   {
     name: "Schismatic → Helmholtz/Groven",
-    description: "The schisma is tiny (1.95¢) — tempering it makes eight fifths down nearly equal a major third. This is how 53-EDO works.",
+    description: "The schisma (32805/32768) is just 1.95 ¢ — tempering it identifies eight fifths down with a 5/4 major third.  53-EDO is the textbook home; its fifth sits within 0.07 ¢ of pure 3/2, which is why so much classical 5-limit harmony reads as JI in this tuning.",
     primes: [3, 5],
     bounds: { 3: [-8, 8], 5: [-1, 1] },
     commaSequence: [
@@ -1276,7 +1276,7 @@ export const TEMPER_SCENARIOS: TemperScenario[] = [
   },
   {
     name: "Full 7-limit collapse → 12-EDO",
-    description: "Watch the JI lattice progressively collapse as we temper out 81/80 (meantone), then 128/125 (augmented), then 225/224 (marvel). The result maps perfectly to 12-EDO.",
+    description: "Watch the 7-limit lattice fold step by step: vanish 81/80 (syntonic, → meantone), then 128/125 (great diesis, → augmented), then 225/224 (marvel, → starling).  After the third comma every cell maps cleanly to one of 12 equal divisions.",
     primes: [3, 5, 7],
     bounds: { 3: [-4, 4], 5: [-2, 2], 7: [-1, 1] },
     commaSequence: [
@@ -1288,7 +1288,7 @@ export const TEMPER_SCENARIOS: TemperScenario[] = [
   },
   {
     name: "Orwell (1728/1715)",
-    description: "Seven steps of ~7/6 reach a perfect twelfth (3/1). The orwellisma creates a beautiful 7-limit system with a generator around 271 cents.",
+    description: "Vanishing the orwellisma (1728/1715 ≈ 13.1 ¢) gives a 7-limit rank-2 system whose generator sits near 271.6 ¢ — close enough to 7/6 that seven of them stack to within ~1 ¢ of a perfect twelfth (3/1).",
     primes: [3, 5, 7],
     bounds: { 3: [-3, 3], 5: [-2, 2], 7: [-2, 2] },
     commaSequence: [
@@ -1298,7 +1298,7 @@ export const TEMPER_SCENARIOS: TemperScenario[] = [
   },
   {
     name: "11-limit: Keenanisma path",
-    description: "The keenanisma (385/384) links primes 5, 7, and 11. Watch how tempering it creates connections across all three higher-prime axes.",
+    description: "The keenanisma (385/384 ≈ 4.5 ¢) is an 11-limit comma binding primes 5, 7, and 11.  Layering the werckisma (441/440 ≈ 3.9 ¢) on top tightens those connections further, producing the 11-limit version of starling and naturally supporting 31-, 41-, and 72-EDO.",
     primes: [3, 5, 7, 11],
     bounds: { 3: [-3, 3], 5: [-1, 1], 7: [-1, 1], 11: [-1, 1] },
     commaSequence: [
@@ -1309,7 +1309,7 @@ export const TEMPER_SCENARIOS: TemperScenario[] = [
   },
   {
     name: "13-limit exploration",
-    description: "Temper the island comma (676/675) and the minthma (352/351) to bring prime 13 into alignment with 5 and 11.",
+    description: "Vanish the island comma (676/675 ≈ 2.6 ¢) and minthma (352/351 ≈ 4.9 ¢) — followed by the gentle comma — to align prime 13 with 5 and 11.  The result is a 13-limit lattice that 41- and 72-EDO both reach with very low error.",
     primes: [3, 5, 7, 11, 13],
     bounds: { 3: [-2, 2], 5: [-1, 1], 7: [-1, 1], 11: [-1, 1], 13: [-1, 1] },
     commaSequence: [
