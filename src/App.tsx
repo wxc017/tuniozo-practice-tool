@@ -53,6 +53,10 @@ import { getSavedToken, downloadSync, uploadSync, clearToken } from "@/lib/googl
 import { buildSyncPayload, restoreFromSyncPayload } from "@/lib/syncData";
 import { getEDOIntervals, getLayoutFile, pcToNoteNameWithEnharmonic, formatHalfAccidentals } from "@/lib/edoData";
 import { JI_LIMIT_GROUPS } from "@/lib/jiTonalityFamilies";
+// Side-effect import: registers the 19 curated JI scales (Pythagorean,
+// 5-limit, septimal, neutral / Maqam) into edoData's pattern-map cache
+// for 41-EDO and 53-EDO so getModeDegreeMap() resolves them.
+import { JI_FAMILY, getJiScaleSteps, getJiScaleDegrees } from "@/lib/jiScaleData";
 import {
   PracticeLogEntry,
   PracticeRating,
@@ -1538,18 +1542,20 @@ export default function App() {
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
                   <span className="px-2.5 py-1 rounded-md border border-amber-500/40 bg-amber-500/10 text-amber-300 text-[10px] font-semibold tracking-wider">
-                    WORK IN PROGRESS
+                    PREVIEW
                   </span>
                   <span className="text-[#666] text-xs">
-                    {temperament === "pythagorean" ? "Pythagorean" : "Schismatic"} ({edo}-EDO) — limit-grouped tonality picker preview.
-                    Selecting a scale doesn't play anything yet; the JI scale data lands in the next commit.
+                    {temperament === "pythagorean" ? "Pythagorean" : "Schismatic"} ({edo}-EDO).
+                    Click any scale to hear it ascending from the tonic.  Full Intervals / Mode ID / Chord
+                    Progressions integration lands in follow-up commits — for now the picker is the gateway.
                   </span>
                 </div>
 
-                {/* Preview of the limit → family hierarchy for Pythagorean/
-                    Schismatic.  Same structure ChordsTab / IntervalsTab /
-                    Mode ID will use once the underlying scale data is
-                    registered in edoData.ts (step 5). */}
+                {/* Limit → family → scale picker for Pythagorean/Schismatic.
+                    Click triggers a one-octave ascending preview through
+                    the audio engine.  Each scale's step values are looked
+                    up via jiScaleData.getJiScaleSteps() — registered into
+                    edoData's pattern-map cache at module load. */}
                 <div className="bg-[#0e0e0e] border border-[#1a1a1a] rounded p-3 space-y-3">
                   <p className="text-[10px] text-[#555] font-medium tracking-wider">TONALITIES — {temperament.toUpperCase()}</p>
                   {JI_LIMIT_GROUPS.map(group => (
@@ -1564,13 +1570,32 @@ export default function App() {
                           <div key={fam.key}>
                             <p className="text-[9px] text-[#666] font-medium tracking-wider mb-1">{fam.label}</p>
                             <div className="flex flex-wrap gap-1">
-                              {fam.tonalities.map(t => (
-                                <button key={t}
-                                  disabled
-                                  className="px-2 py-1 text-[10px] rounded border border-[#222] bg-[#0a0a0a] text-[#555] cursor-not-allowed">
-                                  {t}
-                                </button>
-                              ))}
+                              {fam.tonalities.map(t => {
+                                const steps = getJiScaleSteps(edo, t);
+                                const degs = getJiScaleDegrees(t);
+                                const playable = steps && steps.length > 0;
+                                return (
+                                  <button key={t}
+                                    onClick={async () => {
+                                      if (!playable) return;
+                                      await ensureAudio();
+                                      // Find the tonic pitch closest to layout center
+                                      const baseTonic = lowestPitch + (((tonicPc - lowestPitch) % edo) + edo) % edo;
+                                      const noteSteps = [...steps, edo]; // include octave
+                                      const noteDur = 0.32;
+                                      noteSteps.forEach((s, i) => {
+                                        const pitch = baseTonic + s;
+                                        setTimeout(() => {
+                                          audioEngine.playNote(pitch, edo, 0.7, noteDur);
+                                        }, i * noteDur * 1000);
+                                      });
+                                    }}
+                                    title={degs ? degs.join("  ") : t}
+                                    className="px-2 py-1 text-[10px] rounded border border-[#2a2a2a] bg-[#161616] text-[#aaa] hover:border-[#5b5be6] hover:text-white hover:bg-[#1a1a30] transition-colors">
+                                    {t}
+                                  </button>
+                                );
+                              })}
                             </div>
                           </div>
                         ))}
@@ -1578,6 +1603,11 @@ export default function App() {
                     </div>
                   ))}
                 </div>
+
+                <p className="text-[10px] text-[#444] italic">
+                  Family registered as <code className="text-[#666]">{JI_FAMILY}</code> in edoData;
+                  getModeDegreeMap({edo}, "{JI_FAMILY}", scaleName) returns the degree map.
+                </p>
               </div>
             </div>
           ) : (
