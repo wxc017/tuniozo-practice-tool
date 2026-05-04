@@ -6,6 +6,11 @@ import { syllableForEdoStep } from "@/lib/microtonalSolfege";
 import { getTonalityBanks, type TonalityBank } from "@/lib/tonalityBanks";
 import { bankToScaleFamMode } from "@/lib/tonalityChordPool";
 import { jiLimitGroupsForEdo } from "@/lib/jiTonalityFamilies";
+import { analyzeJiScale } from "@/lib/jiChordAnalysis";
+import { JI_SCALE_NAMES } from "@/lib/jiScaleData";
+import FloatingPanel from "@/components/FloatingPanel";
+
+const JI_SCALE_NAMES_SET = new Set(JI_SCALE_NAMES);
 import { formatRomanNumeral } from "@/lib/formatRoman";
 import ModeLattice3D from "../scalar/ModeLattice3D";
 
