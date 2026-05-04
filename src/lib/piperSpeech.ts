@@ -19,7 +19,7 @@
 // browser without WASM/Worker support, etc.) so the user always hears
 // something.
 
-import { speakSyllable as fallbackSpeak } from "./solfegeSpeech";
+import { speakSyllable as fallbackSpeak, ipaToEnglishOrtho } from "./solfegeSpeech";
 
 // HuggingFace base for the voice model + config.  en_US-amy-low is a
 // small (~30 MB) but pleasant en-US voice; bumping to "medium" doubles
@@ -151,9 +151,18 @@ const PIPER_PLAYBACK_RATE = 0.85;
 
 /** Speak a syllable through piper-wasm.  Falls back to the Web Speech
  *  API if piper hasn't loaded or fails for any reason — the user hears
- *  something either way. */
+ *  something either way.
+ *
+ *  When an `ipa` reference is supplied, the input fed to piper is
+ *  rewritten to its English-orthography approximation (e.g. "saɪs" →
+ *  "sice") via `ipaToEnglishOrtho`.  Piper's eSpeak phonemizer reads
+ *  text as English, so the raw microtonal-solfege spellings ("Sais",
+ *  "Thay", "Vail" …) come out badly mangled.  Substituting orthography
+ *  the eSpeak en-US rules already pronounce as the intended IPA fixes
+ *  it without bypassing piper's pipeline. */
 export async function piperSpeak(text: string, options: PiperSpeakOptions = {}): Promise<void> {
-  const url = await piperGenerateCached(text);
+  const speak = options.ipa ? ipaToEnglishOrtho(options.ipa) : text;
+  const url = await piperGenerateCached(speak);
   if (!url) {
     fallbackSpeak(text, options.ipa ? { ipa: options.ipa } : undefined);
     return;
