@@ -240,6 +240,10 @@ export default function ChordsTab({
   // fifth to pure JI ratios on the fly — every chord is internally
   // consonant but progressions can drift the tonal centre by a comma.
   const [jiMode, setJiMode] = useLS<"frozen" | "adaptive">("lt_crd_jiMode", "frozen");
+  // Active tab index in the chord-analysis floating panel — only used
+  // when multiple JI tonalities are selected.  Reset to 0 when the
+  // selected set changes.
+  const [analysisTabIdx, setAnalysisTabIdx] = useState(0);
   const [extTendency, setExtTendency] = useLS<string>("lt_crd_extTend", "Any");
   // "7th" is intentionally excluded from the extension UI — the 7th is
   // already carried by seventh-chord voicing patterns (1 3 5 7, etc.).
@@ -1495,13 +1499,17 @@ export default function ChordsTab({
           25 vw width by FloatingPanel so the in-flow tonality picker /
           chord pool below stays readable. */}
       {selectedJiTonalities.length > 0 && (() => {
-        // Pick the first selected JI tonality as the analysis target.
-        // Multiple selections collapse to the first; keeps the panel
-        // tractable rather than rendering N stacked tables.
-        const tonality = selectedJiTonalities[0];
+        // When multiple JI tonalities are selected, the chord-analysis
+        // panel gets a tab strip so the user can switch which scale's
+        // table they're seeing without hiding the others.  When only
+        // one is selected the strip degenerates into a single label.
+        // The active tab persists across renders via state below.
+        const activeIdx = analysisTabIdx < selectedJiTonalities.length
+          ? analysisTabIdx
+          : 0;
+        const tonality = selectedJiTonalities[activeIdx];
         const analysis = analyzeJiScale(tonality);
-        const cents = getJiScaleCents(tonality);
-        const degs = getJiScaleDegrees(tonality);
+        if (!analysis) return null;
         const ROMAN = ["I","II","III","IV","V","VI","VII"];
         const tagColor = (k: string) => {
           if (k === "wolf") return "#cc6a8a";
@@ -1513,57 +1521,52 @@ export default function ChordsTab({
           return "#888";
         };
         return (
-          <>
-            {analysis && (
-              <FloatingPanel
-                position="top-right"
-                title={`CHORD ANALYSIS · ${tonality}`}
-                accent="#5b5be6"
-                storageKey="lt_crd_analysis_panel_collapsed"
-              >
-                <div className="grid grid-cols-[28px_1fr_1fr_60px] gap-x-2 gap-y-1 text-[10px]">
-                  <span className="text-[#555] font-medium">Ch</span>
-                  <span className="text-[#555] font-medium">Third</span>
-                  <span className="text-[#555] font-medium">Fifth</span>
-                  <span className="text-[#555] font-medium">Status</span>
-                  {analysis.map((row, i) => {
-                    const numeral = ROMAN[i];
-                    return (
-                      <span key={i} style={{ display: "contents" }}>
-                        <span className="text-[#aaa] font-mono">{numeral}</span>
-                        <span style={{ color: tagColor(row.third.kind) }}>
-                          {row.third.ratio}
-                        </span>
-                        <span style={{ color: tagColor(row.fifth.kind) }}>
-                          {row.fifth.ratio}
-                        </span>
-                        <span style={{ color: row.pure ? "#5cca5c" : "#cc6a8a", fontWeight: 600 }}>
-                          {row.pure ? "✓" : "✗ Wolf"}
-                        </span>
-                      </span>
-                    );
-                  })}
-                </div>
-                <p className="text-[9px] text-[#555] italic mt-2">
-                  Hover the picker below to switch which JI tonality this panel analyses.
-                </p>
-              </FloatingPanel>
+          <FloatingPanel
+            position="top-right"
+            title={`CHORD ANALYSIS${selectedJiTonalities.length === 1 ? ` · ${tonality}` : ""}`}
+            accent="#5b5be6"
+            storageKey="lt_crd_analysis_panel_collapsed"
+            topOffset={68}
+          >
+            {selectedJiTonalities.length > 1 && (
+              <div className="flex flex-wrap gap-1 mb-2 pb-1.5 border-b border-[#1a1a1a]">
+                {selectedJiTonalities.map((t, i) => (
+                  <button key={t}
+                    onClick={() => setAnalysisTabIdx(i)}
+                    className={`px-2 py-0.5 text-[9px] rounded border transition-colors ${
+                      i === activeIdx
+                        ? "bg-[#3a3a8a] text-white border-[#5b5be6]"
+                        : "bg-[#0e0e0e] text-[#888] border-[#222] hover:text-[#aaa]"
+                    }`}>
+                    {t}
+                  </button>
+                ))}
+              </div>
             )}
-            {cents && degs && (
-              <FloatingPanel
-                position="bottom-right"
-                title={`5-LIMIT LATTICE · ${tonality}`}
-                accent="#5cca8a"
-                storageKey="lt_crd_lattice_panel_collapsed"
-              >
-                <JiScaleLattice
-                  tones={degs.map((degree, i) => ({ degree, cents: cents[i] }))}
-                  accent="#5cca8a"
-                  compact={false}
-                />
-              </FloatingPanel>
-            )}
-          </>
+            <div className="grid grid-cols-[28px_1fr_1fr_60px] gap-x-2 gap-y-1 text-[10px]">
+              <span className="text-[#555] font-medium">Ch</span>
+              <span className="text-[#555] font-medium">Third</span>
+              <span className="text-[#555] font-medium">Fifth</span>
+              <span className="text-[#555] font-medium">Status</span>
+              {analysis.map((row, i) => {
+                const numeral = ROMAN[i];
+                return (
+                  <span key={i} style={{ display: "contents" }}>
+                    <span className="text-[#aaa] font-mono">{numeral}</span>
+                    <span style={{ color: tagColor(row.third.kind) }}>
+                      {row.third.ratio}
+                    </span>
+                    <span style={{ color: tagColor(row.fifth.kind) }}>
+                      {row.fifth.ratio}
+                    </span>
+                    <span style={{ color: row.pure ? "#5cca5c" : "#cc6a8a", fontWeight: 600 }}>
+                      {row.pure ? "✓" : "✗ Wolf"}
+                    </span>
+                  </span>
+                );
+              })}
+            </div>
+          </FloatingPanel>
         );
       })()}
 
