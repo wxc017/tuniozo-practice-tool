@@ -4359,7 +4359,25 @@ export default function LatticeView({ externalHighlights, activeNodeKey, activeN
     return { ...base, gridType: monzoGridType };
   }, [customRatiosConfig, debouncedConfig, monzoGridType]);
   const monzoLattice = useMemo(() => buildLattice(effectiveConfig), [effectiveConfig]);
-  const monzoTopology = useMemo(() => detectTopology(effectiveConfig), [effectiveConfig]);
+  const monzoTopology = useMemo(() => {
+    const base = detectTopology(effectiveConfig);
+    // Toroidal / helical grid types lay every cell out as a helix on
+    // a cylinder.  When no commas are tempered, detectTopology
+    // returns "plane" — but the cells themselves already live on a
+    // cylinder, so promote the topology so the cylinder mesh draws
+    // behind them and the spiral visibly wraps a surface.
+    if (base.type === "plane" && (monzoGridType === "toroidal" || monzoGridType === "helical")) {
+      return {
+        ...base,
+        type: "cylinder" as const,
+        description: monzoGridType === "toroidal"
+          ? `Cylinder helix — chain of fifths wraps once per ${effectiveConfig.edo ?? "?"} steps`
+          : "Cylinder helix — one turn per octave",
+        bestGeometry: "cylinder" as const,
+      };
+    }
+    return base;
+  }, [effectiveConfig, monzoGridType]);
   const monzoInfo = useMemo(() => latticeInfo(monzoLattice), [monzoLattice]);
 
   // Resolve activeClassIds (EDO step numbers) to actual node keys

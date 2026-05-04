@@ -463,8 +463,11 @@ export function monzoTo3DToroidal(
   }
   const k = ((step * invP5) % edo + edo) % edo;
 
-  const cylR = 5.0;
-  const verticalSpan = 10.0;
+  // Radius / height match generateCylinderMesh(6, 16, ...) so the
+  // helix sits exactly on the cylinder shell when the surface mesh
+  // is rendered behind it.
+  const cylR = 6.0;
+  const verticalSpan = 16.0;
   const u = 2 * Math.PI * k / edo;
   const z = (k / edo) * verticalSpan - verticalSpan / 2;
   return [cylR * Math.cos(u), z, cylR * Math.sin(u)];
