@@ -45,6 +45,26 @@ export function formatRomanNumeral(label: string): React.ReactNode {
   return <>{body}{suffixSup}</>;
 }
 
+/**
+ * Variant that prepends a short family abbreviation as superscript so
+ * 41/53-EDO chord labels carry their JI limit family inline (e.g.
+ * "ᵀʳⁱI" for a Tridecimal Major tonic, "ᴴᵉᵖM7" for a Heptadecimal M7).
+ * Without the prefix, "I" from a Tridecimal scale and "I" from a
+ * Heptadecimal scale render identically — the user has no way to
+ * tell them apart in the chord pool.  Pass `null` to skip the prefix
+ * (12-EDO and other non-JI contexts).
+ */
+export function formatRomanNumeralWithFamily(label: string, familyPrefix: string | null): React.ReactNode {
+  const body = formatRomanNumeral(label);
+  if (!familyPrefix) return body;
+  return (
+    <>
+      <sup style={{ fontSize: "0.6em", verticalAlign: "super", lineHeight: 0, marginRight: 1, opacity: 0.85 }}>{familyPrefix}</sup>
+      {body}
+    </>
+  );
+}
+
 function formatSingleRoman(part: string, key: number): React.ReactNode {
   const segments = part.split(SPLIT_RE);
   if (segments.length === 1) return part;

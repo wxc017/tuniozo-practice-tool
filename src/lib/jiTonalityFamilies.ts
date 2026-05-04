@@ -302,3 +302,33 @@ export function limitForJiTonality(tonality: string): JiLimit | null {
   }
   return null;
 }
+
+/**
+ * Short abbreviation per JI limit, used as a superscript family
+ * marker on chord labels in 41/53-EDO so chords from different limit
+ * families don't visually collide.  E.g. "Tridecimal Major" → "Tri",
+ * "Heptadecimal Minor" → "Hep".  Three letters keeps the prefix
+ * short enough to render inline without crowding the roman numeral.
+ */
+const LIMIT_ABBREV: Record<JiLimit, string> = {
+  3: "Pyt",
+  5: "JI",
+  7: "Sep",
+  11: "Neu",
+  13: "Tri",
+  17: "Hep",
+  19: "Non",
+  23: "Vct",
+  29: "Vcn",
+  31: "Tgp",
+};
+
+/** Family abbreviation for a tonality, or null if the tonality isn't
+ *  a curated JI scale.  Used as a superscript prefix in chord-name
+ *  rendering so the user can tell e.g. "Tridecimal I" from
+ *  "Heptadecimal I" at a glance. */
+export function familyAbbreviationForTonality(tonality: string): string | null {
+  const limit = limitForJiTonality(tonality);
+  if (limit === null) return null;
+  return LIMIT_ABBREV[limit];
+}

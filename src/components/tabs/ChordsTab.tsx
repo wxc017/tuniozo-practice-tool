@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, Fragment } from "react";
 import { audioEngine } from "@/lib/audioEngine";
 import { useLS, registerKnownOption, unregisterKnownOptionsForPrefix } from "@/lib/storage";
 import type { TabSettingsSnapshot } from "@/App";
@@ -22,8 +22,8 @@ import {
 import { syllableForEdoStep } from "@/lib/microtonalSolfege";
 import { getTonalityBanks, getApproachChords, APPROACH_KINDS, APPROACH_LABELS, type TonalityBank, type ChordEntry, type ApproachKind } from "@/lib/tonalityBanks";
 import { xenIntervalsForEdo, bankToScaleFamMode } from "@/lib/tonalityChordPool";
-import { formatRomanNumeral } from "@/lib/formatRoman";
-import { JI_LIMIT_GROUPS, jiLimitGroupsForEdo } from "@/lib/jiTonalityFamilies";
+import { formatRomanNumeral, formatRomanNumeralWithFamily } from "@/lib/formatRoman";
+import { JI_LIMIT_GROUPS, jiLimitGroupsForEdo, familyAbbreviationForTonality } from "@/lib/jiTonalityFamilies";
 import { JI_SCALE_NAMES, getJiScaleCents, getJiScaleDegrees } from "@/lib/jiScaleData";
 import { analyzeJiScale, COMMA_DRIFT_CATALOG } from "@/lib/jiChordAnalysis";
 import { chordQualityFromSteps, voicingFor } from "@/lib/jiLattice";
@@ -1824,7 +1824,17 @@ export default function ChordsTab({
                   <div className="flex items-baseline gap-2 pb-1.5 border-b border-[#3a3a1a]">
                     <p className="text-[10px] text-[#888] font-semibold tracking-wider">LOOP</p>
                     <p className="text-[12px] text-[#c8a850] font-mono">
-                      {fhAnswer.progression.join(" → ")}
+                      {(() => {
+                        const prefix = (edo === 41 || edo === 53) && fhAnswer.scaleTonality
+                          ? familyAbbreviationForTonality(fhAnswer.scaleTonality)
+                          : null;
+                        return fhAnswer.progression.map((rn, i) => (
+                          <Fragment key={i}>
+                            {i > 0 && " → "}
+                            {formatRomanNumeralWithFamily(rn, prefix)}
+                          </Fragment>
+                        ));
+                      })()}
                     </p>
                     {fhAnswer.scaleTonality && (
                       <p className="text-[10px] text-[#888] ml-auto italic">
@@ -1887,7 +1897,12 @@ export default function ChordsTab({
                     return (
                     <div key={chord.index} className="space-y-1">
                       <p className="text-[10px] text-[#c8a850] font-medium flex items-baseline gap-2 flex-wrap">
-                        <span>[{chord.index}] <span className="font-mono text-[12px]">{chord.numeral}</span></span>
+                        <span>[{chord.index}] <span className="font-mono text-[12px]">{(() => {
+                          const prefix = (edo === 41 || edo === 53) && fhAnswer.scaleTonality
+                            ? familyAbbreviationForTonality(fhAnswer.scaleTonality)
+                            : null;
+                          return formatRomanNumeralWithFamily(chord.numeral, prefix);
+                        })()}</span></span>
                         <span className="text-[#888]">({chord.quality})</span>
                         {ana && (
                           <span className="text-[9px] flex items-baseline gap-1 ml-2 px-1.5 py-0.5 rounded border border-[#222] bg-[#0a0a0a]">
@@ -2121,11 +2136,18 @@ export default function ChordsTab({
           if (!bank) return null;
           const family = tonalityFamiliesForEdo(edo).find(f => f.tonalities.includes(t));
           const accent = family?.color ?? "#7173e6";
+          // 41/53-EDO: family-name superscript prefix on roman numerals
+          // so chords from different prime-limit families (Tridecimal vs
+          // Heptadecimal vs Nonadecimal …) don't collide visually.
+          const familyPrefix = (edo === 41 || edo === 53)
+            ? familyAbbreviationForTonality(t)
+            : null;
           return (
             <ChordSelectionPanel
               key={t}
               tonality={t}
               accent={accent}
+              familyPrefix={familyPrefix}
               bank={bank}
               edo={edo}
               chordMap={chordMap}
@@ -2483,12 +2505,13 @@ const XEN_SHORT_LABEL: Record<string, string> = {
 // adds/removes both stack variants together.
 
 function ChordSelectionPanel({
-  tonality, accent, bank, edo, chordMap, checkedSet, toggleChord, setLevel,
+  tonality, accent, familyPrefix, bank, edo, chordMap, checkedSet, toggleChord, setLevel,
   collapsedLevels, toggleLevel, approachMap, toggleApproach,
   xenMap, toggleXen, toggleXenStack,
 }: {
   tonality: string;
   accent: string;
+  familyPrefix: string | null;
   bank: TonalityBank;
   edo: number;
   chordMap: Record<string, number[]>;
@@ -2573,7 +2596,7 @@ function ChordSelectionPanel({
                             isChecked ? "" : "text-[#666] hover:text-[#888]"
                           }`}
                           style={isChecked ? { color: accent } : undefined}>
-                          {formatRomanNumeral(entry.label)}
+                          {formatRomanNumeralWithFamily(entry.label, familyPrefix)}
                         </button>
                         <div className="flex flex-col gap-0.5">
                           {showApproaches && (
