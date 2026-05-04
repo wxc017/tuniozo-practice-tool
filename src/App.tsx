@@ -52,11 +52,12 @@ import { recordAnswer, getDayTotals, accuracy, setImportBias, getImportBias, cle
 import { getSavedToken, downloadSync, uploadSync, clearToken } from "@/lib/googleDrive";
 import { buildSyncPayload, restoreFromSyncPayload } from "@/lib/syncData";
 import { getEDOIntervals, getLayoutFile, pcToNoteNameWithEnharmonic, formatHalfAccidentals } from "@/lib/edoData";
-import { JI_LIMIT_GROUPS } from "@/lib/jiTonalityFamilies";
 // Side-effect import: registers the 19 curated JI scales (Pythagorean,
 // 5-limit, septimal, neutral / Maqam) into edoData's pattern-map cache
-// for 41-EDO and 53-EDO so getModeDegreeMap() resolves them.
-import { JI_FAMILY, getJiScaleSteps, getJiScaleDegrees } from "@/lib/jiScaleData";
+// for 41-EDO and 53-EDO so getModeDegreeMap() resolves them.  No exports
+// are used directly here — ChordsTab and ModeIdentificationTab consume
+// the scales via their dynamic family lists.
+import "@/lib/jiScaleData";
 import {
   PracticeLogEntry,
   PracticeRating,
@@ -89,19 +90,6 @@ const TAB_LABELS: Record<Tab, string> = {
 
 const OCT_OPTIONS = [1,2,3,4,5,6,7];
 const VALID_TABS: Tab[] = ["intervals","chords","modeid","melody","jazz","patterns","drone"];
-
-// Display titles for the Tonal Audiation game-mode tabs.  Used by both the
-// normal tab-content render block and the 41/53-EDO Work-in-Progress
-// placeholder so the heading matches what the user clicked.
-const TONAL_TAB_TITLES: Record<string, string> = {
-  intervals: "Intervals",
-  chords:    "Chord Progressions",
-  melody:    "Melody Recognition",
-  jazz:      "Jazz Cells",
-  patterns:  "Pattern Sequences",
-  drone:     "Chord Drone",
-  modeid:    "Mode Identification",
-};
 
 // ── Temperament classification ──────────────────────────────────────────
 // Tonal Audiation groups the available EDOs by their underlying tuning
@@ -1529,141 +1517,63 @@ export default function App() {
         })()}
 
         <div ref={tabContentRef} className="flex-1 pb-8">
-          {/* 41-EDO and 53-EDO are not yet supported in the Tonal Audiation
-              game modes — the chord/scale infrastructure these tabs depend on
-              (interval naming, chord-quality tables, mode rotations) is
-              partially implemented for those tunings.  Show a placeholder
-              instead of routing into the tab so the user knows it's planned
-              rather than broken.  Other sections (Scalar Explorations,
-              Harmonic Lattice, etc.) handle 41/53 independently. */}
-          {(edo === 41 || edo === 53) ? (
+          {/* Tab content.  Pythagorean (41) and Schismatic (53) only expose
+              Intervals / Chord Progressions / Mode Identification — the other
+              tabs are filtered out by temperamentTabs above and never become
+              activeTab in those temperaments.  The three exposed tabs handle
+              41/53 internally now: ChordsTab and ModeIdentificationTab swap
+              their family/limit lists per EDO; IntervalsTab is naturally
+              EDO-agnostic (interval index → cents). */}
+          {activeTab === "intervals" && (
             <div className="bg-[#111] rounded-xl border border-[#1e1e1e] p-5">
-              <h2 className="font-semibold mb-4">{TONAL_TAB_TITLES[activeTab] ?? activeTab}</h2>
-              <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <span className="px-2.5 py-1 rounded-md border border-amber-500/40 bg-amber-500/10 text-amber-300 text-[10px] font-semibold tracking-wider">
-                    PREVIEW
-                  </span>
-                  <span className="text-[#666] text-xs">
-                    {temperament === "pythagorean" ? "Pythagorean" : "Schismatic"} ({edo}-EDO).
-                    Click any scale to hear it ascending from the tonic.  Full Intervals / Mode ID / Chord
-                    Progressions integration lands in follow-up commits — for now the picker is the gateway.
-                  </span>
-                </div>
-
-                {/* Limit → family → scale picker for Pythagorean/Schismatic.
-                    Click triggers a one-octave ascending preview through
-                    the audio engine.  Each scale's step values are looked
-                    up via jiScaleData.getJiScaleSteps() — registered into
-                    edoData's pattern-map cache at module load. */}
-                <div className="bg-[#0e0e0e] border border-[#1a1a1a] rounded p-3 space-y-3">
-                  <p className="text-[10px] text-[#555] font-medium tracking-wider">TONALITIES — {temperament.toUpperCase()}</p>
-                  {JI_LIMIT_GROUPS.map(group => (
-                    <div key={group.limit}>
-                      <div className="flex items-baseline gap-3 mb-1.5">
-                        <p className="text-[10px] font-semibold tracking-wider"
-                          style={{ color: group.color }}>{group.label}</p>
-                        <span className="text-[9px] text-[#555] italic">{group.blurb}</span>
-                      </div>
-                      <div className="ml-2 space-y-2">
-                        {group.families.map(fam => (
-                          <div key={fam.key}>
-                            <p className="text-[9px] text-[#666] font-medium tracking-wider mb-1">{fam.label}</p>
-                            <div className="flex flex-wrap gap-1">
-                              {fam.tonalities.map(t => {
-                                const steps = getJiScaleSteps(edo, t);
-                                const degs = getJiScaleDegrees(t);
-                                const playable = steps && steps.length > 0;
-                                return (
-                                  <button key={t}
-                                    onClick={async () => {
-                                      if (!playable) return;
-                                      await ensureAudio();
-                                      // Find the tonic pitch closest to layout center
-                                      const baseTonic = lowestPitch + (((tonicPc - lowestPitch) % edo) + edo) % edo;
-                                      const noteSteps = [...steps, edo]; // include octave
-                                      const noteDur = 0.32;
-                                      noteSteps.forEach((s, i) => {
-                                        const pitch = baseTonic + s;
-                                        setTimeout(() => {
-                                          audioEngine.playNote(pitch, edo, 0.7, noteDur);
-                                        }, i * noteDur * 1000);
-                                      });
-                                    }}
-                                    title={degs ? degs.join("  ") : t}
-                                    className="px-2 py-1 text-[10px] rounded border border-[#2a2a2a] bg-[#161616] text-[#aaa] hover:border-[#5b5be6] hover:text-white hover:bg-[#1a1a30] transition-colors">
-                                    {t}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <p className="text-[10px] text-[#444] italic">
-                  Family registered as <code className="text-[#666]">{JI_FAMILY}</code> in edoData;
-                  getModeDegreeMap({edo}, "{JI_FAMILY}", scaleName) returns the degree map.
-                </p>
-              </div>
+              <h2 className="font-semibold mb-4">Intervals</h2>
+              <IntervalsTab key={tabKey} {...sharedTabProps} />
             </div>
-          ) : (
-            <>
-              {activeTab === "intervals" && (
-                <div className="bg-[#111] rounded-xl border border-[#1e1e1e] p-5">
-                  <h2 className="font-semibold mb-4">Intervals</h2>
-                  <IntervalsTab key={tabKey} {...sharedTabProps} />
-                </div>
-              )}
+          )}
 
-              {activeTab === "chords" && (
-                <div className="bg-[#111] rounded-xl border border-[#1e1e1e] p-5">
-                  <h2 className="font-semibold mb-4">Chord Progressions</h2>
-                  <ChordsTab key={tabKey} {...sharedTabProps} />
-                </div>
-              )}
+          {activeTab === "chords" && (
+            <div className="bg-[#111] rounded-xl border border-[#1e1e1e] p-5">
+              <h2 className="font-semibold mb-4">Chord Progressions</h2>
+              <ChordsTab key={tabKey} {...sharedTabProps} />
+            </div>
+          )}
 
-              {activeTab === "melody" && (
-                <div className="bg-[#111] rounded-xl border border-[#1e1e1e] p-5">
-                  <h2 className="font-semibold mb-4">Melody Recognition</h2>
-                  <MelodyTab key={tabKey} {...sharedTabProps} />
-                </div>
-              )}
+          {activeTab === "melody" && (
+            <div className="bg-[#111] rounded-xl border border-[#1e1e1e] p-5">
+              <h2 className="font-semibold mb-4">Melody Recognition</h2>
+              <MelodyTab key={tabKey} {...sharedTabProps} />
+            </div>
+          )}
 
-              {activeTab === "jazz" && (
-                <div className="bg-[#111] rounded-xl border border-[#1e1e1e] p-5">
-                  <h2 className="font-semibold mb-4">Jazz Cells</h2>
-                  <JazzTab key={tabKey} {...sharedTabProps} />
-                </div>
-              )}
+          {activeTab === "jazz" && (
+            <div className="bg-[#111] rounded-xl border border-[#1e1e1e] p-5">
+              <h2 className="font-semibold mb-4">Jazz Cells</h2>
+              <JazzTab key={tabKey} {...sharedTabProps} />
+            </div>
+          )}
 
-              {activeTab === "patterns" && (
-                <div className="bg-[#111] rounded-xl border border-[#1e1e1e] p-5">
-                  <h2 className="font-semibold mb-4">Pattern Sequences</h2>
-                  <PatternsTab key={tabKey} {...sharedTabProps} />
-                </div>
-              )}
+          {activeTab === "patterns" && (
+            <div className="bg-[#111] rounded-xl border border-[#1e1e1e] p-5">
+              <h2 className="font-semibold mb-4">Pattern Sequences</h2>
+              <PatternsTab key={tabKey} {...sharedTabProps} />
+            </div>
+          )}
 
-              {activeTab === "drone" && (
-                <div className="bg-[#111] rounded-xl border border-[#1e1e1e] p-5">
-                  <h2 className="font-semibold mb-4">Chord Drone</h2>
-                  <DroneTab key={tabKey} tonicPc={tonicPc} lowestPitch={lowestPitch} highestPitch={highestPitch}
-                    edo={edo} onHighlight={handleHighlight} onResult={handleResult}
-                    onPlay={handlePlay} onAnswer={trackAnswer} lastPlayed={lastPlayed} ensureAudio={ensureAudio}
-                    onDroneStateChange={(active) => { if (!active) setDroneIsOn(false); }} />
-                </div>
-              )}
+          {activeTab === "drone" && (
+            <div className="bg-[#111] rounded-xl border border-[#1e1e1e] p-5">
+              <h2 className="font-semibold mb-4">Chord Drone</h2>
+              <DroneTab key={tabKey} tonicPc={tonicPc} lowestPitch={lowestPitch} highestPitch={highestPitch}
+                edo={edo} onHighlight={handleHighlight} onResult={handleResult}
+                onPlay={handlePlay} onAnswer={trackAnswer} lastPlayed={lastPlayed} ensureAudio={ensureAudio}
+                onDroneStateChange={(active) => { if (!active) setDroneIsOn(false); }} />
+            </div>
+          )}
 
-              {activeTab === "modeid" && (
-                <div className="bg-[#111] rounded-xl border border-[#1e1e1e] p-5">
-                  <h2 className="font-semibold mb-4">Mode Identification</h2>
-                  <ModeIdentificationTab key={tabKey} {...sharedTabProps} />
-                </div>
-              )}
-            </>
+          {activeTab === "modeid" && (
+            <div className="bg-[#111] rounded-xl border border-[#1e1e1e] p-5">
+              <h2 className="font-semibold mb-4">Mode Identification</h2>
+              <ModeIdentificationTab key={tabKey} {...sharedTabProps} />
+            </div>
           )}
 
         </div>
