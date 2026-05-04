@@ -236,6 +236,16 @@ export default function App() {
   const [droneVol, setDroneVol] = useLS<number>("lt_app_droneVol", 0.08);
   const [droneIsOn, setDroneIsOn] = useState(false);
   const [section, setSection] = useLS<string>("lt_app_section", "ear-trainer");
+  // When user enters Scalar Explorations from a non-Meantone EDO (41 / 53
+  // etc.), snap EDO down to 31 so the meantone-only chord-pool / lattice
+  // infrastructure stays valid.  Reverts to the previous EDO is up to the
+  // user — they can always re-pick once they leave Scalar Explorations.
+  useEffect(() => {
+    if (section === "scalar-exploration" && edo !== 12 && edo !== 31) {
+      setEdo(31);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section]);
   const [dronePulse, setDronePulse] = useLS<boolean>("lt_app_dronePulse", false);
   const [dronePulseDur, setDronePulseDur] = useLS<number>("lt_app_dronePulseDur", 4);
   const [playVol, setPlayVol] = useLS<number>("lt_app_playVol", 1.0);
@@ -952,18 +962,40 @@ export default function App() {
               )}
               <div className="w-px h-4 bg-[#2a2a2a]" />
               <label className="text-xs text-[#666]">EDO</label>
-              <select value={edo} onChange={e => setEdo(Number(e.target.value))}
-                className="bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-white focus:outline-none">
-                {/* Tonal Audiation only exposes EDOs that belong to the
-                    active temperament; Scalar Explorations only supports
-                    12-EDO and 31-EDO since the alteration / family
-                    lattices' xen pattern maps are registered for those
-                    two; other sections see the full EDO list. */}
-                {(section === "ear-trainer" ? TEMPERAMENT_EDOS[temperament]
-                  : section === "scalar-exploration" ? [12, 31]
-                  : EDO_OPTIONS)
-                  .map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
+              {section === "scalar-exploration" ? (
+                /* Family-grouped EDO buttons — mirrors Temperament
+                   Explorer's style.  Currently only Meantone (12 / 31)
+                   is supported in Scalar Explorations because the
+                   alteration / family-lattice xen pattern maps are
+                   registered only for those two.  Other temperament
+                   families will be added when their pattern maps
+                   land. */
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[9px] text-[#888] font-semibold tracking-wider px-1 border-l border-[#2a2a2a]">MEANTONE</span>
+                  {[12, 31].map(n => {
+                    const active = edo === n;
+                    return (
+                      <button key={n} onClick={() => setEdo(n)}
+                        title={`${n}-EDO (Meantone family)`}
+                        className={`px-2 py-0.5 rounded text-[11px] font-medium border transition-colors ${
+                          active
+                            ? "bg-[#7173e6] text-white border-[#7173e6]"
+                            : "bg-[#1a1a1a] text-[#aaa] border-[#2a2a2a] hover:text-white hover:border-[#3a3a5a]"
+                        }`}>
+                        {n}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <select value={edo} onChange={e => setEdo(Number(e.target.value))}
+                  className="bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-white focus:outline-none">
+                  {/* Tonal Audiation filters by active temperament tab.
+                      Other sections see the full EDO list. */}
+                  {(section === "ear-trainer" ? TEMPERAMENT_EDOS[temperament] : EDO_OPTIONS)
+                    .map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              )}
               {edo === 12 && (
                 <>
                   <div className="w-px h-4 bg-[#2a2a2a]" />
