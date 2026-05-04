@@ -533,30 +533,54 @@ function Scene({
         }
         mid = points[Math.floor(points.length / 2)];
       } else if (lattice.familyRings && lattice.familyRings.length > 0) {
-        // Family-lattice mode: arc the edge up out of the XY plane so
-        // cross-ring 1-alt edges don't pile up flat on top of each
-        // other.  Quadratic Bezier through a midpoint lifted in +Z by
-        // a fraction of the planar distance.  Endpoints use the
-        // node's actual z (which sits above the family ring's tube)
-        // so the arch starts and ends ON the rings, not below them.
+        // Family-lattice mode.  Two cases:
+        //  - same family: edge runs *along* the ring's circular path
+        //    so brightness-adjacent modes are linked by the ring's
+        //    own track.
+        //  - different families: edge arcs up out of the XY plane via
+        //    a Bezier so cross-ring connections don't pile flat on
+        //    top of each other.
         const ax = a.pos[0], ay = a.pos[1], az = a.pos[2];
         const bx = b.pos[0], by = b.pos[1], bz = b.pos[2];
-        const planar = Math.hypot(bx - ax, by - ay);
-        const lift = Math.max(2, planar * 0.45);
-        const cx = (ax + bx) / 2;
-        const cy = (ay + by) / 2;
-        const cz = (az + bz) / 2 + lift;
-        const NS = 16;
-        points = [];
-        for (let s = 0; s <= NS; s++) {
-          const t = s / NS;
-          const omt = 1 - t;
-          const x = omt * omt * ax + 2 * omt * t * cx + t * t * bx;
-          const y = omt * omt * ay + 2 * omt * t * cy + t * t * by;
-          const z = omt * omt * az + 2 * omt * t * cz + t * t * bz;
-          points.push([x, y, z]);
+        if (a.family.id === b.family.id) {
+          // Sample the ring's circle between the two angular
+          // positions on the shorter arc.
+          const ring = lattice.familyRings.find(r => r.familyId === a.family.id);
+          const radius = ring ? ring.radius : Math.hypot(ax, ay);
+          const aA = Math.atan2(ay, ax);
+          const aB = Math.atan2(by, bx);
+          let dA = aB - aA;
+          while (dA >  Math.PI) dA -= 2 * Math.PI;
+          while (dA < -Math.PI) dA += 2 * Math.PI;
+          const NS = 12;
+          points = [];
+          for (let s = 0; s <= NS; s++) {
+            const t = s / NS;
+            const ang = aA + dA * t;
+            const x = radius * Math.cos(ang);
+            const y = radius * Math.sin(ang);
+            const z = az + (bz - az) * t;
+            points.push([x, y, z]);
+          }
+          mid = points[Math.floor(points.length / 2)];
+        } else {
+          const planar = Math.hypot(bx - ax, by - ay);
+          const lift = Math.max(2, planar * 0.45);
+          const cx = (ax + bx) / 2;
+          const cy = (ay + by) / 2;
+          const cz = (az + bz) / 2 + lift;
+          const NS = 16;
+          points = [];
+          for (let s = 0; s <= NS; s++) {
+            const t = s / NS;
+            const omt = 1 - t;
+            const x = omt * omt * ax + 2 * omt * t * cx + t * t * bx;
+            const y = omt * omt * ay + 2 * omt * t * cy + t * t * by;
+            const z = omt * omt * az + 2 * omt * t * cz + t * t * bz;
+            points.push([x, y, z]);
+          }
+          mid = points[Math.floor(points.length / 2)];
         }
-        mid = points[Math.floor(points.length / 2)];
       } else {
         // Fallback (shouldn't happen for y/z which are within-knot).
         points = [a.pos, b.pos];
