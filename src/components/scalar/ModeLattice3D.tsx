@@ -35,9 +35,11 @@ function CameraReset({ resetKey, position }: {
   return null;
 }
 
-// Arrow-key / WASD panning: move the orbit target in camera-relative
-// directions.  Pan speed is scaled by camera distance so navigation
-// stays usable as the user zooms in or out across the lattice.
+// 6DOF keyboard fly: WASD for forward/left/back/right movement in
+// the camera's view plane, Space for up, Ctrl for down (world Y).
+// Move speed scales with camera distance so navigation stays usable
+// across zoom levels.  Movement translates both the orbit target and
+// the camera so the orbit relationship is preserved.
 function KeyboardPan() {
   const { controls, camera } = useThree();
   const pressed = useRef<Set<string>>(new Set());
@@ -51,14 +53,29 @@ function KeyboardPan() {
     const d = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
       const k = e.key.toLowerCase();
-      if (e.key.startsWith("Arrow") || k === "w" || k === "a" || k === "s" || k === "d") {
-        e.preventDefault();
-        pressed.current.add(e.key.startsWith("Arrow") ? e.key : k);
+      const isMoveKey = e.key.startsWith("Arrow")
+        || k === "w" || k === "a" || k === "s" || k === "d"
+        || e.code === "Space" || e.key === " "
+        || e.code === "ControlLeft" || e.code === "ControlRight";
+      if (!isMoveKey) return;
+      e.preventDefault();
+      if (e.code === "Space" || e.key === " ") {
+        pressed.current.add("space");
+      } else if (e.code === "ControlLeft" || e.code === "ControlRight") {
+        pressed.current.add("ctrl");
+      } else if (e.key.startsWith("Arrow")) {
+        pressed.current.add(e.key);
+      } else {
+        pressed.current.add(k);
       }
     };
     const u = (e: KeyboardEvent) => {
-      pressed.current.delete(e.key);
-      pressed.current.delete(e.key.toLowerCase());
+      if (e.code === "Space" || e.key === " ") pressed.current.delete("space");
+      else if (e.code === "ControlLeft" || e.code === "ControlRight") pressed.current.delete("ctrl");
+      else {
+        pressed.current.delete(e.key);
+        pressed.current.delete(e.key.toLowerCase());
+      }
     };
     window.addEventListener("keydown", d);
     window.addEventListener("keyup", u);
@@ -71,17 +88,28 @@ function KeyboardPan() {
     if (!controls || pressed.current.size === 0) return;
     const c = controls as { target?: THREE.Vector3 };
     if (!c.target) return;
-    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
-    const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize();
-    // Scale step by orbit-target distance so panning feels consistent
-    // whether zoomed in on a single knot or zoomed out on the whole lattice.
+    const right   = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+    const camUp   = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+    const forward = new THREE.Vector3().subVectors(c.target, camera.position).normalize();
+    const worldUp = new THREE.Vector3(0, 1, 0);
     const dist = camera.position.distanceTo(c.target);
     const step = Math.max(0.4, dist * 0.02);
     const d = new THREE.Vector3();
-    if (pressed.current.has("ArrowLeft")  || pressed.current.has("a")) d.addScaledVector(right, -step);
-    if (pressed.current.has("ArrowRight") || pressed.current.has("d")) d.addScaledVector(right,  step);
-    if (pressed.current.has("ArrowUp")    || pressed.current.has("w")) d.addScaledVector(up,     step);
-    if (pressed.current.has("ArrowDown")  || pressed.current.has("s")) d.addScaledVector(up,    -step);
+    // WASD = view-plane fly.  W = forward toward target, S = back away.
+    if (pressed.current.has("w")) d.addScaledVector(forward,  step);
+    if (pressed.current.has("s")) d.addScaledVector(forward, -step);
+    if (pressed.current.has("a")) d.addScaledVector(right,   -step);
+    if (pressed.current.has("d")) d.addScaledVector(right,    step);
+    // Arrow keys keep the old behaviour: pan the view (camera-relative
+    // up axis) so users coming from the previous version still get
+    // smooth pan with the keyboard.
+    if (pressed.current.has("ArrowLeft"))  d.addScaledVector(right,  -step);
+    if (pressed.current.has("ArrowRight")) d.addScaledVector(right,   step);
+    if (pressed.current.has("ArrowUp"))    d.addScaledVector(camUp,   step);
+    if (pressed.current.has("ArrowDown"))  d.addScaledVector(camUp,  -step);
+    // Space / Ctrl = world-up / world-down for unambiguous vertical.
+    if (pressed.current.has("space")) d.addScaledVector(worldUp,  step);
+    if (pressed.current.has("ctrl"))  d.addScaledVector(worldUp, -step);
     c.target.add(d);
     camera.position.add(d);
   });
@@ -919,7 +947,10 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
     // Read the underlying DOM event for modifier keys — matches the
     // harmonic lattice's pattern, which is reliable across R3F versions.
     const native = ev.nativeEvent as MouseEvent;
-    const ctrl = native.ctrlKey || native.metaKey;
+    // Alt-click brings up the modulation spokes — Ctrl is reserved for
+    // downward keyboard movement (alongside Space for up).  Cmd/Meta
+    // also acts as the spokes modifier so Mac users have an equivalent.
+    const altOrCmd = native.altKey || native.metaKey;
     const shift = native.shiftKey;
     if (shift) {
       // Shift+click: focus the camera on this node.
@@ -932,11 +963,10 @@ export default function ModeLattice3D({ edo, rootPitch, tonicPc, anchorKey, play
     const alreadyOnForThis = showRays && selectedId === node.id;
     setSelectedId(node.id);
     setPendingFocusPc(null);
-    if (ctrl) {
-      // Ctrl+click: toggle the ray overlay AND pan the camera focus
-      // to this node so the user can immediately see the spokes
-      // sticking out around it (otherwise the spokes appear off
-      // wherever the camera was last pointing).
+    if (altOrCmd) {
+      // Alt+click (Cmd+click on Mac): toggle the modulation-ray
+      // overlay AND pan the camera focus to this node so the user
+      // sees the spokes sticking out around it.
       setShowRays(!alreadyOnForThis);
       setCameraFocusId(node.id);
       return;
