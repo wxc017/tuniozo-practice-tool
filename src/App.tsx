@@ -98,6 +98,46 @@ const TONAL_TAB_TITLES: Record<string, string> = {
   modeid:    "Mode Identification",
 };
 
+// ── Temperament classification ──────────────────────────────────────────
+// Tonal Audiation groups the available EDOs by their underlying tuning
+// family so the chord/scale infrastructure can specialise per temperament.
+//   Meantone     — 12/19/31: syntonic comma vanishes, 5-limit thirds emerge
+//                  from stacks of fifths.  Standard Western functional
+//                  harmony works without comma adjustments.
+//   Pythagorean  — 41: pure-fifth tuning where the syntonic comma survives.
+//                  3-limit, 5-limit, 7-limit, 11-limit scales are distinct.
+//   Schismatic   — 53: schisma vanishes; close to 5-limit JI but supports
+//                  comma-aware Pythagorean / 5-limit / 7-limit / 11-limit
+//                  distinctions throughout.
+// 17 / 19 / 22 are intentionally not assigned yet — to be revisited.
+type Temperament = "meantone" | "pythagorean" | "schismatic";
+
+const TEMPERAMENTS: Temperament[] = ["meantone", "pythagorean", "schismatic"];
+const TEMPERAMENT_LABELS: Record<Temperament, string> = {
+  meantone:    "Meantone",
+  pythagorean: "Pythagorean",
+  schismatic:  "Schismatic",
+};
+const TEMPERAMENT_EDOS: Record<Temperament, number[]> = {
+  meantone:    [12, 31],
+  pythagorean: [41],
+  schismatic:  [53],
+};
+// Pythagorean and Schismatic temperaments expose only the three tabs whose
+// content has a comma-aware story today.  Melody/Jazz/Patterns/Drone stay
+// hidden in those temperaments until the chord-progression infrastructure
+// is rebuilt around tuning lineages.
+const TEMPERAMENT_TABS: Record<Temperament, Tab[]> = {
+  meantone:    ["intervals", "chords", "modeid", "melody", "jazz", "patterns", "drone"],
+  pythagorean: ["intervals", "modeid", "chords"],
+  schismatic:  ["intervals", "modeid", "chords"],
+};
+function temperamentForEdo(edo: number): Temperament {
+  if (TEMPERAMENT_EDOS.pythagorean.includes(edo)) return "pythagorean";
+  if (TEMPERAMENT_EDOS.schismatic.includes(edo))  return "schismatic";
+  return "meantone";  // 12, 19, 31, and any unassigned EDO defaults here
+}
+
 // ── Settings snapshot types (shared with tabs) ──────────────────────
 export interface SettingsGroup {
   label: string;
@@ -149,6 +189,11 @@ export default function App() {
     if (!VALID_TABS.includes(activeTab)) setActiveTab("intervals");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // When the temperament changes (typically because the user switched EDO
+  // and crossed a temperament boundary), snap activeTab to the first tab
+  // the new temperament exposes — Pythagorean/Schismatic don't include
+  // melody/jazz/patterns/drone, so leaving activeTab on one of those
+  // would render nothing.
 
   // Listen for cross-component navigation requests
   useEffect(() => {
@@ -161,6 +206,26 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [edo, setEdo] = useLS<number>("lt_app_edo", 31);
+
+  // Temperament state for the Tonal Audiation section.  Driven from the
+  // active EDO so the two stay in sync without an explicit selector
+  // round-trip — switching to 41-EDO via the EDO dropdown auto-flips
+  // the temperament tab to Pythagorean, and clicking the Pythagorean
+  // tab snaps the EDO to its first available value (41).
+  const temperament: Temperament = temperamentForEdo(edo);
+  // Per-temperament tab list — drives both the tab buttons and the
+  // activeTab guard further down.  If the user lands on a tab that the
+  // current temperament doesn't expose (e.g. switching from Meantone's
+  // Melody tab to Pythagorean, which has no Melody), fall back to the
+  // first tab in the temperament's list.
+  const temperamentTabs: Tab[] = TEMPERAMENT_TABS[temperament];
+  // Snap activeTab to a valid tab for the current temperament whenever the
+  // user crosses a boundary (e.g. 31-EDO Melody → 41-EDO, where Melody
+  // doesn't exist).  Without this the tab content would render nothing.
+  useEffect(() => {
+    if (!temperamentTabs.includes(activeTab)) setActiveTab(temperamentTabs[0]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [temperament]);
   const [vizType, setVizType] = useLS<VisualizerType>("lt_app_vizType", "lumatone");
   const [tonicPc, setTonicPc] = useLS<number>("lt_app_tonic", 0);
   // Exercise range — absolute pitch bounds (both inclusive). Set by clicking
@@ -873,7 +938,11 @@ export default function App() {
               <label className="text-xs text-[#666]">EDO</label>
               <select value={edo} onChange={e => setEdo(Number(e.target.value))}
                 className="bg-[#1a1a1a] border border-[#2a2a2a] rounded px-2 py-1 text-xs text-white focus:outline-none">
-                {EDO_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+                {/* Tonal Audiation only exposes EDOs that belong to the
+                    active temperament; other sections (Scalar Explorations,
+                    Harmonic Lattice, etc.) always see the full EDO list. */}
+                {(section === "ear-trainer" ? TEMPERAMENT_EDOS[temperament] : EDO_OPTIONS)
+                  .map(n => <option key={n} value={n}>{n}</option>)}
               </select>
               {edo === 12 && (
                 <>
@@ -1076,10 +1145,35 @@ export default function App() {
       {section === "ear-trainer" && (
       <div className="px-4 pt-3 flex-1 flex flex-col min-h-0 overflow-y-auto">
       <div className="max-w-6xl mx-auto w-full flex-1 flex flex-col">
+        {/* Temperament selector — splits Tonal Audiation into Meantone
+            (12/31), Pythagorean (41), and Schismatic (53) families.  Each
+            temperament filters the EDO selector and the game-mode tabs
+            below.  Clicking a temperament snaps EDO to its first
+            available value if the current EDO doesn't belong. */}
+        <div className="flex gap-1 flex-wrap items-center mb-3">
+          <span className="text-[10px] text-[#555] font-semibold tracking-wider mr-2">TEMPERAMENT</span>
+          {TEMPERAMENTS.map(t => (
+            <button key={t}
+              onClick={() => {
+                const allowed = TEMPERAMENT_EDOS[t];
+                if (!allowed.includes(edo)) {
+                  stopAllAudio();
+                  setEdo(allowed[0]);
+                }
+              }}
+              className={`px-3 py-1 rounded text-[11px] font-medium transition-colors ${
+                temperament === t
+                  ? "bg-[#3a3a8a] text-white border border-[#5b5be6]"
+                  : "bg-[#0e0e0e] text-[#666] hover:text-[#aaa] hover:bg-[#181818] border border-[#222]"
+              }`}>
+              {TEMPERAMENT_LABELS[t]}
+            </button>
+          ))}
+        </div>
         <div className="flex gap-1 flex-wrap items-center mb-4">
           <PresetBar onPresetLoaded={() => setTabKey(k => k + 1)} />
           <div className="w-px h-4 bg-[#2a2a2a]" />
-          {tabs.map(t => (
+          {temperamentTabs.map(t => (
             <button key={t} onClick={() => { stopAllAudio(); setActiveTab(t); }}
               className={`px-3 py-1.5 rounded text-xs font-medium transition-colors ${
                 activeTab === t ? "bg-[#7173e6] text-white"
