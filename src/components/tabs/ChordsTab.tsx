@@ -1899,26 +1899,58 @@ export default function ChordsTab({
                       </p>
                       <div className="flex flex-wrap gap-1.5">
                         {chord.notes.map((pitch, i) => {
+                          // Two reference frames per tone:
+                          //   "scale" — pitch class relative to tonic (Do = 1)
+                          //   "chord" — pitch class relative to chord root
+                          // Solfege labels (Heathwaite + Microtonal IPA) computed
+                          // for each frame so the user sees the same note named
+                          // four ways: chord 3rd vs scale 5th, etc.
                           const pcFromTonic = ((pitch - tonicPc) % edo + edo) % edo;
-                          const intervalName = intervalLabel(pcFromTonic, edo);
-                          const heathwaite = heathwaiteTable ? heathwaiteTable[pcFromTonic] ?? "—" : "—";
-                          const micro = syllableForEdoStep(pcFromTonic, edo);
+                          const pcFromChord = ((pcFromTonic - chord.chordRootPc) % edo + edo) % edo;
+
+                          const intervalScale = intervalLabel(pcFromTonic, edo);
+                          const heathwaiteScale = heathwaiteTable ? heathwaiteTable[pcFromTonic] ?? "—" : "—";
+                          const microScale = syllableForEdoStep(pcFromTonic, edo);
+
+                          const intervalChord = intervalLabel(pcFromChord, edo);
+                          const heathwaiteChord = heathwaiteTable ? heathwaiteTable[pcFromChord] ?? "—" : "—";
+                          const microChord = syllableForEdoStep(pcFromChord, edo);
+
                           return (
                             <button key={i}
                               onClick={async () => {
                                 await ensureAudio();
                                 audioEngine.playNote(pitch, edo, 0.7, 0.6);
                               }}
-                              title={`Click to play.  ${intervalName} · Heathwaite: ${heathwaite} · Microtonal: ${micro.label} /${micro.ipa}/`}
-                              className="flex flex-col items-center px-2 py-1 rounded border border-[#3a3a1a] bg-[#2a1a0a] hover:bg-[#3a2a1a] hover:border-[#c8a850] transition-colors min-w-[58px]">
-                              <span className="text-[11px] text-[#e0c860] font-bold leading-tight">
-                                {intervalName}
+                              title={
+                                `Click to play.\n` +
+                                `In chord: ${intervalChord} · Heathwaite ${heathwaiteChord} · Microtonal ${microChord.label} /${microChord.ipa}/\n` +
+                                `In scale: ${intervalScale} · Heathwaite ${heathwaiteScale} · Microtonal ${microScale.label} /${microScale.ipa}/`
+                              }
+                              className="flex flex-col items-center px-2 py-1 rounded border border-[#3a3a1a] bg-[#2a1a0a] hover:bg-[#3a2a1a] hover:border-[#c8a850] transition-colors min-w-[64px]">
+                              {/* CHORD-relative block */}
+                              <span className="text-[8px] text-[#666] uppercase tracking-wider leading-tight">chord</span>
+                              <span className="text-[10px] text-[#e0c860] font-bold leading-tight">
+                                {intervalChord}
                               </span>
                               <span className="text-[9px] text-[#aaa] leading-tight">
-                                {heathwaite}
+                                {heathwaiteChord}
                               </span>
                               <span className="text-[8px] text-[#777] font-mono leading-tight">
-                                {micro.label}
+                                {microChord.label}
+                              </span>
+                              {/* divider */}
+                              <span className="block w-full border-t border-[#3a3a1a] my-1"></span>
+                              {/* SCALE-relative block */}
+                              <span className="text-[8px] text-[#666] uppercase tracking-wider leading-tight">scale</span>
+                              <span className="text-[10px] text-[#c896c8] font-bold leading-tight">
+                                {intervalScale}
+                              </span>
+                              <span className="text-[9px] text-[#aaa] leading-tight">
+                                {heathwaiteScale}
+                              </span>
+                              <span className="text-[8px] text-[#777] font-mono leading-tight">
+                                {microScale.label}
                               </span>
                             </button>
                           );
@@ -1927,8 +1959,11 @@ export default function ChordsTab({
                     </div>
                   ))}
                   <p className="text-[9px] text-[#666] italic pt-1 border-t border-[#3a3a1a]">
-                    Each chord's tones are clickable — middle row shows
-                    Heathwaite solfege, bottom row shows Microtonal IPA syllable.
+                    Each tone is clickable — top half shows the note labelled
+                    relative to the chord root (interval · Heathwaite · Microtonal),
+                    bottom half shows the same note relative to the scale tonic.
+                    Both labels match for chord roots; they diverge for the 3rd,
+                    5th, etc. of non-tonic chords.
                   </p>
                 </div>
               );
