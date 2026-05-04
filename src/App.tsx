@@ -239,15 +239,28 @@ export default function App() {
   const [dronePulse, setDronePulse] = useLS<boolean>("lt_app_dronePulse", false);
   const [dronePulseDur, setDronePulseDur] = useLS<number>("lt_app_dronePulseDur", 4);
   const [playVol, setPlayVol] = useLS<number>("lt_app_playVol", 1.0);
-  const [betaPlayRotation, setBetaPlayRotation] = useLS<boolean>("lt_beta_play_rotation", false);
-  const [betaIntervalChain, setBetaIntervalChain] = useLS<boolean>("lt_beta_interval_chain", false);
-  const [betaComma, setBetaComma] = useLS<boolean>("lt_beta_comma", false);
-  const [betaMathLab, setBetaMathLab] = useLS<boolean>("lt_beta_math_lab", false);
-  const [betaTransform, setBetaTransform] = useLS<boolean>("lt_beta_transform", false);
-  // Master "Beta" gate: when off, hides experimental modes (Vocal Percussion,
-  // Mixed Groups, Drill & Response, Uncommon Meters, Solkattu, Quick Transcriptions,
-  // Interval Browser, Microwave, Temperament Explorer) from the section picker.
-  const [betaMode, setBetaMode] = useLS<boolean>("lt_beta_mode", false);
+  // Beta features are gated behind `import.meta.env.DEV` so they only
+  // appear when running locally via `npm run dev` (or any vite dev
+  // server).  Production builds — i.e. anything served from a pushed
+  // commit — force every beta flag to false, hiding the experimental
+  // modes from the section picker even if their localStorage entry
+  // is set.  This keeps work-in-progress UI confined to the developer's
+  // machine without having to physically remove it from the repo.
+  const BETA_AVAILABLE = import.meta.env.DEV;
+  const [betaPlayRotation_raw, setBetaPlayRotation] = useLS<boolean>("lt_beta_play_rotation", false);
+  const [betaIntervalChain_raw, setBetaIntervalChain] = useLS<boolean>("lt_beta_interval_chain", false);
+  const [betaComma_raw, setBetaComma] = useLS<boolean>("lt_beta_comma", false);
+  const [betaMathLab_raw, setBetaMathLab] = useLS<boolean>("lt_beta_math_lab", false);
+  const [betaTransform_raw, setBetaTransform] = useLS<boolean>("lt_beta_transform", false);
+  const [betaMode_raw, setBetaMode] = useLS<boolean>("lt_beta_mode", false);
+  const betaPlayRotation   = BETA_AVAILABLE && betaPlayRotation_raw;
+  const betaIntervalChain  = BETA_AVAILABLE && betaIntervalChain_raw;
+  const betaComma          = BETA_AVAILABLE && betaComma_raw;
+  const betaMathLab        = BETA_AVAILABLE && betaMathLab_raw;
+  const betaTransform      = BETA_AVAILABLE && betaTransform_raw;
+  // Master "Beta" gate: when off, hides experimental modes from the
+  // section picker.  Always false in production (see BETA_AVAILABLE).
+  const betaMode           = BETA_AVAILABLE && betaMode_raw;
   const [academicMode, setAcademicMode] = useLS<boolean>("lt_academic_mode", false);
   // Dynamically load academic components (only present in local dev)
   const [academicComps, setAcademicComps] = useState<{
@@ -694,11 +707,11 @@ export default function App() {
                   { id: "lattice",              label: "Harmonic Lattice" },
                   { id: "drum-patterns",        label: "Drum Patterns" },
                   { id: "melodic-patterns",     label: "Melodic Patterns" },
-                  { id: "harmony-workshop",     label: "Harmony Workshop" },
                   { id: "chord-chart",          label: "Chord Chart" },
                   { id: "temperament-explorer", label: "Temperament Explorer" },
                   { id: "note-entry",           label: "Scoring" },
                   // Beta-gated
+                  { id: "harmony-workshop",     label: "Harmony Workshop",     beta: true },
                   { id: "vocal-percussion",     label: "Vocal Percussion",     beta: true },
                   { id: "mixed-groups",         label: "Mixed Groups",         beta: true },
                   { id: "drill-response",       label: "Drill & Response",     beta: true },
@@ -1659,6 +1672,7 @@ export default function App() {
             setBetaMode(v);
             if (!v) {
               const BETA_SECTIONS = new Set([
+                "harmony-workshop",
                 "vocal-percussion","mixed-groups","drill-response","uncommon-meters",
                 "konnakol","phrase-decomposition","interval-browser",
                 "microwave",
