@@ -51,13 +51,18 @@ function KeyboardPan() {
     };
     const d = (e: KeyboardEvent) => {
       if (isTyping(e.target)) return;
+      const k = e.key.toLowerCase();
       if (e.key.startsWith("Arrow")) {
         e.preventDefault();
         pressed.current.add(e.key);
+      } else if (k === "w" || k === "a" || k === "s" || k === "d") {
+        e.preventDefault();
+        pressed.current.add(k);
       }
     };
     const u = (e: KeyboardEvent) => {
       pressed.current.delete(e.key);
+      pressed.current.delete(e.key.toLowerCase());
     };
     window.addEventListener("keydown", d);
     window.addEventListener("keyup", u);
@@ -73,10 +78,10 @@ function KeyboardPan() {
     const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0).normalize();
     const up    = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize();
     const d = new THREE.Vector3();
-    if (pressed.current.has("ArrowLeft"))  d.addScaledVector(right, -0.4);
-    if (pressed.current.has("ArrowRight")) d.addScaledVector(right,  0.4);
-    if (pressed.current.has("ArrowUp"))    d.addScaledVector(up,     0.4);
-    if (pressed.current.has("ArrowDown"))  d.addScaledVector(up,    -0.4);
+    if (pressed.current.has("ArrowLeft")  || pressed.current.has("a")) d.addScaledVector(right, -0.4);
+    if (pressed.current.has("ArrowRight") || pressed.current.has("d")) d.addScaledVector(right,  0.4);
+    if (pressed.current.has("ArrowUp")    || pressed.current.has("w")) d.addScaledVector(up,     0.4);
+    if (pressed.current.has("ArrowDown")  || pressed.current.has("s")) d.addScaledVector(up,    -0.4);
     c.target.add(d);
     camera.position.add(d);
   });
