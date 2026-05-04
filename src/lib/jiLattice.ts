@@ -1,48 +1,85 @@
-// ── JI Lattice Engine (true Adaptive JI / comma-drift modelling) ──────────
+// ── JI Lattice Engine (Adaptive JI / comma-drift modelling, all-limits) ───
 //
-// Tracks chord-to-chord motion on the 5-limit JI lattice (3-axis, 5-axis)
-// so chord progressions in Adaptive JI mode actually drift the tonic when
-// they should — the famous I-vi-ii-V-I "comma pump" lands the final I
-// 81/80 ≈ 21.5¢ flat from where it started.
+// Tracks chord-to-chord motion on the prime lattice so chord progressions
+// in Adaptive JI mode actually drift the tonic when they should — the
+// famous I-vi-ii-V-I "comma pump" lands the final I 81/80 ≈ 21.5¢ flat,
+// the septimal pump V7→I drifts by 64/63 ≈ 27¢, etc.
 //
-// Lattice convention: a position [a, b] represents a pitch ratio of
-// 3^a * 5^b * 2^c (octave c chosen for octave-reduction).  Each axis edge
-// corresponds to a pure interval:
-//   +3-axis = up a fifth   (3:2)
-//   −3-axis = down a fifth (2:3)
-//   +5-axis = up a major third (5:4)
-//   −5-axis = down a major third (4:5)
+// Lattice convention: a position [a, b, c, d, e, f, g, h, i, j] represents
+// a pitch ratio of 3^a * 5^b * 7^c * 11^d * 13^e * 17^f * 19^g * 23^h *
+// 29^i * 31^j (octave reduction handled separately via 2^k).  Each axis
+// edge corresponds to one prime's pure interval:
+//   3-axis  = perfect fifth        3:2  (701.96¢)
+//   5-axis  = major third          5:4  (386.31¢)
+//   7-axis  = harmonic 7th         7:4  (968.83¢)
+//   11-axis = 11-limit wide 4th   11:8  (551.32¢)
+//   13-axis = tridecimal wide 6th 13:8  (840.53¢)
+//   17-axis = supraminor 2nd     17:16 (104.96¢)
+//   19-axis = small minor 3rd    19:16 (297.51¢)
+//   23-axis = wide minor 6th    23:16  (628.27¢)
+//   29-axis = small minor 7th   29:16  (1029.58¢)
+//   31-axis = supermajor 7th    31:16  (1145.04¢)
 //
-// Chord transitions are mapped to lattice motions via a small table.
-// Most diatonic motions are unambiguous (V→I = −fifth, I→IV = +fourth);
-// the interesting cases are vi→ii and similar "minor-quality lower-fifth"
-// motions where the canonical 5-limit JI choice introduces a syntonic
-// comma into the chain — the source of the comma pump.
+// Chord transitions are mapped to lattice motions via a curated table.
+// 5-limit motions are exhaustive (every diatonic transition modeled);
+// 7+/11+/13+ motions cover the most common septimal / undecimal / etc.
+// resolutions and are extended on demand.  Per-note voice tracking is
+// implemented separately via `voicingFor(quality)` so each note in a
+// chord (root, third, fifth, seventh, ninth, ...) carries its own
+// lattice position — the only honest way to capture higher-limit
+// comma drifts that arise from chord-quality resolution rather than
+// chord-root motion (e.g. V7's 7/4 resolving to I's M3).
 //
-// 7-limit and 11-limit motions are deferred; this module handles 5-limit
-// only.  Chord labels with suffixes (V/IV, I~neu, etc.) are stripped
-// down to their core Roman numeral before lookup.
-//
-// TODO (deferred follow-up): true 7-/11-/13-axis support requires
-// per-NOTE lattice tracking, not per-CHORD-ROOT — most 7/11/13-prime
-// motions arise from chord QUALITY changes (e.g. dom7's 7/4 resolving
-// to a major 3rd of the next chord) rather than chord-root motion on
-// those axes.  Doing this honestly means tracking each note in each
-// chord as its own lattice position and propagating through voice-
-// leading.  The 5-limit lattice covers the famous syntonic-comma
-// pumps that make up 95% of audible drift in tonal music; higher-axis
-// extensions add septimal, tridecimal, undecimal pumps that are real
-// but rarer.  For now the lattice tracks 5-limit; the higher-limit
-// scales (11/13/17/19/23/29/31) play correctly at their static cents
-// but their progressions don't pump on their characteristic commas.
+// Chord labels with suffixes (V/IV, I~neu, etc.) are stripped down
+// to their core Roman numeral before lookup.
 
-export type LatticePos = readonly [number, number];   // [3-axis, 5-axis]
+/** N-dimensional lattice position — exponents on the prime axes
+ *  [3, 5, 7, 11, 13, 17, 19, 23, 29, 31].  Trailing zeros may be
+ *  omitted; helpers pad to the canonical length internally. */
+export type LatticePos = readonly number[];
 
-export const LATTICE_ORIGIN: LatticePos = [0, 0];
+/** Index into LatticePos for each prime axis. */
+export const PRIME_AXES = [3, 5, 7, 11, 13, 17, 19, 23, 29, 31] as const;
+
+/** Cents value of one step along each prime axis (= log2(prime) * 1200). */
+export const PRIME_AXIS_CENTS: readonly number[] = [
+  701.955,   // 3
+  386.314,   // 5
+  968.826,   // 7 (7/4 octave-reduced for octave-equivalent lattice)
+  551.318,   // 11 (11/8)
+  840.528,   // 13 (13/8)
+  104.955,   // 17 (17/16)
+  297.513,   // 19 (19/16)
+  628.274,   // 23 (23/16)
+  1029.577,  // 29 (29/16)
+  1145.036,  // 31 (31/16)
+];
+
+const LATTICE_DIM = PRIME_AXES.length;
+
+export const LATTICE_ORIGIN: LatticePos = new Array(LATTICE_DIM).fill(0);
+
+/** Pad a (possibly short) lattice position to the canonical N dimensions
+ *  by appending zeros.  Lets callers omit trailing zero axes. */
+function padPos(pos: LatticePos): number[] {
+  const out = pos.slice();
+  while (out.length < LATTICE_DIM) out.push(0);
+  return out;
+}
+
+/** Component-wise add. */
+export function latticeAdd(a: LatticePos, b: LatticePos): LatticePos {
+  const pa = padPos(a), pb = padPos(b);
+  const out = new Array(LATTICE_DIM);
+  for (let i = 0; i < LATTICE_DIM; i++) out[i] = pa[i] + pb[i];
+  return out;
+}
 
 /** Cents value (in 0..1200) of a lattice position, octave-reduced. */
 export function latticeToCents(pos: LatticePos): number {
-  const c = pos[0] * 701.96 + pos[1] * 386.31;
+  const p = padPos(pos);
+  let c = 0;
+  for (let i = 0; i < LATTICE_DIM; i++) c += p[i] * PRIME_AXIS_CENTS[i];
   return ((c % 1200) + 1200) % 1200;
 }
 
