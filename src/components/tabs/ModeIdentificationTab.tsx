@@ -7,7 +7,8 @@ import {
 import { useLS } from "@/lib/storage";
 import { recordAnswer } from "@/lib/stats";
 import { JI_FAMILY, JI_SCALE_NAMES, getJiScaleDegrees, getJiScaleCents } from "@/lib/jiScaleData";
-import { jiLimitGroupsForEdo, limitForJiTonality } from "@/lib/jiTonalityFamilies";
+import { limitForJiTonality } from "@/lib/jiTonalityFamilies";
+import { tonalitySectionsForEdo } from "@/lib/tonalityCatalog";
 import JiScaleLattice from "@/components/JiScaleLattice";
 import { analyzeJiScale } from "@/lib/jiChordAnalysis";
 
@@ -958,25 +959,24 @@ export default function ModeIdentificationTab({
     });
   };
 
-  // Family groups switch per EDO: 41/53 (Pythagorean / Schismatic) show
-  // the JI scales grouped by limit (3 / 5 / 7 / 11); other EDOs show the
-  // standard meantone-flavoured trio of Major / Harmonic Minor / Melodic.
+  // Family groups come from the shared tonality catalog so ModeID's
+  // picker layout matches ChordsTab's exactly per direct user direction
+  // (2026-05-05): "include tonalities from chords in mode id".
+  // Sections whose tonalities have no matching ModeInfo (e.g. 12-EDO
+  // SYMMETRICAL has Whole Tone / Diminished entries that aren't in
+  // ALL_MODES yet) are skipped so the picker stays usable.
   const FAMILY_GROUPS: { key: string; label: string; color: string; modes: ModeInfo[] }[] =
-    (edo === 41 || edo === 53)
-      ? jiLimitGroupsForEdo(edo).map(g => ({
-          key: `limit-${g.limit}`,
-          label: g.label,
-          color: g.color,
-          modes: g.families
-            .flatMap(f => f.tonalities)
-            .map(t => ALL_MODES.find(m => m.name === t))
-            .filter((m): m is ModeInfo => !!m),
-        }))
-      : [
-          { key: "major",    label: "MAJOR",          color: "#6a9aca", modes: FAMILY_MAP.major    },
-          { key: "harmonic", label: "HARMONIC MINOR", color: "#c09050", modes: FAMILY_MAP.harmonic },
-          { key: "melodic",  label: "MELODIC MINOR",  color: "#c06090", modes: FAMILY_MAP.melodic  },
-        ];
+    tonalitySectionsForEdo(edo)
+      .map(sec => ({
+        key: sec.key,
+        label: sec.label,
+        color: sec.color,
+        modes: sec.families
+          .flatMap(f => f.tonalities)
+          .map(t => ALL_MODES.find(m => m.name === t))
+          .filter((m): m is ModeInfo => !!m),
+      }))
+      .filter(g => g.modes.length > 0);
 
   return (
     <div className="space-y-4">
