@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Canvas, useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import { OrbitControls, Line, Html } from "@react-three/drei";
 import * as THREE from "three";
-import { audioEngine, DRONE_INSTRUMENTS, type DroneInstrument } from "@/lib/audioEngine";
+import { audioEngine, AudioEngine, DRONE_INSTRUMENTS, type DroneInstrument } from "@/lib/audioEngine";
 import { useLS } from "@/lib/storage";
 import {
   NODES, GENERATOR_EDGES, COMMA_EDGES, OTONAL_EDGES, UTONAL_EDGES, OCTAVE_EDGES,
@@ -4163,6 +4163,11 @@ export default function LatticeView({ externalHighlights, activeNodeKey, activeN
   const [latticeDroneRoot, setLatticeDroneRoot] = useLS<number>("lt_lattice_droneRoot", 0); // 0-11 pitch class
   const [latticeDroneOctave, setLatticeDroneOctave] = useLS<number>("lt_lattice_droneOctave", 4);
   const [latticeDroneOn, setLatticeDroneOn] = useState(false);
+  // Snap stale catalog values to the default (see App.tsx for context).
+  useEffect(() => {
+    if (!AudioEngine.isValidInstrument(latticeDroneInstrument)) setLatticeDroneInstrument("cello");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Node-click drone volume ──────────────────────────────────────
   const [nodeVolMaster, setNodeVolMaster] = useLS<number>("lt_nodeVol_master", 0.1);

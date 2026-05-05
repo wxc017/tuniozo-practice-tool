@@ -5,7 +5,7 @@ import PianoKeyboard from "@/components/PianoKeyboard";
 import GuitarFretboard from "@/components/GuitarFretboard";
 import BassFretboard from "@/components/BassFretboard";
 import { computeLayout, LayoutResult, ComputedKey } from "@/lib/lumatoneLayout";
-import { audioEngine, DRONE_INSTRUMENTS, type DroneInstrument } from "@/lib/audioEngine";
+import { audioEngine, AudioEngine, DRONE_INSTRUMENTS, type DroneInstrument } from "@/lib/audioEngine";
 import IntervalsTab from "@/components/tabs/IntervalsTab";
 import ChordsTab from "@/components/tabs/ChordsTab";
 import MelodyTab from "@/components/tabs/MelodyTab";
@@ -247,6 +247,14 @@ export default function App() {
   // droneTonal removed — drone now uses tonicPc directly
   const [droneOct, setDroneOct] = useLS<number>("lt_app_droneOct", 4);
   const [droneInstrument, setDroneInstrument] = useLS<DroneInstrument>("lt_app_droneInstrument", "cello");
+  // Snap stale localStorage values (e.g. "violin", "pad_2_warm" from
+  // an older catalog) to the default — otherwise the dropdown shows
+  // an empty selection and audioEngine.setInstrument silently falls
+  // back to cello without telling the UI.
+  useEffect(() => {
+    if (!AudioEngine.isValidInstrument(droneInstrument)) setDroneInstrument("cello");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [droneVol, setDroneVol] = useLS<number>("lt_app_droneVol", 0.08);
   const [droneIsOn, setDroneIsOn] = useState(false);
   const [section, setSection] = useLS<string>("lt_app_section", "ear-trainer");

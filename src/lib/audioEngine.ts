@@ -59,20 +59,20 @@ const PHILHARMONIA_BASE = "https://cdn.jsdelivr.net/gh/skratchdot/philharmonia-s
 const TONEJS_BASE       = "https://nbrosowsky.github.io/tonejs-instruments/samples/";
 const MUSYNGKITE_BASE   = "https://gleitz.github.io/midi-js-soundfonts/MusyngKite/";
 
-/** Curated drone instrument list — six canonical drone timbres per
- *  direct user direction (2026-05-05): the picker should focus on the
- *  instruments people actually drone with (vocal pads + sustained
- *  bowed strings + organ + ambient pad), not the full orchestral
- *  catalog.  Voice is explicitly included.  `id` is internal, `label`
- *  is what shows in the picker.  Source dispatch (Philharmonia /
- *  tonejs / MusyngKite) lives in INSTRUMENT_SOURCES below. */
+/** Curated drone instrument list — canonical drones from the world
+ *  music traditions per direct user direction (2026-05-05): cello +
+ *  tanpura-class + harmonium / sruti-box + bagpipe + voice + organ.
+ *  Skipped violin / pad / strings ensemble — those aren't drone
+ *  instruments in the traditional sense.  Source dispatch
+ *  (Philharmonia / tonejs / MusyngKite) lives in INSTRUMENT_SOURCES. */
 export const DRONE_INSTRUMENTS = [
+  { id: "sitar",              label: "Sitar" },
+  { id: "harmonium",          label: "Harmonium" },
+  { id: "cello",              label: "Cello" },
+  { id: "bagpipe",            label: "Bagpipe" },
   { id: "voice_oohs",         label: "Voice" },
   { id: "choir_aahs",         label: "Choir" },
-  { id: "cello",              label: "Cello" },
-  { id: "violin",             label: "Violin" },
   { id: "church_organ",       label: "Church Organ" },
-  { id: "pad_2_warm",         label: "Synth Pad" },
 ] as const;
 
 export type DroneInstrument = typeof DRONE_INSTRUMENTS[number]["id"];
@@ -133,10 +133,12 @@ const INSTRUMENT_SOURCES: Record<DroneInstrument, SourceConfig> = {
     url: n => `${PHILHARMONIA_BASE}cello/cello_${n}_15_forte_arco-normal.mp3`,
     notes: ["C2", "Ds2", "Fs2", "A2", "C3", "Ds3", "Fs3", "A3", "C4", "Ds4", "Fs4", "A4"],
   },
-  // tonejs-instruments violin: A/C/E/G across octaves 3-6.
-  violin: {
-    url: n => `${TONEJS_BASE}violin/${n}.mp3`,
-    notes: ["G3", "A3", "C4", "E4", "G4", "A4", "C5", "E5", "G5", "A5", "C6"],
+  // tonejs-instruments harmonium: nearly-chromatic C2-G4.  The Indian
+  // sruti-box / harmonium is a canonical drone — sustained bellows-
+  // pumped reeds with constant timbre, ideal for tonic+5th holds.
+  harmonium: {
+    url: n => `${TONEJS_BASE}harmonium/${n}.mp3`,
+    notes: ["C2", "Ds2", "Fs2", "A2", "C3", "Ds3", "Fs3", "A3", "C4", "Ds4", "Fs4", "A4"],
   },
   // tonejs-instruments organ: A/C/Ds/Fs across octaves 1-5 — denser
   // than MusyngKite's 3-point map and warmer than Philharmonia organ
@@ -145,19 +147,24 @@ const INSTRUMENT_SOURCES: Record<DroneInstrument, SourceConfig> = {
     url: n => `${TONEJS_BASE}organ/${n}.mp3`,
     notes: ["C2", "Ds2", "Fs2", "A2", "C3", "Ds3", "Fs3", "A3", "C4", "Ds4", "Fs4", "A4", "C5"],
   },
-  // MusyngKite fallbacks — choir / voice / pad don't exist as real
-  // recordings in the free sources we can host.  3 sample points each
-  // (the MusyngKite default).
+  // MusyngKite fallbacks — sitar / bagpipe / voice / choir don't have
+  // chromatic mirrors on the free CDNs we use, so we get the standard
+  // 3-point sample set (C2 / C4 / C5).  The crossfade looper masks
+  // most of the pitch-shift artifacts on sustained drones.
+  sitar: {
+    url: n => `${MUSYNGKITE_BASE}sitar-mp3/${n}.mp3`,
+    notes: ["C2", "C4", "C5"],
+  },
+  bagpipe: {
+    url: n => `${MUSYNGKITE_BASE}bagpipe-mp3/${n}.mp3`,
+    notes: ["C2", "C4", "C5"],
+  },
   choir_aahs: {
     url: n => `${MUSYNGKITE_BASE}choir_aahs-mp3/${n}.mp3`,
     notes: ["C2", "C4", "C5"],
   },
   voice_oohs: {
     url: n => `${MUSYNGKITE_BASE}voice_oohs-mp3/${n}.mp3`,
-    notes: ["C2", "C4", "C5"],
-  },
-  pad_2_warm: {
-    url: n => `${MUSYNGKITE_BASE}pad_2_warm-mp3/${n}.mp3`,
     notes: ["C2", "C4", "C5"],
   },
 };
@@ -241,13 +248,23 @@ export class AudioEngine {
 
   /** Switch the active drone instrument.  Triggers lazy sample loading
    *  for the new instrument; does NOT restart any active drone — the
-   *  caller decides whether to fade and restart. */
+   *  caller decides whether to fade and restart.  Falls back to the
+   *  default ("cello") if a stale localStorage value names an
+   *  instrument that's no longer in the catalog. */
   setInstrument(instrument: DroneInstrument) {
-    this.currentInstrument = instrument;
-    if (this.ctx) this.loadInstrumentSamples(instrument);
+    const valid = (instrument in INSTRUMENT_SOURCES) ? instrument : "cello";
+    this.currentInstrument = valid;
+    if (this.ctx) this.loadInstrumentSamples(valid);
   }
 
   getInstrument(): DroneInstrument { return this.currentInstrument; }
+
+  /** Type guard for stale localStorage values — components should snap
+   *  to the default if their persisted instrument id isn't in the
+   *  current catalog. */
+  static isValidInstrument(id: string): id is DroneInstrument {
+    return id in INSTRUMENT_SOURCES;
+  }
 
   /** Fetch a multi-sampled instrument from its configured source
    *  (Philharmonia / tonejs / MusyngKite — see INSTRUMENT_SOURCES).
