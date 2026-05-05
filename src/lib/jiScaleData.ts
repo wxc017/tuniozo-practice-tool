@@ -294,6 +294,137 @@ const HARMONIC_MINOR_ROTATION_NAMES = [
   "Ultralocrian",
 ];
 
+// ── Algorithmic mode-name calculator ─────────────────────────────────────
+// Per direct user direction (2026-05-05): mode names should reflect the
+// actual interval alterations a rotation produces, like 31-EDO's
+// "Locrian s2 s5 s6" / "Dorian s3 bb4 s7" / "Subharmonic Diatonic M7"
+// style.  Algorithm:
+//   1. Compute each scale-degree's letter code from its cents value
+//      (s / m / Cm / u / n / C / M / S for 2/3/6/7; #/b stacks for 4/5).
+//   2. Find the closest Greek mode (Ionian / Dorian / Phrygian / Lydian
+//      / Mixolydian / Aeolian / Locrian) by counting per-degree matches.
+//   3. List degrees that DIFFER from that Greek mode's reference codes
+//      as the alteration suffix.
+// All cent boundaries below come from actual JI ratios so the algorithm
+// always picks the musically correct letter — no EDO-step rounding,
+// no integer-step approximation.
+
+/** Letter code for a scale-degree position given its octave-reduced
+ *  cents value.  Bands centred on canonical JI ratios (midpoints
+ *  between adjacent named cells), so the same function works for any
+ *  EDO that resolves the named cells. */
+function letterCodeForDegree(cents: number, position: 2 | 3 | 4 | 5 | 6 | 7): string {
+  // 4 / 5 use bare-number + #/b accidentals (each # / b ≈ 24-29¢
+  // depending on EDO; we pick the band closest to canonical P4/P5).
+  if (position === 4) {
+    // Canonical P4 = 498¢.  Each band ≈ 24¢ wide (matches 53-EDO step).
+    if (cents < 462) return "bb4";
+    if (cents < 486) return "b4";
+    if (cents < 510) return "4";
+    if (cents < 534) return "#4";
+    if (cents < 558) return "##4";
+    if (cents < 582) return "###4";
+    return "####4";
+  }
+  if (position === 5) {
+    // Canonical P5 = 702¢.
+    if (cents < 618) return "bbbb5";
+    if (cents < 642) return "bbb5";
+    if (cents < 666) return "bb5";
+    if (cents < 690) return "b5";
+    if (cents < 714) return "5";
+    if (cents < 738) return "#5";
+    return "##5";
+  }
+  // 2 / 3 / 6 / 7: letter prefix.  Centre cents are the canonical JI
+  // ratios for each variety; band edges are midpoints between them.
+  const cells: Record<number, Array<[number, string]>> = {
+    // [upper-bound-cents, code].  cents < bound => return code.
+    2: [
+      [76,  "s2"],   // sub: 28/27 = 63¢
+      [101, "m2"],   // Pyth m2: 256/243 = 90¢
+      [125, "Cm2"],  // 5-limit m2: 16/15 = 112¢
+      [145, "u2"],   // supraminor: 13/12 = 139¢
+      [173, "n2"],   // neutral: 12/11 = 151¢ / 11/10 = 165¢
+      [193, "C2"],   // 5-limit M2: 10/9 = 182¢
+      [217, "M2"],   // Pyth M2: 9/8 = 204¢
+      [250, "S2"],   // super: 8/7 = 231¢
+    ],
+    3: [
+      [280, "s3"],   // sub: 7/6 = 267¢
+      [305, "m3"],   // Pyth: 32/27 = 294¢
+      [327, "Cm3"],  // 5-limit: 6/5 = 316¢
+      [344, "u3"],   // supraminor: 17/14 = 336 / 39/32 = 342¢
+      [372, "n3"],   // neutral: 11/9 = 347¢ / 16/13 = 359¢
+      [397, "C3"],   // 5-limit: 5/4 = 386¢
+      [421, "M3"],   // Pyth: 81/64 = 408¢
+      [462, "S3"],   // super: 9/7 = 435¢
+    ],
+    6: [
+      [779, "s6"],   // sub: 14/9 = 765¢
+      [803, "m6"],   // Pyth: 128/81 = 792¢
+      [827, "Cm6"],  // 5-limit: 8/5 = 814¢
+      [847, "u6"],   // supraminor: 13/8 = 840¢
+      [868, "n6"],   // neutral: 18/11 = 853¢
+      [895, "C6"],   // 5-limit: 5/3 = 884¢
+      [920, "M6"],   // Pyth: 27/16 = 906¢
+      [950, "S6"],   // super: 12/7 = 933¢
+    ],
+    7: [
+      [982,  "s7"],   // sub: 7/4 = 969¢
+      [1007, "m7"],   // Pyth: 16/9 = 996¢
+      [1030, "Cm7"],  // 5-limit: 9/5 = 1018¢
+      [1046, "u7"],   // supraminor 7
+      [1077, "n7"],   // neutral: 11/6 = 1049¢
+      [1099, "C7"],   // 5-limit: 15/8 = 1088¢
+      [1124, "M7"],   // Pyth: 243/128 = 1110¢
+      [1175, "S7"],   // super: 27/14 / 49/27 = 1137¢
+    ],
+  };
+  const bands = cells[position];
+  for (const [bound, code] of bands) if (cents < bound) return code;
+  return bands[bands.length - 1][1];
+}
+
+/** Reference cents for each Greek mode's seven scale degrees.  Used as
+ *  the comparison target when computing alteration suffixes. */
+const GREEK_MODE_REFS: Array<{ name: string; cents: number[] }> = [
+  { name: "Ionian",     cents: [0, 204, 408, 498, 702, 906, 1110] },  // Pyth template
+  { name: "Dorian",     cents: [0, 204, 294, 498, 702, 906, 996] },
+  { name: "Phrygian",   cents: [0, 90,  294, 498, 702, 792, 996] },
+  { name: "Lydian",     cents: [0, 204, 408, 612, 702, 906, 1110] },
+  { name: "Mixolydian", cents: [0, 204, 408, 498, 702, 906, 996] },
+  { name: "Aeolian",    cents: [0, 204, 294, 498, 702, 792, 996] },
+  { name: "Locrian",    cents: [0, 90,  294, 498, 588, 792, 996] },
+];
+
+/** Build a mode name with interval-alteration suffix from a rotated
+ *  cents pattern.  Picks the Greek mode that minimises the alteration
+ *  count, then lists every degree whose letter-code differs from that
+ *  reference mode's code.  Result is the Western mode name + space-
+ *  separated alteration list — same format 31-EDO uses ("Locrian s2
+ *  s5 s6", "Dorian S2 #5 S6", etc.). */
+function buildModeNameFromCents(rotatedCents: number[]): string {
+  const positions: Array<2 | 3 | 4 | 5 | 6 | 7> = [2, 3, 4, 5, 6, 7];
+  const myCodes = positions.map((pos, i) => letterCodeForDegree(rotatedCents[i + 1], pos));
+
+  let best: { name: string; alterations: string[] } | null = null;
+  for (const ref of GREEK_MODE_REFS) {
+    const refCodes = positions.map((pos, i) => letterCodeForDegree(ref.cents[i + 1], pos));
+    const alterations: string[] = [];
+    for (let i = 0; i < positions.length; i++) {
+      if (myCodes[i] !== refCodes[i]) alterations.push(myCodes[i]);
+    }
+    if (best === null || alterations.length < best.alterations.length) {
+      best = { name: ref.name, alterations };
+    }
+  }
+  if (best === null) return "?";
+  return best.alterations.length === 0
+    ? best.name
+    : `${best.name} ${best.alterations.join(" ")}`;
+}
+
 interface FortyOneEdoFamilySpec {
   parent: string;            // parent scale name (must exist in JI_SCALES above)
   modeNames: string[];       // 7 names; modeNames[0] is unused (parent uses its own name)
@@ -342,16 +473,27 @@ export const FIFTY_THREE_EDO_TONALITY_FAMILIES: { parent: string; tonalities: st
 
 // Generate 6 modes per parent and append them to JI_SCALES.  De-dup
 // across the 41 / 53 family lists — many parents are shared, so a
-// single parent's modes only need generating once.
+// single parent's modes only need generating once.  Mode names are
+// computed by buildModeNameFromCents from the rotation's actual
+// cents pattern, so each mode reads as e.g. "Diatonic Supermajor
+// Dorian S2 #5 S6" (Western mode + alterations) instead of the
+// previous flat "<Parent> <Greek mode>" naming that didn't capture
+// the rotation's specific interval colour.  spec.modeNames is now
+// only consulted as a fallback for the harmonic-minor taxonomy
+// (since e.g. "Phrygian Dominant" isn't reproducible from the
+// alteration algorithm alone — it's a named scale).
 const generatedModeNames = new Set<string>();
 function expandFamily(spec: FortyOneEdoFamilySpec, intoOut: { parent: string; tonalities: string[] }[]) {
   const parentSpec = JI_SCALES.find(s => s.name === spec.parent);
   if (!parentSpec) return;
   const tonalities: string[] = [spec.parent];
   for (let r = 1; r < 7; r++) {
-    const modeName = `${spec.parent} ${spec.modeNames[r]}`;
+    const rotated = rotateScaleSteps(parentSpec.steps, r);
+    const rotatedCents = rotated.map(([, c]) => c);
+    const calculatedName = buildModeNameFromCents(rotatedCents);
+    const modeName = `${spec.parent} ${calculatedName}`;
     if (!generatedModeNames.has(modeName)) {
-      JI_SCALES.push({ name: modeName, steps: rotateScaleSteps(parentSpec.steps, r) });
+      JI_SCALES.push({ name: modeName, steps: rotated });
       generatedModeNames.add(modeName);
     }
     tonalities.push(modeName);

@@ -263,14 +263,16 @@ const INTERVAL_NAMES_41 = [
 
 // 53-EDO interval names: same letter-code + arrow / sharp-flat system
 // as 41-EDO (per direct user direction 2026-05-05), plus a NEW
-// "Sm" code for supraminor — 53-EDO resolves a distinct cell
-// between Cm (5-limit minor) and n (neutral) that 41-EDO collapses.
+// "u" code (upper-minor / supraminor) — 53-EDO resolves a distinct
+// cell between Cm (5-limit minor) and n (neutral) that 41-EDO
+// collapses.  "u" was picked over "Sm" / "sa" because both of
+// those collide visually with s (sub) or S (super).
 //
 // Quality codes for 2 / 3 / 6 / 7:
 //   s  = subminor       (e.g. s3 = 7/6)
 //   m  = minor          (Pythagorean, e.g. m3 = 32/27)
 //   Cm = classic minor  (5-limit JI, e.g. Cm3 = 6/5)
-//   Sm = supraminor     (e.g. Sm3 ≈ 340¢ — 17/14 / 39/32 region; NEW in 53-EDO)
+//   u  = supraminor     (e.g. u3 ≈ 340¢ — 17/14 / 39/32 region; NEW in 53-EDO)
 //   n  = neutral        (11-limit, e.g. n3 = 11/9 / 16/13)
 //   C  = classic major  (5-limit JI, e.g. C3 = 5/4)
 //   M  = major          (Pythagorean, e.g. M3 = 81/64)
@@ -287,7 +289,7 @@ const INTERVAL_NAMES_53 = [
   "s2",                                                      //  3 (~68¢, 28/27 / 25/24)
   "m2",                                                      //  4 (~91¢, Pyth 256/243)
   "Cm2",                                                     //  5 (~113¢, 5-limit 16/15)
-  "Sm2",                                                     //  6 (~136¢, 13/12)
+  "u2",                                                     //  6 (~136¢, 13/12)
   "n2",                                                      //  7 (~158¢, 12/11 / 11/10)
   "C2",                                                      //  8 (~181¢, 5-limit 10/9)
   "M2",                                                      //  9 (~204¢, Pyth 9/8)
@@ -296,7 +298,7 @@ const INTERVAL_NAMES_53 = [
   "s3",                                                      // 12 (~272¢, 7/6)
   "m3",                                                      // 13 (~294¢, Pyth 32/27)
   "Cm3",                                                     // 14 (~317¢, 5-limit 6/5)
-  "Sm3",                                                     // 15 (~340¢, 17/14 / supraminor)
+  "u3",                                                     // 15 (~340¢, 17/14 / supraminor)
   "n3",                                                      // 16 (~362¢, 11/9 / 16/13)
   "C3",                                                      // 17 (~385¢, 5-limit 5/4)
   "M3",                                                      // 18 (~408¢, Pyth 81/64)
@@ -318,7 +320,7 @@ const INTERVAL_NAMES_53 = [
   "s6",                                                      // 34 (~770¢, 14/9)
   "m6",                                                      // 35 (~792¢, Pyth 128/81)
   "Cm6",                                                     // 36 (~815¢, 5-limit 8/5)
-  "Sm6",                                                     // 37 (~838¢, 13/8 / supraminor 6)
+  "u6",                                                     // 37 (~838¢, 13/8 / supraminor 6)
   "n6",                                                      // 38 (~860¢, 18/11)
   "C6",                                                      // 39 (~883¢, 5-limit 5/3)
   "M6",                                                      // 40 (~906¢, Pyth 27/16)
@@ -327,7 +329,7 @@ const INTERVAL_NAMES_53 = [
   "s7",                                                      // 43 (~974¢, 7/4)
   "m7",                                                      // 44 (~996¢, Pyth 16/9)
   "Cm7",                                                     // 45 (~1019¢, 5-limit 9/5)
-  "Sm7",                                                     // 46 (~1042¢, supraminor 7)
+  "u7",                                                     // 46 (~1042¢, supraminor 7)
   "n7",                                                      // 47 (~1064¢, 11/6)
   "C7",                                                      // 48 (~1087¢, 5-limit 15/8)
   "M7",                                                      // 49 (~1109¢, Pyth 243/128)
