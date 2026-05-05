@@ -117,49 +117,36 @@ const CHORD_ROOT_POSITION: Record<string, LatticePos> = {
   "bVII": [+2, -1], // Bb as 16/9 (Pyth m7) — could also be (-3,+1)
 };
 
-/** Motion vector for selected chord transitions.  When present, this
- *  overrides the (next.position − prev.position) default motion — used
- *  to encode the canonical pure-interval path between chords, which is
- *  what causes comma drift on diatonic loops.  Each entry asserts:
- *  "going from prev to next, the pure-interval move is [da, db]". */
+/** Curated pure-voice-leading motion vectors that DIVERGE from the
+ *  canonical (next.position − prev.position) default.  Only listed
+ *  here when the natural voice-leading path between two chords lands
+ *  the next chord's root at a non-canonical lattice cell — that's
+ *  what comma drift actually IS, and the only honest entries are
+ *  those derived from held common tones, not "authentic motion"
+ *  re-statements of the canonical fallback.
+ *
+ *  Previously this table also carried "ii→V = +1,0", "V→vi = -1,+1",
+ *  "I→IV = -1,0", etc. — but those were either wrong (ii→V's natural
+ *  path is P4-up from ii's D = -1,0, not P5-up = +1,0) or just
+ *  re-stating the canonical default.  The wrong ones produced absurd
+ *  drifts (V → +204¢, vi → -294¢, etc.) on every diatonic loop.
+ *  Stripping them lets `getLatticeMotion`'s canonical fallback handle
+ *  every non-pump transition, so drift now ONLY accumulates where a
+ *  genuine pump motion lives. */
 const TRANSITION_MOTIONS: Record<string, Record<string, LatticePos>> = {
-  // The comma-pump cluster.  Going vi → ii via "up a fourth from vi"
-  // (not "back to the I-relative ii at +2,0") puts ii at lattice
-  // (-2, +1) = 5-limit JI minor-second 10/9.  All subsequent chords in
-  // the chain inherit the comma offset.
+  // Syntonic-comma pump: vi → ii via the held-A voice leading.  In a
+  // I-vi-ii-V-I loop, A is held from vi into ii; ii's D is then a
+  // P4 up from A = 5/3 * 4/3 = 10/9 instead of canonical 9/8.  The
+  // 81/80 lattice offset propagates into every later chord in the
+  // chain — that's the I-vi-ii-V-I 21.5¢ drift in the textbook.
   "vi": { "ii": [-1, 0], "ii°": [-1, 0] },
   "VI": { "ii": [-1, 0], "ii°": [-1, 0] },
-  // Authentic motions (don't drift on their own, but exercise the chain)
-  "ii": { "V": [+1, 0] },
-  "iiø":{ "V": [+1, 0] },
-  "ii°":{ "V": [+1, 0] },
-  "V":  { "I": [-1, 0], "i": [-1, 0], "vi": [-1, +1], "VI": [-1, +1] },
-  "v":  { "I": [-1, 0], "i": [-1, 0] },
-  // Plagal
-  "IV": { "I": [+1, 0], "i": [+1, 0] },
-  "iv": { "I": [+1, 0], "i": [+1, 0] },
-  "I":  { "IV": [-1, 0], "iv": [-1, 0], "V": [+1, 0], "vi": [-1, +1], "ii": [+2, 0], "iii": [0, +1] },
-  "i":  { "IV": [-1, 0], "iv": [-1, 0], "V": [+1, 0], "vi": [-1, +1], "VI": [-1, +1] },
-  // Modal mixture
-  "I":  { "bVII": [+2, -1], "bVI": [-3, 0], "bIII": [+1, -1] } as Record<string, LatticePos>,  // (overrides above; see merge note)
 };
 
-// Note: the duplicate "I" above is intentional clutter — TS's later-key-wins
-// behaviour merges them, so the modal-mixture line wins.  In practice we
-// merge explicitly:
-const MERGED_TRANSITIONS = (() => {
-  const out: Record<string, Record<string, LatticePos>> = {};
-  for (const from of Object.keys(TRANSITION_MOTIONS)) {
-    out[from] = { ...(out[from] ?? {}), ...TRANSITION_MOTIONS[from] };
-  }
-  // Hand-merge the two "I" entries so both sets of motions are reachable.
-  out["I"] = {
-    "IV": [-1, 0], "iv": [-1, 0], "V": [+1, 0],
-    "vi": [-1, +1], "ii": [+2, 0], "iii": [0, +1],
-    "bVII": [+2, -1], "bVI": [-3, 0], "bIII": [+1, -1],
-  };
-  return out;
-})();
+// Kept as a thin alias so callers below don't have to know whether
+// merging happened — the previous duplicate-key clutter is gone, so
+// MERGED_TRANSITIONS is now just TRANSITION_MOTIONS.
+const MERGED_TRANSITIONS: Record<string, Record<string, LatticePos>> = TRANSITION_MOTIONS;
 
 /** Strip xen suffixes / applied-chord prefixes from a chord label so the
  *  lattice lookup hits the underlying Roman numeral.  E.g. "I~neu" → "I",

@@ -1361,18 +1361,25 @@ export default function ChordsTab({
       const id = setTimeout(() => setCurrentChordIdx(slot), slot * gapMs);
       frameTimers.current.push(id);
     }
-    // Voice-leading preview window.  For each transition (chord N →
-    // N+1), show the voice-motion arrows on the harmonic lattice for
-    // a split second BEFORE chord N+1 onsets, then clear them when
-    // N+1 starts.  Arrow N is the move out of chord N (1-based); see
-    // voiceLeadingArrows in the harmonic-lattice render block below.
-    const VOICE_LEAD_PREVIEW_MS = 220;
+    // Voice-leading preview window.  Arrow for the i → i+1 transition
+    // appears ~280ms BEFORE chord (i+1) onsets and stays on for a
+    // further ~480ms INTO chord (i+1) — total visible ~760ms — so the
+    // arrow lingers well past the new chord's start and the user has
+    // time to actually trace which note moved where without it being
+    // gone before the new chord finishes registering.
+    const VOICE_LEAD_PREVIEW_PRE_MS = 280;
+    const VOICE_LEAD_HOLD_POST_MS = 480;
     for (let slot = 1; slot < n; slot++) {
       const onsetMs = slot * gapMs;
-      const showAt = onsetMs - VOICE_LEAD_PREVIEW_MS;
-      if (showAt <= 0) continue;
+      const showAt = Math.max(0, onsetMs - VOICE_LEAD_PREVIEW_PRE_MS);
+      const hideAt = onsetMs + VOICE_LEAD_HOLD_POST_MS;
       const showId = setTimeout(() => setVoiceLeadTransitionIdx(slot - 1), showAt);
-      const hideId = setTimeout(() => setVoiceLeadTransitionIdx(null), onsetMs);
+      const hideId = setTimeout(() => {
+        // Only clear if this slot is still the active transition —
+        // otherwise the next slot's showId may have already advanced
+        // the index and our hide would clobber it.
+        setVoiceLeadTransitionIdx(prev => (prev === slot - 1 ? null : prev));
+      }, hideAt);
       frameTimers.current.push(showId, hideId);
     }
     // Drop the active highlight just after the final chord's onset
