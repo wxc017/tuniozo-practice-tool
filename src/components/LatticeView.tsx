@@ -6748,7 +6748,13 @@ export default function LatticeView({ externalHighlights, activeNodeKey, activeN
               </button>
             )}
           </div>
-          {isMonzoMode && (
+          {/* Jump-to-ratio + filter-by-note controls — only useful in
+              the standalone Lattice tab where the user is exploring
+              the JI grid manually.  In chromeless embeddings (e.g.
+              ChordsTab harmonic lattice) the parent already drives
+              focus + filtering via the chord-toggle buttons, so the
+              overlay inputs are redundant. */}
+          {isMonzoMode && !chromeless && (
             <div className="flex gap-1">
               <input
                 type="text" value={jumpRatioInput}
@@ -6763,7 +6769,7 @@ export default function LatticeView({ externalHighlights, activeNodeKey, activeN
               </button>
             </div>
           )}
-          {isMonzoMode && (
+          {isMonzoMode && !chromeless && (
             <div className="flex gap-1 items-center">
               <input
                 type="text" value={noteFilterInput}
