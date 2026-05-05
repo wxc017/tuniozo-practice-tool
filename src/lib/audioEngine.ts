@@ -79,6 +79,30 @@ export type DroneInstrument = typeof DRONE_INSTRUMENTS[number]["id"];
 
 interface InstrumentSample { midi: number; buffer: AudioBuffer }
 
+/** Build a synthesized hall reverb impulse response — stereo, with
+ *  decorrelated noise channels so the reverb sounds wide rather than
+ *  centered.  Exponential decay with `decay` controlling how fast the
+ *  tail dies out (higher = longer tail).  Used by the reverb send in
+ *  init() / getCtx(); 2 seconds at decay=2.5 gives a roomy, vocal-pad-
+ *  friendly hall without competing with the dry signal. */
+function makeHallImpulse(ctx: AudioContext, durationSec: number, decay: number): AudioBuffer {
+  const sampleRate = ctx.sampleRate;
+  const length = Math.floor(sampleRate * durationSec);
+  const buffer = ctx.createBuffer(2, length, sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const data = buffer.getChannelData(ch);
+    for (let i = 0; i < length; i++) {
+      const t = i / length;
+      // Decorrelated white noise with exponential decay.  Subtle
+      // pre-emphasis on early reflections (first ~40 ms) gives the
+      // tail a sense of room size without explicit early-reflection
+      // taps.
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, decay);
+    }
+  }
+  return buffer;
+}
+
 // Note-label parsing.  Both Philharmonia and tonejs-instruments use the
 // same convention — sharps as `s` suffix (e.g. "Cs3", "Fs4") and a
 // trailing octave number where C4 = MIDI 60.  MusyngKite uses the same
@@ -153,6 +177,14 @@ export class AudioEngine {
   private playGainNode: GainNode | null = null;
   private playLimiter: DynamicsCompressorNode | null = null;
   private masterGain: GainNode | null = null;
+  // Reverb send (parallel wet path).  Dry signal flows playLimiter →
+  // masterGain at unity; the wet copy goes through a ConvolverNode
+  // with a synthesized hall IR, scaled by reverbWetGain.  Default
+  // wet = 0 so reverb is fully bypassed unless a tab opts in
+  // (ScalarTab exposes a dry/wet knob — per direct user direction
+  // 2026-05-05).
+  private reverbConvolver: ConvolverNode | null = null;
+  private reverbWetGain: GainNode | null = null;
 
   async init(edo: number = 31) {
     if (this.ctx) return;
@@ -173,6 +205,19 @@ export class AudioEngine {
     this.playGainNode = this.ctx.createGain();
     this.playGainNode.gain.value = 1.0;
     this.playGainNode.connect(this.playLimiter);
+
+    // Reverb send: synthesize a 2-second hall IR (decorrelated stereo
+    // noise with exponential decay) once at init time, then keep the
+    // wet-send muted by default so tabs that don't want reverb pay no
+    // CPU cost.  setReverbWet(0..1) opens the wet send.
+    this.reverbConvolver = this.ctx.createConvolver();
+    this.reverbConvolver.normalize = true;
+    this.reverbConvolver.buffer = makeHallImpulse(this.ctx, 2.0, 2.5);
+    this.reverbWetGain = this.ctx.createGain();
+    this.reverbWetGain.gain.value = 0;
+    this.playLimiter.connect(this.reverbConvolver);
+    this.reverbConvolver.connect(this.reverbWetGain);
+    this.reverbWetGain.connect(this.masterGain);
 
     try {
       const base = import.meta.env.BASE_URL ?? "/";
@@ -281,9 +326,34 @@ export class AudioEngine {
       this.playGainNode = this.ctx.createGain();
       this.playGainNode.gain.value = 1.0;
       this.playGainNode.connect(this.playLimiter);
+
+      // Mirror the reverb send graph from init() — this branch fires
+      // when getCtx() lazily rebuilds the AudioContext after stopAll().
+      this.reverbConvolver = this.ctx.createConvolver();
+      this.reverbConvolver.normalize = true;
+      this.reverbConvolver.buffer = makeHallImpulse(this.ctx, 2.0, 2.5);
+      this.reverbWetGain = this.ctx.createGain();
+      this.reverbWetGain.gain.value = 0;
+      this.playLimiter.connect(this.reverbConvolver);
+      this.reverbConvolver.connect(this.reverbWetGain);
+      this.reverbWetGain.connect(this.masterGain);
     }
     if (this.ctx.state === "suspended") void this.ctx.resume();
     return this.ctx;
+  }
+
+  /** Set reverb wet level (0 = bypass, 1 = full hall on top of dry).
+   *  The dry path stays at unity — this is an additive send, not a
+   *  crossfade — so increasing wet adds reverb without quieting the
+   *  direct signal.  Smoothed to avoid clicks. */
+  setReverbWet(level: number) {
+    if (!this.reverbWetGain) return;
+    const clamped = Math.max(0, Math.min(1, level));
+    this.reverbWetGain.gain.setTargetAtTime(clamped, this.getCtx().currentTime, 0.05);
+  }
+
+  getReverbWet(): number {
+    return this.reverbWetGain?.gain.value ?? 0;
   }
 
   // abs = absolute pitch step; pitch 0 = C4 reference (ch4/MIDI0 on Lumatone)
