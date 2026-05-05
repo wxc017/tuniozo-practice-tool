@@ -192,6 +192,111 @@ const JI_SCALES: JiScaleSpec[] = [
   // is added later, its family slot can be re-introduced here.
 ];
 
+// ── 41-EDO mode rotations ────────────────────────────────────────────────
+// Per direct user direction (2026-05-05): each of the 7 curated 41-EDO
+// parents (Supermajor / Subminor / Harmonic Minor / Major / Subharmonic
+// Minor M7 / Classic Major / Classic Minor) gets its 6 mode rotations
+// listed alongside it in the picker, just like the 31-EDO xen families.
+// We generate them programmatically by rotating the parent's cents
+// vector starting on each scale degree, then re-label degrees from the
+// rotation's actual cent values via a band-based heuristic (cent
+// ranges → "1 / b2 / 2 / b3 / 3 / 4 / #4 / b5 / 5 / b6 / 6 / b7 / 7").
+
+/** Map a cents value (octave-reduced) to the closest diatonic degree
+ *  label.  Bands are wide enough that any prime-altered third / sixth /
+ *  seventh from the parent scales still maps to the right Major /
+ *  Minor diatonic slot — supermajor 9/7 (435¢) → "3", subminor 7/6
+ *  (267¢) → "b3", subharmonic 14/9 (765¢) → "b6", etc. */
+function labelFromCents(c: number): string {
+  if (c < 50) return "1";
+  if (c < 150) return "b2";
+  if (c < 250) return "2";
+  if (c < 350) return "b3";
+  if (c < 475) return "3";
+  if (c < 550) return "4";
+  if (c < 625) return "#4";
+  if (c < 680) return "b5";
+  if (c < 720) return "5";
+  if (c < 820) return "b6";
+  if (c < 940) return "6";
+  if (c < 1050) return "b7";
+  return "7";
+}
+
+/** Rotate a parent scale's degree+cents tuples to start on its
+ *  `rotation`-th degree.  rotation === 0 returns the parent unchanged.
+ *  Otherwise the rotation's cent values are recomputed relative to
+ *  the new tonic and re-labelled by `labelFromCents`. */
+function rotateScaleSteps(steps: [string, number][], rotation: number): [string, number][] {
+  if (rotation === 0) return steps;
+  const cents = steps.map(([, c]) => c);
+  const len = cents.length;
+  const baseCents = cents[rotation];
+  const out: [string, number][] = [];
+  for (let j = 0; j < len; j++) {
+    let raw = cents[(rotation + j) % len];
+    if (rotation + j >= len) raw += 1200;
+    const newC = +(raw - baseCents).toFixed(1);
+    out.push([labelFromCents(newC), newC]);
+  }
+  return out;
+}
+
+/** Greek mode names for parents whose tonic IS the Ionian degree of
+ *  their interval pattern (Major-flavoured parents).  Index 0 = the
+ *  parent itself, then 1 = scale starting on the 2nd degree, etc. */
+const IONIAN_ROTATION_NAMES = ["Ionian", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Aeolian", "Locrian"];
+
+/** Greek mode names for parents whose tonic IS the Aeolian degree of
+ *  their interval pattern (Minor-flavoured parents). */
+const AEOLIAN_ROTATION_NAMES = ["Aeolian", "Locrian", "Ionian", "Dorian", "Phrygian", "Lydian", "Mixolydian"];
+
+/** Mode names for parents whose interval pattern matches Harmonic
+ *  Minor (1, 2, b3, 4, 5, b6, 7).  Standard names from the harmonic-
+ *  minor modal taxonomy. */
+const HARMONIC_MINOR_ROTATION_NAMES = [
+  "Harmonic Minor",
+  "Locrian #6",
+  "Ionian #5",
+  "Dorian #4",
+  "Phrygian Dominant",
+  "Lydian #2",
+  "Ultralocrian",
+];
+
+interface FortyOneEdoFamilySpec {
+  parent: string;            // parent scale name (must exist in JI_SCALES above)
+  modeNames: string[];       // 7 names; modeNames[0] is unused (parent uses its own name)
+}
+
+const FORTY_ONE_EDO_FAMILIES: FortyOneEdoFamilySpec[] = [
+  { parent: "Supermajor Diatonic",            modeNames: IONIAN_ROTATION_NAMES },
+  { parent: "Subminor Diatonic",              modeNames: AEOLIAN_ROTATION_NAMES },
+  { parent: "Harmonic Minor Diatonic",        modeNames: HARMONIC_MINOR_ROTATION_NAMES },
+  { parent: "Major Diatonic",                 modeNames: IONIAN_ROTATION_NAMES },
+  { parent: "Subharmonic Minor M7 Diatonic",  modeNames: HARMONIC_MINOR_ROTATION_NAMES },
+  { parent: "Classic Major Diatonic",         modeNames: IONIAN_ROTATION_NAMES },
+  { parent: "Classic Minor Diatonic",         modeNames: AEOLIAN_ROTATION_NAMES },
+];
+
+/** Public list of (family-label → ordered mode tonalities) used by the
+ *  41-EDO picker override in jiTonalityFamilies.ts.  Each family lists
+ *  its parent first then six rotated modes. */
+export const FORTY_ONE_EDO_TONALITY_FAMILIES: { parent: string; tonalities: string[] }[] = [];
+
+// Generate 6 modes per parent and append them to JI_SCALES.
+for (const spec of FORTY_ONE_EDO_FAMILIES) {
+  const parentSpec = JI_SCALES.find(s => s.name === spec.parent);
+  if (!parentSpec) continue;
+  const tonalities: string[] = [spec.parent];
+  for (let r = 1; r < 7; r++) {
+    const modeName = `${spec.parent} ${spec.modeNames[r]}`;
+    JI_SCALES.push({ name: modeName, steps: rotateScaleSteps(parentSpec.steps, r) });
+    tonalities.push(modeName);
+  }
+  FORTY_ONE_EDO_TONALITY_FAMILIES.push({ parent: spec.parent, tonalities });
+}
+
 // ── Build per-EDO ScaleFamilyMaps ────────────────────────────────────────
 //
 // edoData's getModeDegreeMap looks up scales as

@@ -1,3 +1,5 @@
+import { FORTY_ONE_EDO_TONALITY_FAMILIES } from "./jiScaleData";
+
 // ── JI Tonality Families (Pythagorean + Schismatic temperaments) ─────────
 //
 // Pythagorean (41-EDO) and Schismatic (53-EDO) preserve commatic
@@ -164,37 +166,42 @@ export const JI_LIMIT_GROUPS: JiLimitGroup[] = [
 
 /** JI limit groups available for a given EDO.
  *
- *  41-EDO uses a curated 7-tonality "DIATONIC" group per direct user
- *  direction (2026-05-05): Supermajor / Subminor / Harmonic Minor /
- *  Major / Subharmonic Minor M7 / Classic Major / Classic Minor — all
- *  preserving the diatonic 2 / 4 / 5 (9/8, 4/3, 3/2) backbone, so
- *  every name carries "Diatonic".  This replaces the previous
- *  prime-limit-grouped list (3 / 5 / 11 / 13-LIMIT) entirely.
+ *  41-EDO uses a curated 7-tonality / 7-modes-each layout per direct
+ *  user direction (2026-05-05): each of Supermajor / Subminor /
+ *  Harmonic Minor / Major / Subharmonic Minor M7 / Classic Major /
+ *  Classic Minor sits in its OWN section in the picker, with its 7
+ *  modes (parent + 6 rotations) listed together — same shape the
+ *  31-EDO xen families use.  All preserve the diatonic 2 / 4 / 5
+ *  (9/8, 4/3, 3/2) backbone (hence "Diatonic" in every parent name).
+ *  The mode rotations are auto-generated in jiScaleData.ts and
+ *  surfaced through FORTY_ONE_EDO_TONALITY_FAMILIES.
  *
  *  53-EDO continues to use the standard limit-based grouping
- *  (3 / 5 / 11 / 13-LIMIT) — the 41-EDO override is a focused
- *  curated experience, not a general structural change. */
+ *  (3 / 5 / 11 / 13-LIMIT) — the 41-EDO layout is a focused curated
+ *  experience, not a general structural change. */
+const FORTY_ONE_EDO_PARENT_COLORS: Record<string, string> = {
+  "Supermajor Diatonic":           "#cc6a8a",
+  "Subminor Diatonic":             "#7aaa6a",
+  "Harmonic Minor Diatonic":       "#c09050",
+  "Major Diatonic":                "#6a9aca",
+  "Subharmonic Minor M7 Diatonic": "#4a9ac7",
+  "Classic Major Diatonic":        "#9a66c0",
+  "Classic Minor Diatonic":        "#5acca0",
+};
+
 export function jiLimitGroupsForEdo(edo: number): JiLimitGroup[] {
   if (edo === 41) {
-    return [{
+    return FORTY_ONE_EDO_TONALITY_FAMILIES.map(fam => ({
       limit: 5 as JiLimit,
-      label: "DIATONIC TONALITIES (41-EDO)",
-      color: "#7a9ad0",
-      blurb: "Curated 7-scale set — every tonality preserves the diatonic 2 / 4 / 5 (9/8, 4/3, 3/2) backbone; the named flavour (super / sub / classic / etc.) lives in the 3rd, 6th, and 7th.",
+      label: fam.parent.toUpperCase(),
+      color: FORTY_ONE_EDO_PARENT_COLORS[fam.parent] ?? "#7a9ad0",
+      blurb: `Parent scale + 6 modal rotations.  Diatonic backbone (9/8 / 4/3 / 3/2) preserved across the family; the named flavour lives in the 3rd / 6th / 7th.`,
       families: [{
-        key: "41-diatonic",
-        label: "DIATONIC",
-        tonalities: [
-          "Supermajor Diatonic",
-          "Subminor Diatonic",
-          "Harmonic Minor Diatonic",
-          "Major Diatonic",
-          "Subharmonic Minor M7 Diatonic",
-          "Classic Major Diatonic",
-          "Classic Minor Diatonic",
-        ],
+        key: `41-${fam.parent.replace(/\s+/g, "-").toLowerCase()}`,
+        label: "MODES",
+        tonalities: fam.tonalities,
       }],
-    }];
+    }));
   }
   const allowed = JI_LIMITS_PER_EDO[edo];
   if (!allowed) return JI_LIMIT_GROUPS;
