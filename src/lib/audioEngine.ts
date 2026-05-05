@@ -126,11 +126,11 @@ interface SourceConfig {
 }
 
 const INSTRUMENT_SOURCES: Record<DroneInstrument, SourceConfig> = {
-  // Philharmonia: pro-recorded chromatic cello, ~50 sample notes
-  // available; we pick a tight 3-semitone-spaced ladder across the
-  // useful drone range.  arco-normal forte has the warmest sustain.
+  // Philharmonia: pro-recorded chromatic cello.  `_15_` = 1.5-second
+  // sustain (longer than the default 1s) — gives the crossfade looper
+  // a steadier middle to anchor on before the release-tail fade.
   cello: {
-    url: n => `${PHILHARMONIA_BASE}cello/cello_${n}_1_forte_arco-normal.mp3`,
+    url: n => `${PHILHARMONIA_BASE}cello/cello_${n}_15_forte_arco-normal.mp3`,
     notes: ["C2", "Ds2", "Fs2", "A2", "C3", "Ds3", "Fs3", "A3", "C4", "Ds4", "Fs4", "A4"],
   },
   // tonejs-instruments violin: A/C/E/G across octaves 3-6.
@@ -170,6 +170,10 @@ export class AudioEngine {
   private currentInstrument: DroneInstrument = "cello";
   private droneNodes: OscillatorNode[] = [];
   private droneSamples: AudioBufferSourceNode[] = [];
+  // Crossfade looper timers — see spawnSampleLoop().  Tracked here so
+  // stopDrone can cancel pending re-fires before they spawn unnecessary
+  // BufferSources.
+  private droneLoopTimers: ReturnType<typeof setTimeout>[] = [];
   private droneNoteGains: GainNode[] = [];
   private droneGainNode: GainNode | null = null;
   private intervalDrones: Map<string, { osc: OscillatorNode; gain: GainNode }> = new Map();
@@ -540,22 +544,16 @@ export class AudioEngine {
     }
   }
 
-  /** Spawn one drone voice — either a looping instrument sample pitched
-   *  to `targetFreq`, or a PeriodicWave oscillator with vibrato.  All
-   *  generated nodes get pushed onto droneNodes / droneSamples so
-   *  stopDrone() tears them down cleanly. */
+  /** Spawn one drone voice — either a crossfade-looped instrument
+   *  sample pitched to `targetFreq`, or a PeriodicWave oscillator with
+   *  vibrato.  All generated nodes get pushed onto droneNodes /
+   *  droneSamples so stopDrone() tears them down cleanly. */
   private spawnDroneVoice(ctx: AudioContext, targetFreq: number, noteGain: GainNode, useSamples: boolean, wave: PeriodicWave | null) {
     if (useSamples) {
       const targetMidi = this.freqToMidi(targetFreq);
       const pick = this.pickClosestSample(targetMidi);
       if (pick) {
-        const src = ctx.createBufferSource();
-        src.buffer = pick.buffer;
-        src.loop = true;
-        src.playbackRate.value = pick.rate;
-        src.connect(noteGain);
-        src.start();
-        this.droneSamples.push(src);
+        this.spawnSampleLoop(ctx, pick.buffer, pick.rate, noteGain);
         return;
       }
       // pickClosestSample returned null even though useSamples was
@@ -570,6 +568,77 @@ export class AudioEngine {
       osc.start();
       this.droneNodes.push(osc);
     }
+  }
+
+  /** Crossfade-looped sample playback for drones.
+   *
+   *  Why: Philharmonia / tonejs samples are 1–3 seconds long.  Just
+   *  setting `src.loop = true` re-triggers the attack at every loop
+   *  point — for a 1.5 s cello sample that's a bow re-articulation
+   *  every 1.5 s, which is what the user heard as "doesn't sound
+   *  correct" (per direct feedback 2026-05-05).
+   *
+   *  How: keep two parallel BufferSources running, each with a linear
+   *  fade-in / sustain / fade-out envelope, staggered so the second
+   *  one is mid-sustain when the first fades out.  The result is a
+   *  continuous, attack-free sustain — the looped seam is masked by
+   *  the other voice's sustain.
+   *
+   *  A setTimeout chain re-fires voices for as long as the drone is
+   *  alive; stopDrone() cancels these timers and disconnects all
+   *  BufferSources. */
+  private spawnSampleLoop(ctx: AudioContext, buffer: AudioBuffer, rate: number, noteGain: GainNode) {
+    const playedDur = buffer.duration / rate;
+    // Crossfade length = 30% of played duration, capped at 0.5 s and
+    // floored at 0.15 s so even short samples blend smoothly.
+    const xfade = Math.max(0.15, Math.min(0.5, playedDur * 0.3));
+    const interval = playedDur - xfade;
+    if (interval <= 0.05) {
+      // Sample too short for crossfade — fall back to plain loop.
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.loop = true;
+      src.playbackRate.value = rate;
+      src.connect(noteGain);
+      src.start();
+      this.droneSamples.push(src);
+      return;
+    }
+
+    const fireVoice = (startTime: number) => {
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.playbackRate.value = rate;
+      const g = ctx.createGain();
+      src.connect(g).connect(noteGain);
+
+      g.gain.setValueAtTime(0, startTime);
+      g.gain.linearRampToValueAtTime(1, startTime + xfade);
+      g.gain.setValueAtTime(1, startTime + playedDur - xfade);
+      g.gain.linearRampToValueAtTime(0, startTime + playedDur);
+
+      src.start(startTime);
+      src.stop(startTime + playedDur + 0.02);
+      this.droneSamples.push(src);
+    };
+
+    // Fire the first two voices upfront, staggered by `interval` so
+    // they overlap by `xfade`.
+    let nextStart = ctx.currentTime + 0.02;
+    fireVoice(nextStart);
+    nextStart += interval;
+    fireVoice(nextStart);
+
+    // Keep firing every `interval` seconds.  Each new voice fades in
+    // while the previous one is still sustaining.
+    const scheduleNext = () => {
+      nextStart += interval;
+      fireVoice(nextStart);
+      const t = setTimeout(scheduleNext, interval * 1000);
+      this.droneLoopTimers.push(t);
+    };
+    const t = setTimeout(scheduleNext, interval * 1000);
+    this.droneLoopTimers.push(t);
   }
 
   /** Attach a slow ~4.5 Hz LFO to an oscillator's detune param so the
@@ -591,6 +660,8 @@ export class AudioEngine {
   }
 
   stopDrone() {
+    for (const t of this.droneLoopTimers) clearTimeout(t);
+    this.droneLoopTimers = [];
     for (const osc of this.droneNodes) {
       try { osc.stop(); } catch {}
       try { osc.disconnect(); } catch {}
