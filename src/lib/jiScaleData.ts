@@ -94,10 +94,7 @@ const JI_SCALES: JiScaleSpec[] = [
   { name: "Septimal Major",
     steps: [["1",0],["2",203.9],["3",386.3],["4",498.0],["5",702.0],["6",884.4],["b7",968.8]] },
   { name: "Septimal Minor",
-    // Canonical 1-b3-5 (1, 9/8, 6/5, 4/3, 3/2) so the I chord reads as a
-    // true minor triad (lowercase i).  The 7-prime colour lives at the
-    // b7 (7/4) — the modal-defining tone where the 7-limit sound bites.
-    steps: [["1",0],["2",203.9],["b3",315.6],["4",498.0],["5",702.0],["b6",813.7],["b7",968.8]] },
+    steps: [["1",0],["2",203.9],["b3",266.9],["4",498.0],["5",702.0],["b6",813.7],["b7",968.8]] },
   { name: "Septimal Diminished",
     steps: [["1",0],["2",203.9],["b3",266.9],["4",498.0],["b5",582.5],["b6",813.7],["b7",968.8]] },
   { name: "Septimal Lydian",
@@ -148,25 +145,25 @@ const JI_SCALES: JiScaleSpec[] = [
     steps: [["1",0],["2",203.9],["b3",315.6],["#4",582.5],["5",702.0],["6",884.4],["b7",1017.6]] },
 
   // ── 13-LIMIT (Tridecimal) ────────────────────────────────────────────
-  // Per direct user direction (2026-05-04): a "13-limit Major" / "Minor"
-  // chord keeps its canonical 1-3-5 quality (5/4 M3 for Major, 6/5 m3
-  // for Minor, 3/2 P5 throughout) so the I chord reads as a true major
-  // (uppercase I) or minor (lowercase i) triad.  The 13-prime colour
-  // lives in the upper modal-defining tones (the 6th and 7th), which
-  // is what marks the scale as 13-limit rather than its 5-limit cousin.
+  // Per direct user direction: ALL of 3rd / 6th / 7th must be filled
+  // by the named prime — no fallback to 5-limit even where the prime's
+  // candidate isn't an idiomatic Major / minor third.  The result
+  // sometimes loosens the I-chord's traditional Major / minor quality
+  // (e.g. Tridecimal "Major" with 13/10 supermajor 3rd), but the
+  // scale's identity is the prime, not its 5-limit cousin.  4 and 5
+  // stay anchored at 4/3 and 3/2 throughout.
   // Key 13-prime intervals: 13/12 (138¢), 13/11 (289¢ supraminor 3rd),
   // 13/10 (454¢ supermajor 3rd), 13/9 (637¢ aug-4th), 13/8 (841¢ wide
   // M6 / neutral 6), 13/7 (1072¢ subminor 7th).
   { name: "Tridecimal Major",
-    // 3 → 5/4 (canonical major 3rd, 5-prime ratio is allowed in 13-limit
-    // since 5 < 13), 6 → 13/8 (841¢), 7 → 13/7 (1072¢).  The two upper
-    // tones carry the 13-prime; the triad stays cleanly major.
-    steps: [["1",0],["2",203.9],["3",386.3],["4",498.0],["5",702.0],["6",840.5],["7",1071.7]] },
+    // 3 → 13/10 (454¢ supermajor 3rd), 6 → 13/8 (841¢), 7 → 13/7
+    // (1072¢ — narrow M7 / wide subminor 7).  All three modal-
+    // defining tones are 13-prime.
+    steps: [["1",0],["2",203.9],["3",454.2],["4",498.0],["5",702.0],["6",840.5],["7",1071.7]] },
   { name: "Tridecimal Minor",
-    // b3 → 6/5 (canonical minor 3rd), b6 → 13/8, b7 → 13/7.  Tonic
-    // triad reads as a clean minor; 13-prime colours only the upper
-    // modal tones.
-    steps: [["1",0],["2",203.9],["b3",315.6],["4",498.0],["5",702.0],["b6",840.5],["b7",1071.7]] },
+    // b3 → 13/11, b6 → 13/8, b7 → 13/7 — every minor-mode modal tone
+    // tilts into the 13-prime.
+    steps: [["1",0],["2",203.9],["b3",289.2],["4",498.0],["5",702.0],["b6",840.5],["b7",1071.7]] },
   { name: "Maqam Sikah",
     // The neutral 3rd / 6th Maqam family Sikah belongs to.  In 13-limit
     // the b3 (16/13 ≈ 359¢) sits a touch lower than the 11-limit
@@ -190,42 +187,41 @@ const JI_SCALES: JiScaleSpec[] = [
   // tritone), 17/11 (754¢ b6), 17/10 (919¢ wide M6), 17/9 (1101¢
   // wide M7).
   { name: "Heptadecimal Major",
-    // 3 → 5/4 (canonical major 3rd), 6 → 17/10, 7 → 17/9.  Triad
-    // stays canonically major (uppercase I); 17-prime colour lives in
-    // the upper tetrachord (M6 + M7).
-    steps: [["1",0],["2",203.9],["3",386.3],["4",498.0],["5",702.0],["6",918.6],["7",1101.0]] },
+    // 3 → 17/13 (464¢ wide M3 — 17 dominant, 13 in denominator),
+    // 6 → 17/10, 7 → 17/9.  All three modal-defining tones now carry
+    // the 17-prime instead of the previous 5/4 fallback at the 3rd.
+    steps: [["1",0],["2",203.9],["3",464.4],["4",498.0],["5",702.0],["6",918.6],["7",1101.0]] },
   { name: "Heptadecimal Minor",
-    // b3 → 6/5 (canonical minor 3rd), b2 → 17/16, b6 → 17/11, b7 →
-    // 17/10.  Triad reads as a clean minor (lowercase i); 17-prime
-    // colours the b2 and the upper tetrachord.
-    steps: [["1",0],["b2",105.0],["b3",315.6],["4",498.0],["5",702.0],["b6",753.6],["b7",918.6]] },
+    // b3 → 17/14, b6 → 17/11, b7 → 17/10 (919¢ — high for a
+    // conventional b7 but the only 17-foregrounded option in the
+    // upper tetrachord, so it stays in to honour the 3 / 6 / 7 rule).
+    steps: [["1",0],["b2",105.0],["b3",336.1],["4",498.0],["5",702.0],["b6",753.6],["b7",918.6]] },
   { name: "Heptadecimal Hijaz",
-    // Hijaz spine — major-mode tonic triad.  b2 → 17/16, 3 → 5/4
-    // (canonical M3 — keeps the I chord cleanly major), b6 → 17/11.
-    // 17-prime tones colour the b2 and b6 (Hijaz-defining tones).
-    steps: [["1",0],["b2",105.0],["3",386.3],["4",498.0],["5",702.0],["b6",753.6],["b7",996.1]] },
+    // Hijaz spine.  b2 → 17/16, M3 → 17/13 (464¢ wide M3), b6 →
+    // 17/11.  Three 17-prime tones at the genre-defining tones.
+    steps: [["1",0],["b2",105.0],["3",464.4],["4",498.0],["5",702.0],["b6",753.6],["b7",996.1]] },
 
   // ── 19-LIMIT (Nonadecimal) ───────────────────────────────────────────
   // Key 19-prime intervals: 19/18 (94¢ small m2), 19/16 (298¢ m3),
   // 19/15 (409¢ wide M3), 19/13 (657¢ #4-area), 19/12 (795¢ b6-ish),
   // 19/11 (946¢ b7), 19/10 (1111¢ wide M7).
   { name: "Nonadecimal Major",
-    // 3 → 5/4 (canonical M3 — keeps tonic triad cleanly major).
-    // 6 → 19/12 (795¢, leans b6, so this is a Mixolydian-b6-flavoured
-    // Major), 7 → 19/10.  19-prime colour lives in the upper tetrachord.
-    steps: [["1",0],["2",203.9],["3",386.3],["4",498.0],["5",702.0],["b6",795.0],["7",1111.2]] },
+    // 3 → 19/15, 6 → 19/12 (795¢ — flat enough to read as b6, so
+    // this Major leans Mixolydian-with-flat-6 / Phrygian-Major-ish
+    // territory), 7 → 19/10.  All three modal-defining tones are
+    // 19-prime.
+    steps: [["1",0],["2",203.9],["3",409.2],["4",498.0],["5",702.0],["b6",795.0],["7",1111.2]] },
   { name: "Nonadecimal Minor",
-    // b3 → 6/5 (canonical minor 3rd), b6 → 19/12, b7 → 19/11.  Tonic
-    // triad reads as a clean minor (lowercase i); 19-prime colours the
-    // b6 and b7.
-    steps: [["1",0],["2",203.9],["b3",315.6],["4",498.0],["5",702.0],["b6",795.0],["b7",945.7]] },
+    // b3 → 19/16, b6 → 19/12, b7 → 19/11.  Three 19-prime substitutions
+    // span the entire modal palette of the minor mode.  4 and 5 stay
+    // anchored.
+    steps: [["1",0],["2",203.9],["b3",297.5],["4",498.0],["5",702.0],["b6",795.0],["b7",945.7]] },
 
   // ── 23 / 29 / 31-LIMIT (multi-prime higher-limit colour) ─────────────
-  // Same rule as 13 / 17 / 19-limit: tonic triad stays canonical
-  // (1, 5/4 or 6/5 third, 3/2 fifth) so the I roman numeral renders
-  // correctly as I (Major) or i (Minor).  The named prime colours the
-  // upper modal tones — 6 and b7 / 7 — where the higher-prime sound
-  // bites without compromising the chord quality.
+  // Each scale carries 3-4 intervals from its named prime — enough that
+  // the prime defines the modal colour, not just a single substituted
+  // tone.  Major / Minor labels reflect the 1-3-5 chord quality at the
+  // tonic so the I roman numeral renders as I (Major) or i (minor).
   // 41-EDO approximates each prime to within a few cents; 53-EDO is
   // accurate on 13 / 19 and weaker on 17 / 23 / 29 / 31, which is why
   // those scales aren't surfaced for 53-EDO in JI_LIMITS_PER_EDO.
@@ -234,44 +230,43 @@ const JI_SCALES: JiScaleSpec[] = [
   //          23/18 (424¢ wide M3), 23/14 (859¢ b6), 23/12 (1126¢
   //          extra-wide M7).  No clean 23-prime M6 or b7.
   { name: "Vicesimotertial Major",
-    // 3 → 5/4 (canonical M3 — keeps tonic triad cleanly major).
-    // 6 → 23/14 (859¢), 7 → 23/12 (1126¢).  23-prime colour in the
-    // upper tetrachord.
-    steps: [["1",0],["2",203.9],["3",386.3],["4",498.0],["5",702.0],["6",859.4],["7",1126.3]] },
+    // 3 → 23/18 (424¢), 6 → 23/14 (859¢ — reads as a Mixolydian-ish
+    // wide M6 / narrow b6), 7 → 23/12 (1126¢).  All three modal-
+    // defining tones now carry the 23-prime.
+    steps: [["1",0],["2",203.9],["3",424.4],["4",498.0],["5",702.0],["6",859.4],["7",1126.3]] },
   { name: "Vicesimotertial Minor",
-    // b3 → 6/5 (canonical m3 — keeps tonic triad cleanly minor).
-    // b6 → 23/14 (859¢), b7 → 23/13 (988¢).  23-prime colour in the
-    // upper modal tones.
-    steps: [["1",0],["2",203.9],["b3",315.6],["4",498.0],["5",702.0],["b6",859.4],["b7",987.7]] },
+    // b3 → 23/19 (329¢ supraminor), b6 → 23/14 (859¢), b7 → 23/13
+    // (988¢ — 23 dominant, 13 in denominator).  Three 23-foregrounded
+    // tones span the entire minor-mode modal palette.
+    steps: [["1",0],["2",203.9],["b3",329.2],["4",498.0],["5",702.0],["b6",859.4],["b7",987.7]] },
   // 29-LIMIT  Key intervals: 29/27 (124¢ small m2), 29/24 (328¢
   //          supraminor 3rd), 29/23 (401¢ wide M3), 29/18 (770¢ b6),
   //          29/17 (871¢ M6), 29/16 (1030¢ b7).  No clean 29-prime M7
   //          — Major-mode 7 falls back to 15/8 OR Major adopts a
   //          Mixolydian b7 to fit a 29-prime tone there.
   { name: "Vicenovenal Major",
-    // 3 → 5/4 (canonical M3 — keeps tonic triad cleanly major).
-    // 6 → 29/17 (871¢), b7 → 29/16 (1030¢, Mixolydian-leaning).
-    // 29-prime colour in the upper tetrachord.
-    steps: [["1",0],["2",203.9],["3",386.3],["4",498.0],["5",702.0],["6",871.4],["b7",1029.6]] },
+    // 3 → 29/23 (401¢ wide M3), 6 → 29/17 (871¢), 7 → 29/16 (1030¢ b7,
+    // Mixolydian-leaning).  Three 29-prime tones at the modal-defining
+    // 3rd, 6th, and 7th.  4 and 5 anchored.
+    steps: [["1",0],["2",203.9],["3",401.3],["4",498.0],["5",702.0],["6",871.4],["b7",1029.6]] },
   { name: "Vicenovenal Minor",
-    // b3 → 6/5 (canonical m3 — keeps tonic triad cleanly minor).
-    // b6 → 29/18 (770¢), b7 → 29/16 (1030¢).  29-prime colour in the
-    // upper modal tones.
-    steps: [["1",0],["2",203.9],["b3",315.6],["4",498.0],["5",702.0],["b6",770.5],["b7",1029.6]] },
+    // b3 → 29/24 (328¢), b6 → 29/18 (770¢), b7 → 29/16 (1030¢).  Three
+    // 29-prime tones span the entire minor-mode modal palette.  4 and
+    // 5 anchored.
+    steps: [["1",0],["2",203.9],["b3",327.6],["4",498.0],["5",702.0],["b6",770.5],["b7",1029.6]] },
   // 31-LIMIT  Key intervals: 31/29 (115¢ b2), 31/26 (336¢ supraminor 3),
   //          31/25 (372¢ neutral-leaning M3), 31/20 (765¢ b6),
   //          31/19 (905¢ M6), 31/17 (1010¢ b7), 31/16 (1145¢ extra-
   //          wide M7).
   { name: "Trigesimoprimal Major",
-    // 3 → 5/4 (canonical M3 — keeps tonic triad cleanly major).
-    // 6 → 31/19 (905¢), 7 → 31/16 (1145¢ extra-wide leading-tone).
-    // 31-prime colour in the upper tetrachord.
-    steps: [["1",0],["2",203.9],["3",386.3],["4",498.0],["5",702.0],["6",904.6],["7",1145.0]] },
+    // 3 → 31/25 (372¢, neutral-leaning M3 — still triadically Major
+    // because >350¢), 6 → 31/19 (905¢), 7 → 31/16 (1145¢ extra-wide
+    // leading-tone).  Three 31-prime tones at chord-tone positions.
+    steps: [["1",0],["2",203.9],["3",371.6],["4",498.0],["5",702.0],["6",904.6],["7",1145.0]] },
   { name: "Trigesimoprimal Minor",
-    // b3 → 6/5 (canonical m3 — keeps tonic triad cleanly minor).
-    // b6 → 31/20 (765¢), b7 → 31/17 (1010¢).  31-prime colour in the
-    // upper modal tones.
-    steps: [["1",0],["2",203.9],["b3",315.6],["4",498.0],["5",702.0],["b6",765.5],["b7",1010.4]] },
+    // b3 → 31/26 (336¢), b6 → 31/20 (765¢), b7 → 31/17 (1010¢).  Three
+    // 31-prime tones span the minor-mode modal palette.
+    steps: [["1",0],["2",203.9],["b3",336.0],["4",498.0],["5",702.0],["b6",765.5],["b7",1010.4]] },
 ];
 
 // ── Build per-EDO ScaleFamilyMaps ────────────────────────────────────────
