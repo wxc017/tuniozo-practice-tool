@@ -482,6 +482,25 @@ export default function ChordsTab({
 
   useEffect(() => { isLoopingRef.current = isLooping; }, [isLooping]);
 
+  // Clear progression / answer-reveal state when the EDO changes —
+  // a Major progression generated in 12-EDO has no meaning in 41-EDO
+  // (where "Major" isn't a registered tonality), so the answer panel
+  // would otherwise persist scale names + chord pitches that don't
+  // exist in the new system.  Also drop tonalities that don't have
+  // a bank in the new EDO so the picker doesn't hold stale entries.
+  useEffect(() => {
+    setFhAnswer(null);
+    setFhShowAnswer(false);
+    setFhDetailInfo("");
+    fhFramesRef.current = null;
+    setTonalitySet(prev => {
+      const filtered = [...prev].filter(t => banksByName[t]);
+      if (filtered.length === prev.size) return prev;
+      return new Set(filtered);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edo]);
+
   useEffect(() => {
     unregisterKnownOptionsForPrefix("crd:");
     const all = new Set<string>();

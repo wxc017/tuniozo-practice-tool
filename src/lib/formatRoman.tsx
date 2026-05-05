@@ -46,26 +46,26 @@ export function formatRomanNumeral(label: string): React.ReactNode {
 }
 
 /**
- * Variant that appends a short family abbreviation as a trailing
- * superscript so 41/53-EDO chord labels carry their JI limit family
- * inline (e.g. "Iᵀʳⁱ" for a Tridecimal Major tonic, "M7ᴴᵉᵖ" for a
- * Heptadecimal M7).  Without the suffix, "I" from a Tridecimal scale
- * and "I" from a Heptadecimal scale render identically — the user
- * has no way to tell them apart in the chord pool.  Pass `null` to
- * skip the suffix (12-EDO and other non-JI contexts).
+ * Variant that prepends a short family marker as a leading subscript
+ * so 41/53-EDO chord labels carry their JI limit family inline (e.g.
+ * "₁₃i" for a Tridecimal i, "₁₇IV" for a Heptadecimal IV).  Without
+ * the marker, "I" from a Tridecimal scale and "I" from a Heptadecimal
+ * scale render identically — the user has no way to tell them apart
+ * in the chord pool.  Pass `null` to skip the marker (12-EDO and
+ * other non-JI contexts).
  *
- * Trailing rather than leading because the user reads the roman
- * numeral as the primary identifier and the family as the secondary
- * disambiguation tag — putting the family in front buries the I/V
- * shape the eye is actually scanning for.
+ * Leading subscript (not trailing superscript) per direct user
+ * direction — the prime number reads as a "before-the-numeral tag"
+ * rather than as a chord-quality suffix that might be confused with
+ * extension numbers (M7, 9, 13, etc.).
  */
 export function formatRomanNumeralWithFamily(label: string, familyPrefix: string | null): React.ReactNode {
   const body = formatRomanNumeral(label);
   if (!familyPrefix) return body;
   return (
     <>
+      <sub style={{ fontSize: "0.6em", verticalAlign: "sub", lineHeight: 0, marginRight: 1, opacity: 0.85 }}>{familyPrefix}</sub>
       {body}
-      <sup style={{ fontSize: "0.6em", verticalAlign: "super", lineHeight: 0, marginLeft: 1, opacity: 0.85 }}>{familyPrefix}</sup>
     </>
   );
 }
