@@ -1,4 +1,4 @@
-import { FORTY_ONE_EDO_TONALITY_FAMILIES } from "./jiScaleData";
+import { FORTY_ONE_EDO_TONALITY_FAMILIES, FIFTY_THREE_EDO_TONALITY_FAMILIES } from "./jiScaleData";
 
 // ── JI Tonality Families (Pythagorean + Schismatic temperaments) ─────────
 //
@@ -15,16 +15,10 @@ import { FORTY_ONE_EDO_TONALITY_FAMILIES } from "./jiScaleData";
 
 export type JiLimit = 3 | 5 | 7 | 11 | 13 | 17 | 19 | 23 | 29 | 31;
 
-// Per-EDO limit availability.  Per direct user direction (2026-05-04),
-// a higher-limit family is only listed if its named prime's M3 / m3 is
-// DISTINCTIVE in the EDO step grid — i.e. the prime's ratio beats every
-// simpler-prime alternative by n*d at the step it rounds to.  Under
-// that rule, 17 / 19 / 23 / 29 / 31-LIMIT all fail in both 41-EDO and
-// 53-EDO (their thirds collide with simpler primes — see jiScaleData.ts
-// for the per-prime collision table).  7-LIMIT also fails the prior
-// 3-6-7 prime-purity rule.  Only 11-LIMIT (Mohajira's 11/9 distinctive
-// b3) and 13-LIMIT (Tridecimal Diatonic Major/Minor's 13/10 + 13/11
-// distinctive thirds) survive among higher limits.
+// Per-EDO limit availability.  Both 41-EDO and 53-EDO now use a
+// curated parent + modes layout (per direct user direction 2026-05-05);
+// JI_LIMITS_PER_EDO is consulted only as a fallback for any other
+// EDO that someday wants the prime-limit grouping.
 export const JI_LIMITS_PER_EDO: Record<number, JiLimit[]> = {
   41: [3, 5, 11, 13],
   53: [3, 5, 11, 13],
@@ -179,30 +173,39 @@ export const JI_LIMIT_GROUPS: JiLimitGroup[] = [
  *  53-EDO continues to use the standard limit-based grouping
  *  (3 / 5 / 11 / 13-LIMIT) — the 41-EDO layout is a focused curated
  *  experience, not a general structural change. */
-const FORTY_ONE_EDO_PARENT_COLORS: Record<string, string> = {
-  "Supermajor Diatonic":           "#cc6a8a",
-  "Subminor Diatonic":             "#7aaa6a",
-  "Harmonic Minor Diatonic":       "#c09050",
-  "Major Diatonic":                "#6a9aca",
-  "Subharmonic Minor M7 Diatonic": "#4a9ac7",
-  "Classic Major Diatonic":        "#9a66c0",
-  "Classic Minor Diatonic":        "#5acca0",
+const PARENT_COLORS: Record<string, string> = {
+  "Neutral Major Diatonic":              "#9a66c0",
+  "Major Diatonic":                      "#6a9aca",
+  "Supermajor Diatonic":                 "#cc6a8a",
+  "Subminor Diatonic":                   "#7aaa6a",
+  "Minor Diatonic":                      "#5b8ad0",
+  "Classic Minor Diatonic":              "#5acca0",
+  "Supraminor Diatonic":                 "#caac5a",
+  "Classic Harmonic Minor M7 Diatonic":  "#c09050",
+  "Subharmonic Minor M7 Diatonic":       "#4a9ac7",
+  "Supraharmonic Minor M7 Diatonic":     "#aa6a5a",
 };
 
+function familiesAsLimitGroups(
+  edo: 41 | 53,
+  families: { parent: string; tonalities: string[] }[],
+): JiLimitGroup[] {
+  return families.map(fam => ({
+    limit: 5 as JiLimit,
+    label: fam.parent.toUpperCase(),
+    color: PARENT_COLORS[fam.parent] ?? "#7a9ad0",
+    blurb: `Parent scale + 6 modal rotations.  Diatonic 1 / 4 / 5 (4/3, 3/2) preserved; the named flavour lives in the 3rd / 6th / 7th.`,
+    families: [{
+      key: `${edo}-${fam.parent.replace(/\s+/g, "-").toLowerCase()}`,
+      label: "MODES",
+      tonalities: fam.tonalities,
+    }],
+  }));
+}
+
 export function jiLimitGroupsForEdo(edo: number): JiLimitGroup[] {
-  if (edo === 41) {
-    return FORTY_ONE_EDO_TONALITY_FAMILIES.map(fam => ({
-      limit: 5 as JiLimit,
-      label: fam.parent.toUpperCase(),
-      color: FORTY_ONE_EDO_PARENT_COLORS[fam.parent] ?? "#7a9ad0",
-      blurb: `Parent scale + 6 modal rotations.  Diatonic backbone (9/8 / 4/3 / 3/2) preserved across the family; the named flavour lives in the 3rd / 6th / 7th.`,
-      families: [{
-        key: `41-${fam.parent.replace(/\s+/g, "-").toLowerCase()}`,
-        label: "MODES",
-        tonalities: fam.tonalities,
-      }],
-    }));
-  }
+  if (edo === 41) return familiesAsLimitGroups(41, FORTY_ONE_EDO_TONALITY_FAMILIES);
+  if (edo === 53) return familiesAsLimitGroups(53, FIFTY_THREE_EDO_TONALITY_FAMILIES);
   const allowed = JI_LIMITS_PER_EDO[edo];
   if (!allowed) return JI_LIMIT_GROUPS;
   const set = new Set(allowed);

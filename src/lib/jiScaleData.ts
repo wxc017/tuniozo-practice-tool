@@ -140,9 +140,13 @@ const JI_SCALES: JiScaleSpec[] = [
     // Septimal subminor: 7/6 (267¢ sub m3), 14/9 (765¢ sub m6),
     // 7/4 (969¢ harmonic 7).  Bluesy sub-minor flavour.
     steps: [["1",0],["2",203.9],["b3",266.9],["4",498.0],["5",702.0],["b6",764.9],["b7",968.8]] },
-  { name: "Harmonic Minor Diatonic",
-    // 5-limit harmonic minor: b3 → 6/5, b6 → 8/5, 7 → 15/8 (raised
-    // M7 leading-tone over the natural-minor lower tetrachord).
+  { name: "Classic Harmonic Minor M7 Diatonic",
+    // 5-limit harmonic minor: Cm3 → 6/5, Cm6 → 8/5, 7 → 15/8
+    // (raised M7 leading-tone over the natural-minor lower
+    // tetrachord).  Renamed from "Harmonic Minor Diatonic" per
+    // user direction (2026-05-05) so the M7 class is explicit and
+    // the "Classic" prefix flags the 5-limit lower-tetrachord
+    // tuning.
     steps: [["1",0],["2",203.9],["b3",315.6],["4",498.0],["5",702.0],["b6",813.7],["7",1088.3]] },
   { name: "Major Diatonic",
     // Pythagorean major (3-limit): 81/64 (408¢), 27/16 (906¢),
@@ -164,6 +168,41 @@ const JI_SCALES: JiScaleSpec[] = [
     // 5-limit JI Aeolian — natural minor: 6/5 (316¢ m3), 8/5 (814¢
     // m6), 9/5 (1018¢ m7).  Beat-free i / iv / v.
     steps: [["1",0],["2",203.9],["b3",315.6],["4",498.0],["5",702.0],["b6",813.7],["b7",1017.6]] },
+
+  // ── 53-EDO additional curated tonalities ──────────────────────────
+  // Per direct user direction (2026-05-05): 53-EDO exposes a 10-scale
+  // picker with parents (Neutral Major / Major / Supermajor /
+  // Subminor / Minor / Classic Minor / Supraminor / Classic Harmonic
+  // Minor M7 / Subharmonic Minor M7 / Supraharmonic Minor M7) — each
+  // its own picker section with 6 modal rotations, like 31-EDO and
+  // 41-EDO.  The four scales below fill in the gaps that aren't
+  // already covered by the 41-EDO catalog above; the rest are
+  // shared (Major / Supermajor / Subminor / Classic Major / Classic
+  // Minor / Classic Harmonic Minor M7 / Subharmonic Minor M7).
+  // All preserve canonical 1 / 4 / 5 (4/3, 3/2) — hence "Diatonic"
+  // in every name.
+  { name: "Neutral Major Diatonic",
+    // Major-flavoured Mohajira-cousin: M2 instead of b2, n3 at the
+    // 3rd (11/9), C6 / C7 at 6 / 7 (5-limit).  Tonic chord 1-n3-5
+    // is a NEUTRAL triad.
+    steps: [["1",0],["2",203.9],["b3",347.4],["4",498.0],["5",702.0],["6",884.4],["7",1088.3]] },
+  { name: "Minor Diatonic",
+    // Pythagorean minor (3-limit only): m3 = 32/27 (294¢), m6 =
+    // 128/81 (792¢), m7 = 16/9 (996¢).  All chain-of-fifths-derived
+    // — distinct from "Classic Minor Diatonic" which uses 5-limit
+    // 6/5 / 8/5 / 9/5.  In 53-EDO these land on different cells
+    // (m3 = step 13, Cm3 = step 14) so the picker exposes both.
+    steps: [["1",0],["2",203.9],["b3",294.1],["4",498.0],["5",702.0],["b6",792.2],["b7",996.1]] },
+  { name: "Supraminor Diatonic",
+    // Uses Sm3 (~340¢, 17/14 / 39/32 area, 53-EDO step 15 — the
+    // distinct cell between Cm3 and n3 that 41-EDO collapses).
+    // Sm6 = 13/8 (840.5¢), Sm7 ≈ 11/6 (1049¢).  Tonic triad sits
+    // between minor and neutral — its own colour entirely.
+    steps: [["1",0],["2",203.9],["b3",339.6],["4",498.0],["5",702.0],["b6",840.5],["b7",1041.5]] },
+  { name: "Supraharmonic Minor M7 Diatonic",
+    // Supraminor lower tetrachord (Sm3, Sm6) with a raised M7
+    // (15/8) — supraminor cousin of Classic Harmonic Minor M7.
+    steps: [["1",0],["2",203.9],["b3",339.6],["4",498.0],["5",702.0],["b6",840.5],["7",1088.3]] },
 
   // ── 17 / 19 / 23 / 29 / 31-LIMIT — pruned ────────────────────────────
   // Per direct user direction (2026-05-04): for each higher-limit
@@ -270,32 +309,59 @@ interface FortyOneEdoFamilySpec {
 }
 
 const FORTY_ONE_EDO_FAMILIES: FortyOneEdoFamilySpec[] = [
-  { parent: "Supermajor Diatonic",            modeNames: IONIAN_ROTATION_NAMES },
-  { parent: "Subminor Diatonic",              modeNames: AEOLIAN_ROTATION_NAMES },
-  { parent: "Harmonic Minor Diatonic",        modeNames: HARMONIC_MINOR_ROTATION_NAMES },
-  { parent: "Major Diatonic",                 modeNames: IONIAN_ROTATION_NAMES },
-  { parent: "Subharmonic Minor M7 Diatonic",  modeNames: HARMONIC_MINOR_ROTATION_NAMES },
-  { parent: "Classic Major Diatonic",         modeNames: IONIAN_ROTATION_NAMES },
-  { parent: "Classic Minor Diatonic",         modeNames: AEOLIAN_ROTATION_NAMES },
+  { parent: "Supermajor Diatonic",                 modeNames: IONIAN_ROTATION_NAMES },
+  { parent: "Subminor Diatonic",                   modeNames: AEOLIAN_ROTATION_NAMES },
+  { parent: "Classic Harmonic Minor M7 Diatonic",  modeNames: HARMONIC_MINOR_ROTATION_NAMES },
+  { parent: "Major Diatonic",                      modeNames: IONIAN_ROTATION_NAMES },
+  { parent: "Subharmonic Minor M7 Diatonic",       modeNames: HARMONIC_MINOR_ROTATION_NAMES },
+  { parent: "Classic Major Diatonic",              modeNames: IONIAN_ROTATION_NAMES },
+  { parent: "Classic Minor Diatonic",              modeNames: AEOLIAN_ROTATION_NAMES },
+];
+
+/** 53-EDO curated 10-scale set per direct user direction (2026-05-05).
+ *  Adds Neutral Major / Minor (Pyth) / Supraminor / Supraharmonic
+ *  Minor M7 to the 41-EDO catalog — those are the four scales that
+ *  exploit 53-EDO's Sm3 / n3 / m3 vs Pyth-m3 distinctions which
+ *  41-EDO collapses. */
+const FIFTY_THREE_EDO_FAMILIES: FortyOneEdoFamilySpec[] = [
+  { parent: "Neutral Major Diatonic",              modeNames: IONIAN_ROTATION_NAMES },
+  { parent: "Major Diatonic",                      modeNames: IONIAN_ROTATION_NAMES },
+  { parent: "Supermajor Diatonic",                 modeNames: IONIAN_ROTATION_NAMES },
+  { parent: "Subminor Diatonic",                   modeNames: AEOLIAN_ROTATION_NAMES },
+  { parent: "Minor Diatonic",                      modeNames: AEOLIAN_ROTATION_NAMES },
+  { parent: "Classic Minor Diatonic",              modeNames: AEOLIAN_ROTATION_NAMES },
+  { parent: "Supraminor Diatonic",                 modeNames: AEOLIAN_ROTATION_NAMES },
+  { parent: "Classic Harmonic Minor M7 Diatonic",  modeNames: HARMONIC_MINOR_ROTATION_NAMES },
+  { parent: "Subharmonic Minor M7 Diatonic",       modeNames: HARMONIC_MINOR_ROTATION_NAMES },
+  { parent: "Supraharmonic Minor M7 Diatonic",     modeNames: HARMONIC_MINOR_ROTATION_NAMES },
 ];
 
 /** Public list of (family-label → ordered mode tonalities) used by the
  *  41-EDO picker override in jiTonalityFamilies.ts.  Each family lists
  *  its parent first then six rotated modes. */
 export const FORTY_ONE_EDO_TONALITY_FAMILIES: { parent: string; tonalities: string[] }[] = [];
+export const FIFTY_THREE_EDO_TONALITY_FAMILIES: { parent: string; tonalities: string[] }[] = [];
 
-// Generate 6 modes per parent and append them to JI_SCALES.
-for (const spec of FORTY_ONE_EDO_FAMILIES) {
+// Generate 6 modes per parent and append them to JI_SCALES.  De-dup
+// across the 41 / 53 family lists — many parents are shared, so a
+// single parent's modes only need generating once.
+const generatedModeNames = new Set<string>();
+function expandFamily(spec: FortyOneEdoFamilySpec, intoOut: { parent: string; tonalities: string[] }[]) {
   const parentSpec = JI_SCALES.find(s => s.name === spec.parent);
-  if (!parentSpec) continue;
+  if (!parentSpec) return;
   const tonalities: string[] = [spec.parent];
   for (let r = 1; r < 7; r++) {
     const modeName = `${spec.parent} ${spec.modeNames[r]}`;
-    JI_SCALES.push({ name: modeName, steps: rotateScaleSteps(parentSpec.steps, r) });
+    if (!generatedModeNames.has(modeName)) {
+      JI_SCALES.push({ name: modeName, steps: rotateScaleSteps(parentSpec.steps, r) });
+      generatedModeNames.add(modeName);
+    }
     tonalities.push(modeName);
   }
-  FORTY_ONE_EDO_TONALITY_FAMILIES.push({ parent: spec.parent, tonalities });
+  intoOut.push({ parent: spec.parent, tonalities });
 }
+for (const spec of FORTY_ONE_EDO_FAMILIES) expandFamily(spec, FORTY_ONE_EDO_TONALITY_FAMILIES);
+for (const spec of FIFTY_THREE_EDO_FAMILIES) expandFamily(spec, FIFTY_THREE_EDO_TONALITY_FAMILIES);
 
 // ── Build per-EDO ScaleFamilyMaps ────────────────────────────────────────
 //
