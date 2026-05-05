@@ -183,35 +183,34 @@ const JI_SCALES: JiScaleSpec[] = [
 
   // ── 17-LIMIT (Heptadecimal) ──────────────────────────────────────────
   // Key 17-prime intervals: 17/16 (105¢ small leading-tone m2),
-  // 17/14 (336¢ supraminor 3rd), 17/11 (754¢ b6), 17/10 (919¢ wide M6),
-  // 17/9 (1101¢ wide M7).  No clean 17-prime M3 — Major-mode 3 falls
-  // back to 5/4.
+  // 17/14 (336¢ supraminor 3rd), 17/13 (464¢ wide M3), 17/12 (603¢
+  // tritone), 17/11 (754¢ b6), 17/10 (919¢ wide M6), 17/9 (1101¢
+  // wide M7).
   { name: "Heptadecimal Major",
-    // 6 → 17/10 (wide M6), 7 → 17/9 (wide leading-tone).  M3 stays at
-    // 5/4 (no clean 17-prime M3 candidate).  4 and 5 stay anchored.
-    // Two 17-prime tones at the modal-defining 6th and 7th.
-    steps: [["1",0],["2",203.9],["3",386.3],["4",498.0],["5",702.0],["6",918.6],["7",1101.0]] },
+    // 3 → 17/13 (464¢ wide M3 — 17 dominant, 13 in denominator),
+    // 6 → 17/10, 7 → 17/9.  All three modal-defining tones now carry
+    // the 17-prime instead of the previous 5/4 fallback at the 3rd.
+    steps: [["1",0],["2",203.9],["3",464.4],["4",498.0],["5",702.0],["6",918.6],["7",1101.0]] },
   { name: "Heptadecimal Minor",
-    // b3 → 17/14 (supraminor), b6 → 17/11.  b7 falls back to 16/9 (no
-    // clean 17-prime b7).  Optional 17-prime b2 (17/16) tightens the
-    // leading-tone region.
-    steps: [["1",0],["b2",105.0],["b3",336.1],["4",498.0],["5",702.0],["b6",753.6],["b7",996.1]] },
+    // b3 → 17/14, b6 → 17/11, b7 → 17/10 (919¢ — high for a
+    // conventional b7 but the only 17-foregrounded option in the
+    // upper tetrachord, so it stays in to honour the 3 / 6 / 7 rule).
+    steps: [["1",0],["b2",105.0],["b3",336.1],["4",498.0],["5",702.0],["b6",753.6],["b7",918.6]] },
   { name: "Heptadecimal Hijaz",
-    // Hijaz spine (b2 + M3 + b6 with augmented-2nd between b2 and M3).
-    // Substitute b2 → 17/16 and b6 → 17/11.  Two 17-prime tones; the
-    // signature aug-2nd ramp leans on the smaller 17/16.
-    steps: [["1",0],["b2",105.0],["3",386.3],["4",498.0],["5",702.0],["b6",753.6],["b7",996.1]] },
+    // Hijaz spine.  b2 → 17/16, M3 → 17/13 (464¢ wide M3), b6 →
+    // 17/11.  Three 17-prime tones at the genre-defining tones.
+    steps: [["1",0],["b2",105.0],["3",464.4],["4",498.0],["5",702.0],["b6",753.6],["b7",996.1]] },
 
   // ── 19-LIMIT (Nonadecimal) ───────────────────────────────────────────
   // Key 19-prime intervals: 19/18 (94¢ small m2), 19/16 (298¢ m3),
-  // 19/15 (409¢ wide M3), 19/12 (795¢ b6), 19/11 (946¢ b7),
-  // 19/10 (1111¢ wide M7).  No clean 19-prime M6 — Major-mode 6
-  // falls back to 5/3.
+  // 19/15 (409¢ wide M3), 19/13 (657¢ #4-area), 19/12 (795¢ b6-ish),
+  // 19/11 (946¢ b7), 19/10 (1111¢ wide M7).
   { name: "Nonadecimal Major",
-    // 3 → 19/15 (wide M3 at 409¢, between Pyth 81/64 and a wide M3),
-    // 7 → 19/10 (wide leading-tone).  M6 stays at 5/3.  Two 19-prime
-    // substitutions on the modal-defining 3rd and 7th.
-    steps: [["1",0],["2",203.9],["3",409.2],["4",498.0],["5",702.0],["6",884.4],["7",1111.2]] },
+    // 3 → 19/15, 6 → 19/12 (795¢ — flat enough to read as b6, so
+    // this Major leans Mixolydian-with-flat-6 / Phrygian-Major-ish
+    // territory), 7 → 19/10.  All three modal-defining tones are
+    // 19-prime.
+    steps: [["1",0],["2",203.9],["3",409.2],["4",498.0],["5",702.0],["b6",795.0],["7",1111.2]] },
   { name: "Nonadecimal Minor",
     // b3 → 19/16, b6 → 19/12, b7 → 19/11.  Three 19-prime substitutions
     // span the entire modal palette of the minor mode.  4 and 5 stay
@@ -231,15 +230,15 @@ const JI_SCALES: JiScaleSpec[] = [
   //          23/18 (424¢ wide M3), 23/14 (859¢ b6), 23/12 (1126¢
   //          extra-wide M7).  No clean 23-prime M6 or b7.
   { name: "Vicesimotertial Major",
-    // 3 → 23/18 (wide M3, 424¢, brighter than Pyth 81/64 = 408¢),
-    // 7 → 23/12 (extra-stretched leading-tone, 1126¢).  M6 stays at
-    // 5/3, 4 and 5 anchored.  Two 23-prime tones at 3rd and 7th.
-    steps: [["1",0],["2",203.9],["3",424.4],["4",498.0],["5",702.0],["6",884.4],["7",1126.3]] },
+    // 3 → 23/18 (424¢), 6 → 23/14 (859¢ — reads as a Mixolydian-ish
+    // wide M6 / narrow b6), 7 → 23/12 (1126¢).  All three modal-
+    // defining tones now carry the 23-prime.
+    steps: [["1",0],["2",203.9],["3",424.4],["4",498.0],["5",702.0],["6",859.4],["7",1126.3]] },
   { name: "Vicesimotertial Minor",
-    // b3 → 23/19 (329¢ supraminor), b6 → 23/14 (859¢).  b7 falls back
-    // to 16/9 (no clean 23-prime b7 candidate).  Two 23-prime tones at
-    // b3 and b6.
-    steps: [["1",0],["2",203.9],["b3",329.2],["4",498.0],["5",702.0],["b6",859.4],["b7",996.1]] },
+    // b3 → 23/19 (329¢ supraminor), b6 → 23/14 (859¢), b7 → 23/13
+    // (988¢ — 23 dominant, 13 in denominator).  Three 23-foregrounded
+    // tones span the entire minor-mode modal palette.
+    steps: [["1",0],["2",203.9],["b3",329.2],["4",498.0],["5",702.0],["b6",859.4],["b7",987.7]] },
   // 29-LIMIT  Key intervals: 29/27 (124¢ small m2), 29/24 (328¢
   //          supraminor 3rd), 29/23 (401¢ wide M3), 29/18 (770¢ b6),
   //          29/17 (871¢ M6), 29/16 (1030¢ b7).  No clean 29-prime M7
