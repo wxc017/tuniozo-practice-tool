@@ -246,13 +246,13 @@ export default function App() {
   const [responseMode, setResponseMode] = useLS<ResponseMode>("lt_app_responseMode", "Play Audio");
   // droneTonal removed — drone now uses tonicPc directly
   const [droneOct, setDroneOct] = useLS<number>("lt_app_droneOct", 4);
-  const [droneInstrument, setDroneInstrument] = useLS<DroneInstrument>("lt_app_droneInstrument", "cello");
+  const [droneInstrument, setDroneInstrument] = useLS<DroneInstrument>("lt_app_droneInstrument", "tanpura");
   // Snap stale localStorage values (e.g. "violin", "pad_2_warm" from
   // an older catalog) to the default — otherwise the dropdown shows
   // an empty selection and audioEngine.setInstrument silently falls
-  // back to cello without telling the UI.
+  // back to tanpura without telling the UI.
   useEffect(() => {
-    if (!AudioEngine.isValidInstrument(droneInstrument)) setDroneInstrument("cello");
+    if (!AudioEngine.isValidInstrument(droneInstrument)) setDroneInstrument("tanpura");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [droneVol, setDroneVol] = useLS<number>("lt_app_droneVol", 0.08);

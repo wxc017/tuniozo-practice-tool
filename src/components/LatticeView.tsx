@@ -4158,14 +4158,14 @@ export default function LatticeView({ externalHighlights, activeNodeKey, activeN
   const [betaComma] = useLS<boolean>("lt_beta_comma", false);
 
   // ── Persistent drone (sampled instrument tonic) ─────────────────────
-  const [latticeDroneInstrument, setLatticeDroneInstrument] = useLS<DroneInstrument>("lt_lattice_droneInstrument", "cello");
+  const [latticeDroneInstrument, setLatticeDroneInstrument] = useLS<DroneInstrument>("lt_lattice_droneInstrument", "tanpura");
   const [latticeDroneVol, setLatticeDroneVol] = useLS<number>("lt_lattice_droneVol", 0.08);
   const [latticeDroneRoot, setLatticeDroneRoot] = useLS<number>("lt_lattice_droneRoot", 0); // 0-11 pitch class
   const [latticeDroneOctave, setLatticeDroneOctave] = useLS<number>("lt_lattice_droneOctave", 4);
   const [latticeDroneOn, setLatticeDroneOn] = useState(false);
   // Snap stale catalog values to the default (see App.tsx for context).
   useEffect(() => {
-    if (!AudioEngine.isValidInstrument(latticeDroneInstrument)) setLatticeDroneInstrument("cello");
+    if (!AudioEngine.isValidInstrument(latticeDroneInstrument)) setLatticeDroneInstrument("tanpura");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -58,6 +58,13 @@ const TAMBURA_IMAG = new Float32Array(TAMBURA_REAL.length); // all zeros = cosin
 const PHILHARMONIA_BASE = "https://cdn.jsdelivr.net/gh/skratchdot/philharmonia-samples@gh-pages/audio/";
 const TONEJS_BASE       = "https://nbrosowsky.github.io/tonejs-instruments/samples/";
 const MUSYNGKITE_BASE   = "https://gleitz.github.io/midi-js-soundfonts/MusyngKite/";
+// Single CC0 tanpura sample (luckylittleraven, Freesound 416605) — the
+// only redistributable hosted tanpura we found.  6.1 s long, recorded
+// at C#3 with the characteristic jvari buzz of a real Swar Sangam
+// hybrid tanpura (4 drone + 15 sympathetic strings).  Pitched up/down
+// at runtime via playbackRate; 1 sample point so distant tonics get
+// big pitch shifts, but tanpura's textural character survives that.
+const FREESOUND_TANPURA_URL = "https://cdn.freesound.org/previews/416/416605_2112203-hq.mp3";
 
 /** Curated drone instrument list — canonical drones from the world
  *  music traditions per direct user direction (2026-05-05): cello +
@@ -66,6 +73,7 @@ const MUSYNGKITE_BASE   = "https://gleitz.github.io/midi-js-soundfonts/MusyngKit
  *  instruments in the traditional sense.  Source dispatch
  *  (Philharmonia / tonejs / MusyngKite) lives in INSTRUMENT_SOURCES. */
 export const DRONE_INSTRUMENTS = [
+  { id: "tanpura",            label: "Tanpura" },
   { id: "sitar",              label: "Sitar" },
   { id: "harmonium",          label: "Harmonium" },
   { id: "cello",              label: "Cello" },
@@ -126,6 +134,14 @@ interface SourceConfig {
 }
 
 const INSTRUMENT_SOURCES: Record<DroneInstrument, SourceConfig> = {
+  // Freesound CC0 tanpura — single C#3 sample, pitched at runtime.
+  // The url builder ignores the note arg (we always fetch the same
+  // file); the notes array carries one label so noteLabelToMidi tags
+  // the buffer at MIDI 49 (C#3) for the closest-sample picker.
+  tanpura: {
+    url: () => FREESOUND_TANPURA_URL,
+    notes: ["Cs3"],
+  },
   // Philharmonia: pro-recorded chromatic cello.  `_15_` = 1.5-second
   // sustain (longer than the default 1s) — gives the crossfade looper
   // a steadier middle to anchor on before the release-tail fade.
@@ -174,7 +190,7 @@ export class AudioEngine {
   private sampleBuffer: AudioBuffer | null = null;
   private instrumentSamples: Map<string, InstrumentSample[]> = new Map();
   private instrumentLoadPromises: Map<string, Promise<void>> = new Map();
-  private currentInstrument: DroneInstrument = "cello";
+  private currentInstrument: DroneInstrument = "tanpura";
   private droneNodes: OscillatorNode[] = [];
   private droneSamples: AudioBufferSourceNode[] = [];
   // Crossfade looper timers — see spawnSampleLoop().  Tracked here so
