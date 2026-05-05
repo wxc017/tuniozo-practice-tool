@@ -1689,10 +1689,12 @@ interface MonzoNodeMeshProps {
   node: LatticeNode;
   pos: [number, number, number];
   isActive: boolean;
-  /** Optional per-node override colour for the active highlight,
-   *  used by the chord-tab harmonic-lattice toggle buttons to paint
-   *  pinned chords each in their own colour. */
-  activeColor?: string;
+  /** Optional per-node override colour(s) for the active highlight.
+   *  Single-element array → whole-sphere fill (the common case).
+   *  Multi-element array → render N equal pie-slice wedges, one per
+   *  colour, so a chord-tone shared between multiple pinned chords
+   *  shows every chord's colour at once. */
+  activeColors?: string[];
   isHovered: boolean;
   isFocused?: boolean;
   showLabel?: boolean;
@@ -1747,7 +1749,14 @@ const TEMPER_CLASS_COLORS = [
   "#ff8844", "#44ff88", "#8844ff", "#ffaa66", "#66ffaa", "#aa66ff",
 ];
 
-function MonzoNodeMesh({ node, pos, isActive, activeColor, isHovered, isFocused, showLabel = true, labelLOD = false, labelDist = 15, onHover, onClick, onFocus, onCtrlClick, primes, temperedClass, classColorMap, rootPc, showNoteNames = true, showIntervals = true, showRatios = true, showMonzo = false, showHeji = false, temperedSiblings, isClassRep, isOnPath, isPathEndpoint, isPinnedPath, isHighlighted, highlightMode, isNonRepClass, showClassId, edo, forceDim = false }: MonzoNodeMeshProps) {
+function MonzoNodeMesh({ node, pos, isActive, activeColors, isHovered, isFocused, showLabel = true, labelLOD = false, labelDist = 15, onHover, onClick, onFocus, onCtrlClick, primes, temperedClass, classColorMap, rootPc, showNoteNames = true, showIntervals = true, showRatios = true, showMonzo = false, showHeji = false, temperedSiblings, isClassRep, isOnPath, isPathEndpoint, isPinnedPath, isHighlighted, highlightMode, isNonRepClass, showClassId, edo, forceDim = false }: MonzoNodeMeshProps) {
+  // First colour from the override list — drives the legacy single-
+  // colour code paths (emissive, label tint, etc.).  When the array
+  // has more than one entry, the actual sphere fill is rendered as
+  // pie-slice wedges further below; the rest of the node visuals
+  // still pick up the first colour as their representative.
+  const activeColor = activeColors && activeColors.length > 0 ? activeColors[0] : undefined;
+  const isMultiColor = !!(activeColors && activeColors.length > 1 && isActive);
   const isDimmed = (highlightMode && !isHighlighted && !isActive && !isFocused && !isOnPath)
     || (forceDim && !isActive && !isHovered && !isFocused && !isHighlighted)
     || isNonRepClass;
@@ -1815,23 +1824,69 @@ function MonzoNodeMesh({ node, pos, isActive, activeColor, isHovered, isFocused,
 
   return (
     <group position={pos}>
-      <mesh
-        onPointerOver={(e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); onHover(node.key); }}
-        onPointerOut={() => onHover(null)}
-        onClick={(e: ThreeEvent<MouseEvent>) => {
-          e.stopPropagation();
-          if (e.nativeEvent.shiftKey && onFocus) { onFocus(node.key); }
-          else if ((e.nativeEvent.ctrlKey || e.nativeEvent.metaKey) && onCtrlClick) { onCtrlClick(node); }
-          else { onClick(node); }
-        }}
-        scale={isHovered ? 1.3 : isActive ? 1.2 : isFocused ? 1.15 : 1}
-      >
-        <sphereGeometry args={[r, 12, 8]} />
-        <meshStandardMaterial color={color} emissive={emissive}
-          emissiveIntensity={isHighlighted ? 0.7 : isFocused ? 0.5 : isHovered ? 0.6 : isActive ? 0.8 : isPathEndpoint ? 0.5 : isOnPath ? 0.3 : 0}
-          roughness={0.5} metalness={0.3}
-          transparent={isDimmed} opacity={isDimmed ? 0.35 : 1} />
-      </mesh>
+      {isMultiColor && activeColors ? (
+        // Multi-colour wedge sphere: N equal pie slices around the
+        // azimuth axis, one per chord that claims this node.  Each
+        // wedge is its own partial-sphere mesh (phiStart / phiLength)
+        // sharing the same emissive intensity — so the user sees a
+        // pinwheel of every chord's colour on the shared tone.  The
+        // pointer / click handlers are attached to a transparent
+        // pickable overlay so all wedges count as one click target.
+        <>
+          {activeColors.map((c, idx) => {
+            const phiLength = (Math.PI * 2) / activeColors.length;
+            const phiStart = phiLength * idx;
+            return (
+              <mesh
+                key={`wedge-${idx}`}
+                scale={isHovered ? 1.3 : isActive ? 1.2 : isFocused ? 1.15 : 1}
+              >
+                <sphereGeometry args={[r, 16, 10, phiStart, phiLength]} />
+                <meshStandardMaterial
+                  color={c} emissive={c}
+                  emissiveIntensity={0.8}
+                  roughness={0.5} metalness={0.3}
+                  side={THREE.DoubleSide}
+                  transparent={isDimmed} opacity={isDimmed ? 0.35 : 1} />
+              </mesh>
+            );
+          })}
+          {/* Invisible pickable sphere — keeps hover / click semantics
+              identical to the single-colour render. */}
+          <mesh
+            onPointerOver={(e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); onHover(node.key); }}
+            onPointerOut={() => onHover(null)}
+            onClick={(e: ThreeEvent<MouseEvent>) => {
+              e.stopPropagation();
+              if (e.nativeEvent.shiftKey && onFocus) { onFocus(node.key); }
+              else if ((e.nativeEvent.ctrlKey || e.nativeEvent.metaKey) && onCtrlClick) { onCtrlClick(node); }
+              else { onClick(node); }
+            }}
+            scale={isHovered ? 1.3 : isActive ? 1.2 : isFocused ? 1.15 : 1}
+          >
+            <sphereGeometry args={[r * 1.001, 12, 8]} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+          </mesh>
+        </>
+      ) : (
+        <mesh
+          onPointerOver={(e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); onHover(node.key); }}
+          onPointerOut={() => onHover(null)}
+          onClick={(e: ThreeEvent<MouseEvent>) => {
+            e.stopPropagation();
+            if (e.nativeEvent.shiftKey && onFocus) { onFocus(node.key); }
+            else if ((e.nativeEvent.ctrlKey || e.nativeEvent.metaKey) && onCtrlClick) { onCtrlClick(node); }
+            else { onClick(node); }
+          }}
+          scale={isHovered ? 1.3 : isActive ? 1.2 : isFocused ? 1.15 : 1}
+        >
+          <sphereGeometry args={[r, 12, 8]} />
+          <meshStandardMaterial color={color} emissive={emissive}
+            emissiveIntensity={isHighlighted ? 0.7 : isFocused ? 0.5 : isHovered ? 0.6 : isActive ? 0.8 : isPathEndpoint ? 0.5 : isOnPath ? 0.3 : 0}
+            roughness={0.5} metalness={0.3}
+            transparent={isDimmed} opacity={isDimmed ? 0.35 : 1} />
+        </mesh>
+      )}
       {shouldShowLabel && (
         <Html
           position={[0, r + 0.12, 0]}
@@ -2054,11 +2109,15 @@ interface MonzoSceneProps {
   lattice: BuiltLattice;
   topology: TopologyInfo;
   droneNodes: Set<string>;
-  /** Optional per-node colour override — paints `isActive` nodes in
-   *  the supplied colour instead of the default #7173e6.  Used by
-   *  the chord-tab harmonic-lattice toggle buttons to render each
-   *  pinned chord in a distinct colour. */
-  nodeColorOverrides?: Map<string, string>;
+  /** Per-node colour override — each value is a LIST of colours.  A
+   *  single-element array fills the whole sphere with that colour (the
+   *  normal case).  When the same node belongs to N pinned chord
+   *  overlays simultaneously, all N colours appear in the array and
+   *  the node is rendered as N equal pie-slice wedges (one per
+   *  sharing chord) so the user can see exactly which chords share
+   *  that lattice cell.  Used by ChordsTab's harmonic-lattice toggle
+   *  buttons. */
+  nodeColorOverrides?: Map<string, string[]>;
   /** Curved arcs that arch up out of the lattice surface, one per
    *  comma-drift-compensated chord.  Each arc connects the chord's
    *  uncompensated class rep to its compensated rep so the user can
@@ -2716,7 +2775,7 @@ function MonzoScene({ lattice, topology, droneNodes, nodeColorOverrides, compens
           node={node}
           pos={layers.classes ? lattice.jiPositions.get(node.key) ?? node.pos3d : (topoPositions ?? lattice.positions).get(node.key) ?? node.pos3d}
           isActive={droneNodes.has(node.key)}
-          activeColor={nodeColorOverrides?.get(node.key)}
+          activeColors={nodeColorOverrides?.get(node.key)}
           forceDim={dimGeneratorEdges === true}
           isHovered={hoveredNode === node.key}
           isFocused={focusKey === node.key}
@@ -4616,20 +4675,32 @@ export default function LatticeView({ externalHighlights, activeNodeKey, activeN
     const hasPins = (pinnedChordOverlays?.length ?? 0) > 0;
     const hasArcs = (compensationArcs?.length ?? 0) > 0;
     if (!hasPins && !hasArcs) return undefined;
-    const map = new Map<string, string>();
+    // Each node-key now maps to a LIST of colours.  When two pinned
+    // chords share an EDO class, the lattice cell appears in BOTH
+    // overlay arrays — both colours land in the array and the mesh
+    // renders pie-slice wedges (one per chord) so the user sees the
+    // tone as a member of every chord that contains it, not just
+    // the first overlay's colour.
+    const map = new Map<string, string[]>();
     if (pinnedChordOverlays) {
       for (const overlay of pinnedChordOverlays) {
         for (const [key, classId] of monzoLattice.classMap) {
           if (!overlay.classes.has(classId)) continue;
-          if (!map.has(key)) map.set(key, overlay.color);
+          if (!map.has(key)) map.set(key, []);
+          const arr = map.get(key)!;
+          if (!arr.includes(overlay.color)) arr.push(overlay.color);
         }
       }
     }
     if (compensationArcs) {
+      // Drifted-from cells get the comma-pump red, OVERRIDING any
+      // chord-pin colours: the comp-pump reading is the load-bearing
+      // signal when a comma actually fires, and shouldn't get diluted
+      // by sharing a slice of the wedge with a chord-pin colour.
       const driftedClasses = new Set<number>();
       for (const arc of compensationArcs) driftedClasses.add(arc.fromClassId);
       for (const [key, classId] of monzoLattice.classMap) {
-        if (driftedClasses.has(classId)) map.set(key, "#ff5555");
+        if (driftedClasses.has(classId)) map.set(key, ["#ff5555"]);
       }
     }
     return map.size > 0 ? map : undefined;
