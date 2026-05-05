@@ -2466,17 +2466,13 @@ function MonzoScene({ lattice, topology, droneNodes, nodeColorOverrides, compens
         ));
       })()}
 
-      {/* Comma-compensation arcs — quadratic-Bezier curves that arch
-          up out of the cylinder surface to show, per chord, exactly
-          which EDO step the adaptive-JI playback used to compensate
-          for accumulated comma drift.  The lift puts them visibly
-          above the in-plane P5 / M3 generator edges so they don't
-          read as just another generator-chain segment. */}
+      {/* Comma-compensation edges — one straight line segment per
+          chord that needed a non-zero drift offset.  The drifted
+          node (uncompensated rep) is also painted red via the
+          drone-nodes pipeline (see effect in LatticeView body).
+          Edge connects red drifted node → played compensated node. */}
       {compensationArcs && compensationArcs.length > 0 && (() => {
         const posMap = topoPositions ?? lattice.positions;
-        // Build a class-id → simplest-rep-key map identical to the
-        // one the EDO edge code uses, so the arcs land on the
-        // visible class reps and not on tempered siblings.
         const classToRep = new Map<number, string>();
         const memberByClass = new Map<number, string[]>();
         for (const [key, classId] of lattice.classMap) {
@@ -2488,49 +2484,28 @@ function MonzoScene({ lattice, topology, droneNodes, nodeColorOverrides, compens
             ?? (members.length === 1 ? members[0] : null);
           if (rep) classToRep.set(classId, rep);
         }
-        return compensationArcs.map((arc, i) => {
+        const pts: [number, number, number][] = [];
+        for (const arc of compensationArcs) {
           const fromKey = classToRep.get(arc.fromClassId);
           const toKey = classToRep.get(arc.toClassId);
-          if (!fromKey || !toKey) return null;
+          if (!fromKey || !toKey) continue;
           const a = posMap.get(fromKey);
           const b = posMap.get(toKey);
-          if (!a || !b) return null;
-          // Quadratic Bezier with control point lifted above and
-          // pushed slightly outward so the arc clears any nodes
-          // between the endpoints.  Lift scales with the chord
-          // index so simultaneous arcs don't all sit at exactly
-          // the same height and become indistinguishable.
-          const mx = (a[0] + b[0]) / 2;
-          const my = (a[1] + b[1]) / 2;
-          const mz = (a[2] + b[2]) / 2;
-          const lift = 6 + (arc.chordIdx % 4) * 1.5;
-          // Push outward radially (away from cylinder centre at xz origin).
-          const radial = Math.hypot(mx, mz);
-          const outScale = radial > 0.001 ? (radial + 3) / radial : 1;
-          const cx = mx * outScale;
-          const cz = mz * outScale;
-          const cy = my + lift;
-          const SEGMENTS = 32;
-          const pts: [number, number, number][] = [];
-          for (let s = 0; s <= SEGMENTS; s++) {
-            const t = s / SEGMENTS;
-            const u = 1 - t;
-            const px = u * u * a[0] + 2 * u * t * cx + t * t * b[0];
-            const py = u * u * a[1] + 2 * u * t * cy + t * t * b[1];
-            const pz = u * u * a[2] + 2 * u * t * cz + t * t * b[2];
-            pts.push([px, py, pz]);
-          }
-          return (
-            <Line
-              key={`comp-arc-${i}`}
-              points={pts}
-              color={arc.color}
-              lineWidth={2.5}
-              transparent
-              opacity={0.95}
-            />
-          );
-        });
+          if (!a || !b) continue;
+          pts.push(a, b);
+        }
+        if (pts.length === 0) return null;
+        return (
+          <lineSegments key="comp-edges" frustumCulled={false}>
+            <bufferGeometry>
+              <bufferAttribute
+                attach="attributes-position"
+                args={[new Float32Array(pts.flat()), 3]}
+              />
+            </bufferGeometry>
+            <lineBasicMaterial color="#ff5555" transparent opacity={0.9} linewidth={2} />
+          </lineSegments>
+        );
       })()}
 
       {/* Tempered edges — batched */}
@@ -4504,34 +4479,50 @@ export default function LatticeView({ externalHighlights, activeNodeKey, activeN
     for (const overlay of pinnedChordOverlays ?? []) {
       for (const c of overlay.classes) pinnedClasses.add(c);
     }
-    if (activeClassIds === undefined && pinnedClasses.size === 0) return;
-    if (liveActive.size === 0 && pinnedClasses.size === 0) {
+    const driftedClasses = new Set<number>();
+    for (const arc of compensationArcs ?? []) {
+      driftedClasses.add(arc.fromClassId);
+    }
+    if (activeClassIds === undefined && pinnedClasses.size === 0 && driftedClasses.size === 0) return;
+    if (liveActive.size === 0 && pinnedClasses.size === 0 && driftedClasses.size === 0) {
       setDroneNodes(new Set());
       return;
     }
     const keys = new Set<string>();
     for (const [key, classId] of monzoLattice.classMap) {
-      if (liveActive.has(classId) || pinnedClasses.has(classId)) keys.add(key);
+      if (liveActive.has(classId) || pinnedClasses.has(classId) || driftedClasses.has(classId)) keys.add(key);
     }
     setDroneNodes(keys);
-  }, [activeClassIds, pinnedChordOverlays, monzoLattice.classMap]);
+  }, [activeClassIds, pinnedChordOverlays, compensationArcs, monzoLattice.classMap]);
 
-  // Per-node colour override map.  Walks pinnedChordOverlays in order
-  // and assigns each overlay's colour to all of its class members'
-  // node keys; first overlay wins on conflict.  Empty when no overlays
-  // are supplied, in which case MonzoNodeMesh falls back to the
-  // default active highlight colour.
+  // Per-node colour override map.  Pinned-chord overlays paint their
+  // class members in the overlay colour; drifted classes (the from-
+  // ends of compensation arcs) paint RED so the user can see at a
+  // glance which node had to be compensated for.  Drifted-red wins
+  // over pinned colour because the compensation reading is the
+  // important signal when a comma-pump occurred.
   const monzoNodeColorOverrides = useMemo(() => {
-    if (!pinnedChordOverlays || pinnedChordOverlays.length === 0) return undefined;
+    const hasPins = (pinnedChordOverlays?.length ?? 0) > 0;
+    const hasArcs = (compensationArcs?.length ?? 0) > 0;
+    if (!hasPins && !hasArcs) return undefined;
     const map = new Map<string, string>();
-    for (const overlay of pinnedChordOverlays) {
+    if (pinnedChordOverlays) {
+      for (const overlay of pinnedChordOverlays) {
+        for (const [key, classId] of monzoLattice.classMap) {
+          if (!overlay.classes.has(classId)) continue;
+          if (!map.has(key)) map.set(key, overlay.color);
+        }
+      }
+    }
+    if (compensationArcs) {
+      const driftedClasses = new Set<number>();
+      for (const arc of compensationArcs) driftedClasses.add(arc.fromClassId);
       for (const [key, classId] of monzoLattice.classMap) {
-        if (!overlay.classes.has(classId)) continue;
-        if (!map.has(key)) map.set(key, overlay.color);
+        if (driftedClasses.has(classId)) map.set(key, "#ff5555");
       }
     }
     return map.size > 0 ? map : undefined;
-  }, [pinnedChordOverlays, monzoLattice.classMap]);
+  }, [pinnedChordOverlays, compensationArcs, monzoLattice.classMap]);
 
   // Projection loss: ratio of variance lost when tempering collapses dimensions
   const projectionLoss = useMemo(() => {
