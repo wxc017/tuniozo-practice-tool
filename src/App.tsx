@@ -1065,9 +1065,13 @@ export default function App() {
 
       {/* Sticky keyboard — sits as a direct child of the scrolling root
           (not nested in the header) so its `sticky top-0` containing block
-          spans the full scroll range. Only shown in tonal audiation. */}
+          spans the full scroll range. Only shown in tonal audiation.
+          z-50 is well above any in-content overlay (LatticeView's controls
+          live at z-20–30, comp arcs / chord overlays even lower) so the
+          visualizer always paints over scrolled-past content rather than
+          getting visually overlapped by floating panels below it. */}
       {(section === "ear-trainer" || section === "scalar-exploration") && (
-        <div id="main-visualizer" className="sticky top-0 z-30 bg-[#0d0d0d] border-b border-[#1e1e1e] px-4 pt-2 pb-2 flex-shrink-0">
+        <div id="main-visualizer" className="sticky top-0 z-50 bg-[#0d0d0d] border-b border-[#1e1e1e] px-4 pt-2 pb-2 flex-shrink-0" style={{ position: "sticky", top: 0 }}>
           {edo === 12 && vizType === "piano" ? (
             <PianoKeyboard highlightedPitches={highlighted}
               onKeyClick={async (k) => { await ensureAudio(); handleKeyClick(k as ComputedKey); }} />
