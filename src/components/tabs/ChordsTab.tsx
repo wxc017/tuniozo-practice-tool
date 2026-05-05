@@ -351,6 +351,14 @@ export default function ChordsTab({
   const [loopGap, setLoopGap] = useLS<number>("lt_crd_fh_gap", 1.5);
   const [chordDur, setChordDur] = useLS<number>("lt_crd_fh_dur", 0.65);
   const [isLooping, setIsLooping] = useState(false);
+  // Currently-playing tonality preview (the small ▶ button per scale).
+  // Used to disable the same scale's ▶ while its preview run + 5 s
+  // hold are still in flight, so the user can't stack multiple
+  // overlapping playbacks of the same scale.  Other scales' buttons
+  // remain clickable — clicking a different one will cancel the
+  // previous via frameTimers + audioEngine.silencePlay.
+  const [playingTonality, setPlayingTonality] = useState<string | null>(null);
+  const playingTonalityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loopTimerId = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLoopingRef = useRef(false);
   const [currentLoop, setCurrentLoop] = useState<string[] | null>(null);
@@ -1207,6 +1215,16 @@ export default function ChordsTab({
     frameTimers.current.push(holdId);
     const clearId = setTimeout(() => onHighlight([]), holdStart + HOLD_MS);
     frameTimers.current.push(clearId);
+    // Block re-triggering this same scale until the ascending run +
+    // 5 s sustained hold both finish.  Clicking a different scale's
+    // ▶ cancels everything via the frameTimers clear at the top of
+    // this function and re-arms the lockout for the new scale.
+    if (playingTonalityTimer.current) clearTimeout(playingTonalityTimer.current);
+    setPlayingTonality(tonality);
+    playingTonalityTimer.current = setTimeout(() => {
+      setPlayingTonality(null);
+      playingTonalityTimer.current = null;
+    }, holdStart + HOLD_MS);
   }, [edo, tonicPc, lowestPitch, playVol, harmonyVol, ensureAudio, onHighlight]);
 
   const CHORD_BOOST = 2.2;
@@ -1622,8 +1640,9 @@ export default function ChordsTab({
                             {formatHalfAccidentals(t)}
                           </button>
                           <button onClick={(e) => { e.stopPropagation(); previewTonalityScale(t); }}
-                            title="Preview scale"
-                            className={`px-1.5 py-1 text-[9px] rounded-r border-y border-r transition-colors ${
+                            disabled={playingTonality === t}
+                            title={playingTonality === t ? "Already playing — wait for it to finish" : "Preview scale"}
+                            className={`px-1.5 py-1 text-[9px] rounded-r border-y border-r transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                               on ? "" : "bg-[#0a0a0a] border-[#2a2a2a] text-[#555] hover:text-[#aaa]"
                             }`}
                             style={on ? { backgroundColor: section.color + "20", borderColor: section.color, color: section.color } : {}}>

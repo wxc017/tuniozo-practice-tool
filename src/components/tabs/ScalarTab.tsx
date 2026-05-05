@@ -154,6 +154,11 @@ export default function ScalarTab({
   // button again (toggle).  Identified by `${level}-${idx}` so the same
   // Roman numeral can appear in multiple levels without colliding.
   const [highlightedChordKey, setHighlightedChordKey] = useState<string | null>(null);
+  // True while playSequence's ascending run + 5 s sustained hold are
+  // still in flight.  Used to disable Play Scale so the user can't
+  // stack overlapping playbacks of the same scale.
+  const [isPlayingSequence, setIsPlayingSequence] = useState(false);
+  const playSequenceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // All tonality banks for the current EDO.  showSevenths = true so the
   // chord pool exposes 7th-quality suffixes (Scalar Exploration is a
@@ -197,6 +202,11 @@ export default function ScalarTab({
     frameTimers.current.forEach(id => clearTimeout(id));
     frameTimers.current = [];
     if (droneTimerRef.current) { clearTimeout(droneTimerRef.current); droneTimerRef.current = null; }
+    if (playSequenceTimer.current) {
+      clearTimeout(playSequenceTimer.current);
+      playSequenceTimer.current = null;
+      setIsPlayingSequence(false);
+    }
     audioEngine.stopDrone();
     audioEngine.silencePlay();
     setDronedStep(null);
@@ -233,6 +243,15 @@ export default function ScalarTab({
     frameTimers.current.push(holdId);
     const clearId = setTimeout(() => onHighlight([]), holdStart + HOLD_MS);
     frameTimers.current.push(clearId);
+    // Lock the Play Scale button until the run + sustained hold both
+    // finish — clearing any prior lockout so a Clear / new scale
+    // doesn't leave the button stuck disabled.
+    if (playSequenceTimer.current) clearTimeout(playSequenceTimer.current);
+    setIsPlayingSequence(true);
+    playSequenceTimer.current = setTimeout(() => {
+      setIsPlayingSequence(false);
+      playSequenceTimer.current = null;
+    }, holdStart + HOLD_MS);
   }, [view, baseTonic, edo, ensureAudio, playVol, onHighlight]);
 
   // Static highlight: light up the entire scale at once on the keyboard.
@@ -548,7 +567,9 @@ export default function ScalarTab({
               {formatHalfAccidentals(selected)}
             </h3>
             <button onClick={playSequence}
-              className="text-[11px] px-3 py-1 rounded border border-[#2a2a2a] bg-[#141414] text-[#aaa] hover:text-white hover:border-[#444]">
+              disabled={isPlayingSequence}
+              title={isPlayingSequence ? "Already playing — wait for it to finish" : undefined}
+              className="text-[11px] px-3 py-1 rounded border border-[#2a2a2a] bg-[#141414] text-[#aaa] hover:text-white hover:border-[#444] disabled:opacity-50 disabled:cursor-not-allowed">
               ▶ Play Scale
             </button>
             <button onClick={highlightAll}
