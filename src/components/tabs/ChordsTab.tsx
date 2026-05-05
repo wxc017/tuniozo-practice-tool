@@ -567,7 +567,21 @@ export default function ChordsTab({
     fhFramesRef.current = null;
     setPinnedChordIdxs(new Set());
     setTonalitySet(prev => {
-      const filtered = [...prev].filter(t => banksByName[t]);
+      const stripJiNames = !(edo === 41 || edo === 53);
+      const filtered = [...prev].filter(t => {
+        // Drop tonalities that don't have a bank in the new EDO.
+        if (!banksByName[t]) return false;
+        // Defensive (per user direction 2026-05-05): when switching
+        // to an EDO that isn't 41 or 53, also drop any tonality
+        // whose name starts with "Diatonic " — those are JI scale
+        // names registered only for 41 / 53 in jiScaleData.ts and
+        // should never persist into other EDO pickers.  Without
+        // this, a "Diatonic Major" picked in 41-EDO would remain
+        // selected (and potentially listed) when the user flips to
+        // 31-EDO.
+        if (stripJiNames && t.startsWith("Diatonic ")) return false;
+        return true;
+      });
       if (filtered.length === prev.size) return prev;
       return new Set(filtered);
     });
@@ -1793,8 +1807,20 @@ export default function ChordsTab({
           // Filter families to those with at least one bank-backed
           // tonality available for this EDO; drop empty sections so the
           // picker doesn't render headers for limits with no scales.
+          // Defensive guard (per user direction 2026-05-05): for any
+          // EDO that's NOT 41 or 53, strip any tonality whose name
+          // starts with "Diatonic " — those are JI scale names that
+          // belong only to the curated 41/53 picker.  Even if they
+          // sneak into the section list through some other code path,
+          // they shouldn't reach the user.
+          const stripJiNames = !(edo === 41 || edo === 53);
           const usableFamilies = section.families
-            .map(f => ({ ...f, tonalities: f.tonalities.filter(t => banksByName[t]) }))
+            .map(f => ({
+              ...f,
+              tonalities: f.tonalities
+                .filter(t => banksByName[t])
+                .filter(t => !stripJiNames || !t.startsWith("Diatonic ")),
+            }))
             .filter(f => f.tonalities.length > 0);
           if (usableFamilies.length === 0) return null;
           return (
