@@ -2048,6 +2048,14 @@ export default function ChordsTab({
                       </div>
                     );
                   })()}
+                  {/* Chord cards laid out side by side (flex-wrap)
+                      so the user sees the whole progression at a
+                      glance and the cards reflow onto multiple rows
+                      only when the viewport is too narrow.  Each card
+                      keeps its internal stacked-tone layout — chord-
+                      relative gold on top, scale-relative mauve below
+                      per note. */}
+                  <div className="flex flex-wrap gap-2 items-start">
                   {fhAnswer.chords.map(chord => {
                     const ana = analysisForChord(chord.numeral);
                     // Comma-compensation note for this chord, if any.
@@ -2081,7 +2089,7 @@ export default function ChordsTab({
                       }
                     }
                     return (
-                    <div key={chord.index} className="space-y-1">
+                    <div key={chord.index} className="space-y-1 flex-shrink-0 rounded border border-[#1a1a14] bg-[#0c0a08] p-2">
                       <p className="text-[10px] text-[#c8a850] font-medium flex items-baseline gap-2 flex-wrap">
                         <span>[{chord.index}] <span className="font-mono text-[12px]">{(() => {
                           const prefix = (edo === 41 || edo === 53) && fhAnswer.scaleTonality
@@ -2148,32 +2156,23 @@ export default function ChordsTab({
                                 `chord-relative: ${intervalChord} · ${heathwaiteChord} · ${microChord.label} /${microChord.ipa}/\n` +
                                 `scale-relative: ${intervalScale} · ${heathwaiteScale} · ${microScale.label} /${microScale.ipa}/`
                               }
-                              className="flex flex-row items-center px-2 py-1 rounded border border-[#3a3a1a] bg-[#2a1a0a] hover:bg-[#3a2a1a] hover:border-[#c8a850] transition-colors gap-1.5">
-                              {/* Side-by-side: chord-relative (gold,
-                                  root=Do) on the LEFT, an arrow in the
-                                  middle, scale-relative (mauve, tonic=
-                                  Do) on the RIGHT.  Each syllable is an
-                                  independent clickable that triggers
+                              className="flex flex-col items-center px-2 py-1 rounded border border-[#3a3a1a] bg-[#2a1a0a] hover:bg-[#3a2a1a] hover:border-[#c8a850] transition-colors min-w-[64px]">
+                              {/* Chord-relative block (gold).  Each syllable
+                                  is an independent clickable that triggers
                                   TTS via the browser's Web Speech API.
-                                  stopPropagation prevents the parent
-                                  button from firing the pitch-play
-                                  handler. */}
-                              <div className="flex flex-col items-center min-w-[58px]">
-                                <span className="text-[10px] text-[#e0c860] font-bold leading-tight">
-                                  {intervalChord}
-                                </span>
-                                <SaySpan text={heathwaiteChord} ipa={heathwaiteIpa(heathwaiteChord)}
-                                  className="text-[9px] text-[#aaa] leading-tight px-1 rounded hover:bg-[#3a3a1a] cursor-pointer"
-                                  title={`Hear "${heathwaiteChord}" spoken`} />
-                                <SaySpan text={microChord.label} ipa={microChord.ipa}
-                                  className="text-[8px] text-[#777] font-mono leading-tight px-1 rounded hover:bg-[#3a3a1a] cursor-pointer"
-                                  title={`Hear "${microChord.label}" /${microChord.ipa}/ spoken`} />
-                              </div>
-                              {/* Arrow: chord-relative → scale-relative.
-                                  Visually anchors which side is "Do = chord
-                                  root" vs "Do = scale tonic". */}
-                              <span className="text-[#5a5a3a] text-[14px] leading-none select-none" aria-hidden>→</span>
-                              <div className="flex flex-col items-center min-w-[58px]">
+                                  stopPropagation prevents the parent button
+                                  from also firing the pitch-play handler. */}
+                              <span className="text-[10px] text-[#e0c860] font-bold leading-tight">
+                                {intervalChord}
+                              </span>
+                              <SaySpan text={heathwaiteChord} ipa={heathwaiteIpa(heathwaiteChord)}
+                                className="text-[9px] text-[#aaa] leading-tight px-1 rounded hover:bg-[#3a3a1a] cursor-pointer"
+                                title={`Hear "${heathwaiteChord}" spoken`} />
+                              <SaySpan text={microChord.label} ipa={microChord.ipa}
+                                className="text-[8px] text-[#777] font-mono leading-tight px-1 rounded hover:bg-[#3a3a1a] cursor-pointer"
+                                title={`Hear "${microChord.label}" /${microChord.ipa}/ spoken`} />
+                              <span className="block w-full border-t border-[#3a3a1a] my-1"></span>
+                              {/* Scale-relative block (mauve) */}
                               <span className="text-[10px] text-[#c896c8] font-bold leading-tight">
                                 {intervalScale}
                               </span>
@@ -2183,7 +2182,6 @@ export default function ChordsTab({
                               <SaySpan text={microScale.label} ipa={microScale.ipa}
                                 className="text-[8px] text-[#777] font-mono leading-tight px-1 rounded hover:bg-[#3a3a1a] cursor-pointer"
                                 title={`Hear "${microScale.label}" /${microScale.ipa}/ spoken`} />
-                              </div>
                             </button>
                           );
                         })}
@@ -2191,6 +2189,7 @@ export default function ChordsTab({
                     </div>
                     );
                   })}
+                  </div>{/* end side-by-side chord-card row */}
                   </div>{/* end chord-tone column */}
 
                   {/* Full-width Harmonic Lattice — re-uses the main
