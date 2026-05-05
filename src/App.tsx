@@ -153,6 +153,77 @@ interface SlotHistoryEntry {
 }
 
 
+/** Two-wrapper layout for the Scalar Exploration section so the sticky
+ *  main visualizer releases as the user scrolls past the chord/scale
+ *  content (per direct user direction 2026-05-05).  ScalarTab portals
+ *  its 3D mode lattice into the second wrapper via latticePortalTarget;
+ *  the first wrapper bounds the sticky element and ends right before
+ *  the lattice. */
+function ScalarExplorationLayout(props: {
+  tonicPc: number;
+  lowestPitch: number;
+  highestPitch: number;
+  edo: number;
+  vizType: VisualizerType;
+  highlighted: Set<number>;
+  layout: LayoutResult | null;
+  ensureAudio: () => Promise<void>;
+  handleKeyClick: (k: ComputedKey) => void;
+  handleHighlight: (pcs: number[]) => void;
+  playVol: number;
+}) {
+  const {
+    tonicPc, lowestPitch, highestPitch, edo, vizType, highlighted, layout,
+    ensureAudio, handleKeyClick, handleHighlight, playVol,
+  } = props;
+  const latticeTargetRef = useRef<HTMLDivElement | null>(null);
+  // Force a re-render after the ref attaches so ScalarTab's portal
+  // call sees a non-null target on the first paint.
+  const [, setTargetReady] = useState(0);
+  return (
+    <>
+      <div className="flex flex-col">
+        <div id="main-visualizer" className="sticky top-0 z-50 bg-[#0d0d0d] border-b border-[#1e1e1e] px-4 pt-2 pb-2 flex-shrink-0" style={{ position: "sticky", top: 0 }}>
+          {edo === 12 && vizType === "piano" ? (
+            <PianoKeyboard highlightedPitches={highlighted}
+              onKeyClick={async (k) => { await ensureAudio(); handleKeyClick(k as ComputedKey); }} />
+          ) : edo === 12 && vizType === "guitar" ? (
+            <GuitarFretboard highlightedPitches={highlighted}
+              onKeyClick={async (k) => { await ensureAudio(); handleKeyClick(k as ComputedKey); }} />
+          ) : edo === 12 && vizType === "bass" ? (
+            <BassFretboard highlightedPitches={highlighted}
+              onKeyClick={async (k) => { await ensureAudio(); handleKeyClick(k as ComputedKey); }} />
+          ) : layout ? (
+            <LumatoneKeyboard layout={layout} highlightedPitches={highlighted}
+              onKeyClick={async (k) => { await ensureAudio(); handleKeyClick(k); }} />
+          ) : (
+            <div className="bg-[#111] rounded-xl border border-[#222] h-36 flex items-center justify-center text-[#444] text-xs">
+              Loading keyboard…
+            </div>
+          )}
+        </div>
+        <div className="px-4 pt-3">
+          <div className="max-w-6xl mx-auto w-full">
+            <ScalarTab tonicPc={tonicPc} lowestPitch={lowestPitch} highestPitch={highestPitch}
+              edo={edo} onHighlight={handleHighlight}
+              ensureAudio={ensureAudio} playVol={playVol}
+              latticePortalTarget={latticeTargetRef.current} />
+          </div>
+        </div>
+      </div>
+      {/* Second wrapper — the 3D mode lattice renders here via portal.
+          Because this lives outside the sticky-visualizer wrapper, the
+          sticky containing block ends before this section, so once the
+          user scrolls into here the visualizer scrolls away. */}
+      <div className="px-4 pt-3 pb-8">
+        <div className="max-w-6xl mx-auto w-full">
+          <div ref={el => { latticeTargetRef.current = el; setTargetReady(n => n + 1); }} />
+        </div>
+      </div>
+    </>
+  );
+}
+
 export default function App() {
   const metronome = useMetronome();
 
@@ -1088,40 +1159,29 @@ export default function App() {
       )}
 
       {/* ── Scalar Exploration ── */}
-      {/* The visualizer + content live in the same wrapper here so
-          that the visualizer's sticky containing block ends with the
-          scalar content.  Once the user scrolls past the last chord,
-          the visualizer is released and scrolls away with the rest of
-          the page. */}
+      {/* Two top-level wrappers per direct user direction (2026-05-05):
+          "the visualizer in scalar explorations should disappear after
+          i go past the chords stuff".  The first wrapper holds the
+          sticky main visualizer plus the chord-stuff portion of
+          ScalarTab; its bottom edge releases the sticky.  The second
+          wrapper holds the 3D mode lattice, portaled out of ScalarTab
+          via latticePortalTarget.  Once the user scrolls past the
+          chord wrapper into the lattice wrapper, the visualizer is no
+          longer sticky and scrolls away naturally. */}
       {section === "scalar-exploration" && (
-        <div className="flex-1 flex flex-col">
-          <div id="main-visualizer" className="sticky top-0 z-50 bg-[#0d0d0d] border-b border-[#1e1e1e] px-4 pt-2 pb-2 flex-shrink-0" style={{ position: "sticky", top: 0 }}>
-            {edo === 12 && vizType === "piano" ? (
-              <PianoKeyboard highlightedPitches={highlighted}
-                onKeyClick={async (k) => { await ensureAudio(); handleKeyClick(k as ComputedKey); }} />
-            ) : edo === 12 && vizType === "guitar" ? (
-              <GuitarFretboard highlightedPitches={highlighted}
-                onKeyClick={async (k) => { await ensureAudio(); handleKeyClick(k as ComputedKey); }} />
-            ) : edo === 12 && vizType === "bass" ? (
-              <BassFretboard highlightedPitches={highlighted}
-                onKeyClick={async (k) => { await ensureAudio(); handleKeyClick(k as ComputedKey); }} />
-            ) : layout ? (
-              <LumatoneKeyboard layout={layout} highlightedPitches={highlighted}
-                onKeyClick={async (k) => { await ensureAudio(); handleKeyClick(k); }} />
-            ) : (
-              <div className="bg-[#111] rounded-xl border border-[#222] h-36 flex items-center justify-center text-[#444] text-xs">
-                Loading keyboard…
-              </div>
-            )}
-          </div>
-          <div className="px-4 pt-3">
-            <div className="max-w-6xl mx-auto w-full">
-              <ScalarTab tonicPc={tonicPc} lowestPitch={lowestPitch} highestPitch={highestPitch}
-                edo={edo} onHighlight={handleHighlight}
-                ensureAudio={ensureAudio} playVol={playVol} />
-            </div>
-          </div>
-        </div>
+        <ScalarExplorationLayout
+          tonicPc={tonicPc}
+          lowestPitch={lowestPitch}
+          highestPitch={highestPitch}
+          edo={edo}
+          vizType={vizType}
+          highlighted={highlighted}
+          layout={layout}
+          ensureAudio={ensureAudio}
+          handleKeyClick={handleKeyClick}
+          handleHighlight={handleHighlight}
+          playVol={playVol}
+        />
       )}
 
       {/* ── Drum Patterns ── */}

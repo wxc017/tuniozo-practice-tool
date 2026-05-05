@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { audioEngine } from "@/lib/audioEngine";
 import { useLS } from "@/lib/storage";
 import { formatHalfAccidentals, getModeDegreeMap, getSolfege, getHeathwaiteSolfege, getBaseChords, getChordShapes } from "@/lib/edoData";
@@ -24,6 +25,13 @@ interface Props {
   onHighlight: (pcs: number[]) => void;
   ensureAudio: () => Promise<void>;
   playVol?: number;
+  /** Optional element to portal the 3D mode lattice into.  When
+   *  provided, the lattice renders into that element instead of
+   *  inline at the bottom of the tab — used by App.tsx to render
+   *  the lattice OUTSIDE the sticky-visualizer wrapper so the
+   *  visualizer releases as the user scrolls past the chord stuff
+   *  (per direct user direction 2026-05-05). */
+  latticePortalTarget?: HTMLElement | null;
 }
 
 interface TonalityFamilyGroup { key: string; label: string; color: string; tonalities: string[] }
@@ -102,6 +110,7 @@ function tonalitySectionsForEdo(edo: number): TonalitySection[] {
 
 export default function ScalarTab({
   tonicPc, lowestPitch, highestPitch, edo, onHighlight, ensureAudio, playVol = 0.55,
+  latticePortalTarget,
 }: Props) {
   const [selected, setSelected] = useLS<string>("lt_scalar_tonality", "Major");
   const [activeFamilyColor, setActiveFamilyColor] = useState<string>("#6a9aca");
@@ -805,13 +814,28 @@ export default function ScalarTab({
           Y locks to brightness so bright modes float and dark ones
           sink.  The selected tonality from the picker above acts as
           the visual anchor.  Click any mode to drone its scale on
-          the user's root pitch. ── */}
-      <ModeLattice3D
-        edo={edo}
-        rootPitch={baseTonic}
-        tonicPc={tonicPc}
-        anchorKey={anchorKey}
-        playVol={playVol} />
+          the user's root pitch.
+          When latticePortalTarget is provided, the lattice renders
+          into that DOM node instead — App.tsx uses this to put the
+          lattice OUTSIDE the sticky-visualizer wrapper, so scrolling
+          past the chord stuff releases the visualizer. ── */}
+      {!latticePortalTarget && (
+        <ModeLattice3D
+          edo={edo}
+          rootPitch={baseTonic}
+          tonicPc={tonicPc}
+          anchorKey={anchorKey}
+          playVol={playVol} />
+      )}
+      {latticePortalTarget && createPortal(
+        <ModeLattice3D
+          edo={edo}
+          rootPitch={baseTonic}
+          tonicPc={tonicPc}
+          anchorKey={anchorKey}
+          playVol={playVol} />,
+        latticePortalTarget,
+      )}
     </div>
   );
 }
