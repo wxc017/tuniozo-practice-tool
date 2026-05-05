@@ -6988,6 +6988,15 @@ export default function LatticeView({ externalHighlights, activeNodeKey, activeN
               compensationArcs={compensationArcs}
               voiceLeadingArrows={voiceLeadingArrows}
               dimGeneratorEdges={
+                // Chromeless = embedded in ChordsTab.  Default to
+                // dimmed; the active / highlighted chord tones get
+                // forceDim-exempted in MonzoNodeMesh, so when a
+                // chord plays / a pin is set those nodes pop and
+                // everything else fades.  When NOTHING is selected
+                // the whole lattice dims, so the picker / progression
+                // controls feel like the foreground instead of the
+                // unrelated lattice cells.
+                chromeless ||
                 (pinnedChordOverlays?.length ?? 0) > 0 ||
                 (compensationArcs?.length ?? 0) > 0 ||
                 (activeClassIds?.size ?? 0) > 0
