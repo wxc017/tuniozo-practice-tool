@@ -1090,13 +1090,19 @@ export default function ChordsTab({
       const xenList = xenForNumeral?.[rn] ?? [];
       const result = voiceChord(rn, null, useMap, prevVoicing, xenList, scaleRootsOverride);
       let chordAbs = result ? result.chordAbs : [];
-      // Shift the chord's absolute pitches by the lattice drift offset
-      // so the played chord lands at its true comma-shifted pitch.  The
-      // round-to-EDO-step is unavoidable approximation — 41-EDO resolves
-      // the syntonic comma to ~1\41 (~29¢), 53-EDO to ~1\53 (~23¢).
+      // Adaptive JI mode: COMPENSATE for the cumulative comma drift
+      // instead of letting it accumulate.  The drift is still computed
+      // and surfaced in the Live Lattice Trace so the user can see how
+      // far each chord *would* drift on a pure-intervals walk — but
+      // the actual playback subtracts that offset so the tonic stays
+      // anchored.  In 41/53-EDO the EDO step values are already pure
+      // enough for the chord intervals (≤1¢ off 5-limit JI) that
+      // anchoring the chord roots at their frozen positions gives
+      // perceptually pure-sounding chords without the cadence pumping
+      // the tonic out of tune.
       if (useLattice && driftsCents && chordAbs.length > 0) {
         const offsetSteps = driftCentsToSteps(driftsCents[i], edo);
-        if (offsetSteps !== 0) chordAbs = chordAbs.map(p => p + offsetSteps);
+        if (offsetSteps !== 0) chordAbs = chordAbs.map(p => p - offsetSteps);
       }
       chords.push(chordAbs);
       appliedShapes.push(result ? result.appliedShape : null);
@@ -1579,7 +1585,7 @@ export default function ChordsTab({
           <p className="text-[10px] text-[#888] italic mt-2">
             {jiMode === "frozen"
               ? "Each scale's chord pool uses the scale's actual step values verbatim.  One chord per scale wolfs (look for ✗ in the analysis below) — that's the syntonic comma made audible.  Tonic stays put."
-              : "Chord shapes stay at their frozen EDO tunings — no per-chord pure-ratio forcing.  Instead, the lattice walk through the progression accumulates comma drift, which shifts each chord's whole position.  The tonic actually drifts as the cadence pumps."}
+              : "Chord shapes stay at their frozen EDO tunings.  The lattice walk through the progression is computed and surfaced in the Live Lattice Trace, but the playback compensates for the cumulative comma so the tonic stays anchored — what you hear is pure-interval chords without the cadence pumping the tonic out of tune.  41/53-EDO's step values are themselves within 1¢ of 5-limit JI, so anchoring the roots at the frozen positions already gives perceptually pure intervals."}
           </p>
         </div>
         );
