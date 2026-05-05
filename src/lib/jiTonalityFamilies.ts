@@ -13,16 +13,19 @@
 
 export type JiLimit = 3 | 5 | 7 | 11 | 13 | 17 | 19 | 23 | 29 | 31;
 
-// Per-EDO limit availability.  41-EDO has decent approximations for every
-// prime up to 31; 53-EDO is excellent on 5 / 13 and decent on 19 but
-// poor on 11 / 17 / 23 / 29 / 31, so we restrict its picker to limits
-// where the rounded-to-EDO scales remain musically faithful.  7-LIMIT is
-// dropped from both: no 7-limit scale in the curated catalog carries
-// 7-prime at all of its 3rd / 6th / 7th, so under the 3-6-7 prime-
-// purity rule the 7-LIMIT family is currently empty.
+// Per-EDO limit availability.  Per direct user direction (2026-05-04),
+// a higher-limit family is only listed if its named prime's M3 / m3 is
+// DISTINCTIVE in the EDO step grid — i.e. the prime's ratio beats every
+// simpler-prime alternative by n*d at the step it rounds to.  Under
+// that rule, 17 / 19 / 23 / 29 / 31-LIMIT all fail in both 41-EDO and
+// 53-EDO (their thirds collide with simpler primes — see jiScaleData.ts
+// for the per-prime collision table).  7-LIMIT also fails the prior
+// 3-6-7 prime-purity rule.  Only 11-LIMIT (Mohajira's 11/9 distinctive
+// b3) and 13-LIMIT (Tridecimal Diatonic Major/Minor's 13/10 + 13/11
+// distinctive thirds) survive among higher limits.
 export const JI_LIMITS_PER_EDO: Record<number, JiLimit[]> = {
-  41: [3, 5, 11, 13, 17, 19, 23, 29, 31],
-  53: [3, 5, 11, 13, 19],
+  41: [3, 5, 11, 13],
+  53: [3, 5, 11, 13],
 };
 
 export interface JiFamily {
@@ -151,79 +154,12 @@ export const JI_LIMIT_GROUPS: JiLimitGroup[] = [
       // 5-limit; Maqam Sikah / Awj Iraq's 7th is 11-limit).
     ],
   },
-  {
-    limit: 17,
-    label: "HEPTADECIMAL (17-LIMIT)",
-    color: "#5a9aca",
-    blurb: "17:16 (~105¢) gives a small supraminor 2nd; 17:9 (~1101¢) a wide leading-tone.",
-    families: [
-      {
-        key: "heptadecimal-tertian",
-        label: "TERTIAN",
-        tonalities: [
-          "Heptadecimal Diatonic Major",
-          "Heptadecimal Minor",
-        ],
-      },
-      // Heptadecimal Hijaz pruned: its b7 is 16/9 (Pythagorean),
-      // not 17-prime.
-    ],
-  },
-  {
-    limit: 19,
-    label: "NONADECIMAL (19-LIMIT)",
-    color: "#5acca0",
-    blurb: "19:16 (~298¢) lands between Pythagorean and 5-limit minor 3rds; 19:15 (~409¢) gives a wide M3.",
-    families: [
-      {
-        key: "nonadecimal-tertian",
-        label: "TERTIAN",
-        tonalities: [
-          "Nonadecimal Diatonic Major",
-          "Nonadecimal Diatonic Minor",
-        ],
-      },
-    ],
-  },
-  {
-    limit: 23,
-    label: "VICESIMOTERTIAL (23-LIMIT)",
-    color: "#caac5a",
-    blurb: "Major 7 = 23/12 (~1126¢, extra-stretched leading-tone); Minor b3 = 23/19 supraminor — three 23-prime tones at 3 / 6 / 7.",
-    families: [
-      {
-        key: "23-tertian",
-        label: "TERTIAN",
-        tonalities: ["Vicesimotertial Diatonic Major", "Vicesimotertial Diatonic Minor"],
-      },
-    ],
-  },
-  {
-    limit: 29,
-    label: "VICENOVENAL (29-LIMIT)",
-    color: "#aa6a5a",
-    blurb: "Major b7 borrows 29/16; Minor's b3 / b6 nudge into 29-territory at the modal tones.",
-    families: [
-      {
-        key: "29-tertian",
-        label: "TERTIAN",
-        tonalities: ["Vicenovenal Diatonic Major", "Vicenovenal Diatonic Minor"],
-      },
-    ],
-  },
-  {
-    limit: 31,
-    label: "TRIGESIMOPRIMAL (31-LIMIT)",
-    color: "#ca6acc",
-    blurb: "Major 7 = 31/16 wide leading-tone; Minor b3 / b6 use 31-prime substitutes — Aeolian tilted into 31-flavour.",
-    families: [
-      {
-        key: "31-tertian",
-        label: "TERTIAN",
-        tonalities: ["Trigesimoprimal Diatonic Major", "Trigesimoprimal Diatonic Minor"],
-      },
-    ],
-  },
+  // 17 / 19 / 23 / 29 / 31-LIMIT families pruned: every higher-limit
+  // M3 / m3 candidate collides with a simpler prime ratio that wins
+  // the class-rep at its EDO step in both 41-EDO and 53-EDO, so the
+  // user can't actually hear / see the named prime as the chord's
+  // third — the displayed third is the simpler-prime equivalent.
+  // See jiScaleData.ts for the full collision table.
 ];
 
 /** JI limit groups available for a given EDO.  41-EDO sees everything;

@@ -122,90 +122,31 @@ const JI_SCALES: JiScaleSpec[] = [
     // minor-mode modal tone is 13-prime.
     steps: [["1",0],["2",203.9],["b3",289.2],["4",498.0],["5",702.0],["b6",840.5],["b7",1071.7]] },
 
-  // ── 17-LIMIT (Heptadecimal) ──────────────────────────────────────────
-  // Key 17-prime intervals: 17/16 (105¢ small leading-tone m2),
-  // 17/14 (336¢ supraminor 3rd), 17/13 (464¢ wide M3), 17/12 (603¢
-  // tritone), 17/11 (754¢ b6), 17/10 (919¢ wide M6), 17/9 (1101¢
-  // wide M7).
-  { name: "Heptadecimal Diatonic Major",
-    // 2 / 4 / 5 canonical (9/8, 4/3, 3/2) — diatonic backbone.
-    // 3 → 17/13 (464¢ wide M3 — 17 dominant, 13 in denominator),
-    // 6 → 17/10, 7 → 17/9.  All three modal-defining tones carry
-    // the 17-prime.
-    steps: [["1",0],["2",203.9],["3",464.4],["4",498.0],["5",702.0],["6",918.6],["7",1101.0]] },
-  { name: "Heptadecimal Minor",
-    // 4 / 5 canonical; b2 → 17/16 displaces the canonical 9/8 so this
-    // scale doesn't carry the "Diatonic" tag (the diatonic 2 isn't
-    // preserved).  b3 → 17/14, b6 → 17/11, b7 → 17/10 — minor mode
-    // with 17-prime saturation across b2 / b3 / b6 / b7.
-    steps: [["1",0],["b2",105.0],["b3",336.1],["4",498.0],["5",702.0],["b6",753.6],["b7",918.6]] },
-
-  // ── 19-LIMIT (Nonadecimal) ───────────────────────────────────────────
-  // Key 19-prime intervals: 19/18 (94¢ small m2), 19/16 (298¢ m3),
-  // 19/15 (409¢ wide M3), 19/13 (657¢ #4-area), 19/12 (795¢ b6-ish),
-  // 19/11 (946¢ b7), 19/10 (1111¢ wide M7).
-  { name: "Nonadecimal Diatonic Major",
-    // 2 / 4 / 5 canonical — diatonic backbone.  3 → 19/15, 6 → 19/12
-    // (795¢ — flat enough to read as b6, so this Major leans
-    // Mixolydian-with-flat-6 / Phrygian-Major-ish territory), 7 →
-    // 19/10.  All three modal-defining tones are 19-prime.
-    steps: [["1",0],["2",203.9],["3",409.2],["4",498.0],["5",702.0],["b6",795.0],["7",1111.2]] },
-  { name: "Nonadecimal Diatonic Minor",
-    // 2 / 4 / 5 canonical.  b3 → 19/16, b6 → 19/12, b7 → 19/11.
-    // Three 19-prime substitutions span the minor-mode modal palette.
-    steps: [["1",0],["2",203.9],["b3",297.5],["4",498.0],["5",702.0],["b6",795.0],["b7",945.7]] },
-
-  // ── 23 / 29 / 31-LIMIT (multi-prime higher-limit colour) ─────────────
-  // Each scale carries 3-4 intervals from its named prime — enough that
-  // the prime defines the modal colour, not just a single substituted
-  // tone.  Major / Minor labels reflect the 1-3-5 chord quality at the
-  // tonic so the I roman numeral renders as I (Major) or i (minor).
-  // 41-EDO approximates each prime to within a few cents; 53-EDO is
-  // accurate on 13 / 19 and weaker on 17 / 23 / 29 / 31, which is why
-  // those scales aren't surfaced for 53-EDO in JI_LIMITS_PER_EDO.
-
-  // 23-LIMIT  Key intervals: 23/22 (77¢ b2), 23/19 (329¢ supraminor 3),
-  //          23/18 (424¢ wide M3), 23/14 (859¢ b6), 23/12 (1126¢
-  //          extra-wide M7).  No clean 23-prime M6 or b7.
-  { name: "Vicesimotertial Diatonic Major",
-    // 2 / 4 / 5 canonical.  3 → 23/18 (424¢), 6 → 23/14 (859¢ —
-    // reads as a Mixolydian-ish wide M6 / narrow b6), 7 → 23/12
-    // (1126¢).  All three modal-defining tones carry the 23-prime.
-    steps: [["1",0],["2",203.9],["3",424.4],["4",498.0],["5",702.0],["6",859.4],["7",1126.3]] },
-  { name: "Vicesimotertial Diatonic Minor",
-    // 2 / 4 / 5 canonical.  b3 → 23/19 (329¢ supraminor), b6 →
-    // 23/14 (859¢), b7 → 23/13 (988¢).  Three 23-foregrounded tones
-    // span the minor-mode modal palette.
-    steps: [["1",0],["2",203.9],["b3",329.2],["4",498.0],["5",702.0],["b6",859.4],["b7",987.7]] },
-  // 29-LIMIT  Key intervals: 29/27 (124¢ small m2), 29/24 (328¢
-  //          supraminor 3rd), 29/23 (401¢ wide M3), 29/18 (770¢ b6),
-  //          29/17 (871¢ M6), 29/16 (1030¢ b7).  No clean 29-prime M7
-  //          — Major-mode 7 falls back to 15/8 OR Major adopts a
-  //          Mixolydian b7 to fit a 29-prime tone there.
-  { name: "Vicenovenal Diatonic Major",
-    // 2 / 4 / 5 canonical.  3 → 29/23 (401¢ wide M3), 6 → 29/17
-    // (871¢), b7 → 29/16 (1030¢, Mixolydian-leaning).  Three 29-prime
-    // tones at the modal-defining 3rd / 6th / 7th positions.
-    steps: [["1",0],["2",203.9],["3",401.3],["4",498.0],["5",702.0],["6",871.4],["b7",1029.6]] },
-  { name: "Vicenovenal Diatonic Minor",
-    // 2 / 4 / 5 canonical.  b3 → 29/24 (328¢), b6 → 29/18 (770¢),
-    // b7 → 29/16 (1030¢).  Three 29-prime tones span the minor-mode
-    // modal palette.
-    steps: [["1",0],["2",203.9],["b3",327.6],["4",498.0],["5",702.0],["b6",770.5],["b7",1029.6]] },
-  // 31-LIMIT  Key intervals: 31/29 (115¢ b2), 31/26 (336¢ supraminor 3),
-  //          31/25 (372¢ neutral-leaning M3), 31/20 (765¢ b6),
-  //          31/19 (905¢ M6), 31/17 (1010¢ b7), 31/16 (1145¢ extra-
-  //          wide M7).
-  { name: "Trigesimoprimal Diatonic Major",
-    // 2 / 4 / 5 canonical.  3 → 31/25 (372¢, neutral-leaning M3 —
-    // classified as major by the wider cent-zone classifier), 6 →
-    // 31/19 (905¢), 7 → 31/16 (1145¢ extra-wide leading-tone).
-    steps: [["1",0],["2",203.9],["3",371.6],["4",498.0],["5",702.0],["6",904.6],["7",1145.0]] },
-  { name: "Trigesimoprimal Diatonic Minor",
-    // 2 / 4 / 5 canonical.  b3 → 31/26 (336¢), b6 → 31/20 (765¢),
-    // b7 → 31/17 (1010¢).  Three 31-prime tones span the minor-mode
-    // modal palette.
-    steps: [["1",0],["2",203.9],["b3",336.0],["4",498.0],["5",702.0],["b6",765.5],["b7",1010.4]] },
+  // ── 17 / 19 / 23 / 29 / 31-LIMIT — pruned ────────────────────────────
+  // Per direct user direction (2026-05-04): for each higher-limit
+  // family, the named prime's third (or b3) must be DISTINCTIVE in the
+  // EDO step grid — i.e. its ratio must beat all simpler-prime ratios
+  // by n*d at the EDO step it rounds to.  In 41-EDO and 53-EDO every
+  // 17 / 19 / 23 / 29 / 31-limit M3 / m3 candidate collides with a
+  // simpler prime ratio that wins the class-rep:
+  //
+  //   17-MAJOR M3 = 17/13  → step 16 (41-EDO) → 13/10 wins (13-limit)
+  //   17-MINOR b3 = 17/14  → step 11 (41-EDO) → 6/5 wins  (5-limit)
+  //   19-MAJOR M3 = 19/15  → step 14 (41-EDO) → 14/11 wins (11-limit)
+  //   19-MINOR b3 = 19/16  → step 10 (41-EDO) → 13/11 wins (13-limit)
+  //   23-MAJOR M3 = 23/18  → step 15 (41-EDO) → 9/7 wins  (7-limit)
+  //   23-MINOR b3 = 23/19  → step 11 (41-EDO) → 6/5 wins  (5-limit)
+  //   29-MAJOR M3 = 29/23  → step 14 → 14/11 wins (11-limit)
+  //   29-MINOR b3 = 29/24  → step 11 → 6/5 wins  (5-limit)
+  //   31-MAJOR M3 = 31/25  → step 13 → 5/4 wins  (5-limit, "just JI third")
+  //   31-MINOR b3 = 31/26  → step 11 → 6/5 wins  (5-limit)
+  //
+  // None pass the distinctiveness check, so the 17 / 19 / 23 / 29 / 31-
+  // LIMIT families are removed entirely.  The picker now exposes only
+  // 3-LIMIT (Pythagorean), 5-LIMIT (JI), 11-LIMIT (Mohajira), and
+  // 13-LIMIT (Tridecimal Diatonic Major / Minor) for higher-limit JI
+  // scales.  If a curated higher-limit scale with distinctive third
+  // is added later, its family slot can be re-introduced here.
 ];
 
 // ── Build per-EDO ScaleFamilyMaps ────────────────────────────────────────
