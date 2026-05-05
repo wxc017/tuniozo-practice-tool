@@ -2131,7 +2131,7 @@ export const PATTERN_SCALE_FAMILIES: Record<string, string[]> = {
     "Double Harmonic Major",
     "Lydian #2 #6",
     "Ultraphrygian",
-    "Hungarian Minor",
+    "Double Harmonic Minor",
     "Oriental",
     "Ionian #2 #5",
     "Locrian bb3 bb7",

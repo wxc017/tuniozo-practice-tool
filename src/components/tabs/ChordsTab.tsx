@@ -139,7 +139,7 @@ const TONALITY_FAMILIES: TonalityFamilyGroup[] = [
   { key: "subharmonic",label: "SUBHARMONIC DIATONIC M7",color: "#4a9ac7",
     tonalities: ["Subharmonic Diatonic M7","Locrian s2 s5 N6","Supermajor Ionian #5","Dorian s3 ##4 s7","Phrygian s2 N3 s6","Supermajor Lydian #2 b5","Neutral Dorian b4 bb5 bb7"] },
   { key: "doubleharmonic", label: "DOUBLE HARMONIC", color: "#e08040",
-    tonalities: ["Double Harmonic Major","Lydian #2 #6","Ultraphrygian","Hungarian Minor","Oriental","Ionian #2 #5","Locrian bb3 bb7"] },
+    tonalities: ["Double Harmonic Minor","Double Harmonic Major","Lydian #2 #6","Ultraphrygian","Oriental","Ionian #2 #5","Locrian bb3 bb7"] },
   { key: "symmetric", label: "SYMMETRIC", color: "#5ab9b0",
     tonalities: [
       "Whole Tone","Half-Whole Diminished","Whole-Half Diminished",

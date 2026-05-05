@@ -120,7 +120,7 @@ const MODE_SHORT: Record<string, string> = {
   "Double Harmonic Major": "DhM",
   "Lydian #2 #6": "L2♯6",
   "Ultraphrygian": "UPh",
-  "Hungarian Minor": "HuM",
+  "Double Harmonic Minor": "DhMin",
   "Oriental": "Ori",
   "Ionian #2 #5": "I2♯5",
   "Locrian bb3 bb7": "Lbb",

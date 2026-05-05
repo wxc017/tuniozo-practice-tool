@@ -42,7 +42,7 @@ export const TONALITY_FAMILIES: { key: string; label: string; color: string; ton
     tonalities: ["Subharmonic Diatonic M7","Locrian s2 s5 N6","Supermajor Ionian #5","Dorian s3 ##4 s7","Phrygian s2 N3 s6","Supermajor Lydian #2 b5","Neutral Dorian b4 bb5 bb7"] },
   // ── Double Harmonic family (12-EDO native, available in all EDOs) ─────
   { key: "doubleharmonic", label: "DOUBLE HARMONIC", color: "#e08040",
-    tonalities: ["Double Harmonic Major","Lydian #2 #6","Ultraphrygian","Hungarian Minor","Oriental","Ionian #2 #5","Locrian bb3 bb7"] },
+    tonalities: ["Double Harmonic Major","Lydian #2 #6","Ultraphrygian","Double Harmonic Minor","Oriental","Ionian #2 #5","Locrian bb3 bb7"] },
   // ── Symmetric scales (non-heptatonic) ─────────────────────────────────
   { key: "symmetric", label: "SYMMETRIC", color: "#5ab9b0",
     tonalities: [
@@ -92,7 +92,7 @@ export function bankToMajMinBoth(tonality: string): Tonality {
     "Aeolian","Dorian","Phrygian","Locrian","Harmonic Minor","Locrian #6","Dorian #4","Phrygian Dominant",
     "Ultralocrian","Melodic Minor","Dorian b2","Locrian #2",
     // Double Harmonic family — modes with m3 over the tonic
-    "Ultraphrygian","Hungarian Minor","Locrian bb3 bb7",
+    "Ultraphrygian","Double Harmonic Minor","Locrian bb3 bb7",
     // Symmetric Diminished modes resolve to minor-ish tonics (dim triads)
     "Half-Whole Diminished","Whole-Half Diminished",
     "Half-Whole Diminished (Half-Sharp)","Whole-Half Diminished (Half-Flat)",

@@ -31,7 +31,7 @@ const MEANTONE_LIMIT_SECTIONS: IntervalsTonalitySection[] = [
     { key: "melodic",  label: "MELODIC MINOR",  scaleFamily: "Melodic Minor Family",
       tonalities: ["Melodic Minor","Dorian b2","Lydian Augmented","Lydian Dominant","Mixolydian b6","Locrian #2","Altered"] },
     { key: "doubleharmonic", label: "DOUBLE HARMONIC", scaleFamily: "Double Harmonic Family",
-      tonalities: ["Double Harmonic Major","Lydian #2 #6","Ultraphrygian","Hungarian Minor","Oriental","Ionian #2 #5","Locrian bb3 bb7"] },
+      tonalities: ["Double Harmonic Minor","Double Harmonic Major","Lydian #2 #6","Ultraphrygian","Oriental","Ionian #2 #5","Locrian bb3 bb7"] },
   ] },
   { key: "lim7", label: "7-LIMIT (SEPTIMAL)", color: "#7aaa6a", families: [
     { key: "subminor",   label: "SUBMINOR DIATONIC",   scaleFamily: "Subminor Diatonic Family",

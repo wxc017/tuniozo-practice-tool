@@ -1052,7 +1052,7 @@ const MEL_DEGREE_NAMES = [
 // convention, so unusual labels like bb3 / bb7 / b4 surface where two
 // notes would otherwise share a slot.
 const DBLH_MODE_NAMES = [
-  "Double Harmonic Major","Lydian #2 #6","Ultraphrygian","Hungarian Minor",
+  "Double Harmonic Major","Lydian #2 #6","Ultraphrygian","Double Harmonic Minor",
   "Oriental","Ionian #2 #5","Locrian bb3 bb7"
 ];
 const DBLH_DEGREE_NAMES = [

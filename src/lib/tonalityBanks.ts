@@ -514,7 +514,7 @@ export function getTonalityBanks(edo: number, showSevenths: boolean = false): To
 // Kept in sync with PATTERN_SCALE_FAMILIES in musicTheory.ts and the
 // degree-map builders in edoData.ts.
 const DBLH_MODES = [
-  "Double Harmonic Major","Lydian #2 #6","Ultraphrygian","Hungarian Minor",
+  "Double Harmonic Major","Lydian #2 #6","Ultraphrygian","Double Harmonic Minor",
   "Oriental","Ionian #2 #5","Locrian bb3 bb7",
 ];
 const SYMMETRIC_MODES_BASE = [
