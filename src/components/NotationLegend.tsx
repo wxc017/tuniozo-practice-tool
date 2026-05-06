@@ -1,12 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 
-/** Small "Notation" button with a click-to-show legend explaining the
- *  letter codes that appear throughout the app's mode / interval / chord
- *  labels.  Visible in Tonal Audiation, Melodic Patterns, and Scalar
- *  Explorations per direct user direction (2026-05-05): "put a small
- *  button at top called notation for tonal audiation melodic patterns
- *  and scalar explorations that writes stuff like n = netural S =
- *  superminor exc.". */
+/** Small "Notation" button + click-to-show legend listing the
+ *  letter-code shorthand used in mode / interval names.  Per direct
+ *  user direction (2026-05-05): "just have it say n = neutral S =
+ *  supermajor s = subminor M = major Cm = Classic Minor etc.  keep it
+ *  simple". */
 export default function NotationLegend() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -32,65 +30,18 @@ export default function NotationLegend() {
         Notation
       </button>
       {open && (
-        <div className="absolute left-0 mt-1 w-[480px] bg-[#0d0d0d] border border-[#2a2a2a] rounded-lg shadow-2xl z-50 p-4 space-y-3">
-          <p className="text-xs text-[#888] leading-relaxed">
-            Microtonal mode + interval names use letter codes for each
-            "flavour" of third / sixth / seventh.  These show up in 31-,
-            41-, and 53-EDO scale names (e.g. "Subminor Phrygian m7",
-            "Neutral Dorian N2 bb5 N6") and in chord-quality labels.
-          </p>
-
-          <div>
-            <p className="text-[10px] text-[#666] uppercase tracking-widest mb-1">Flavour letters (lo → hi)</p>
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
-              <div><span className="text-[#7aaa6a] font-bold w-5 inline-block">s</span><span className="text-[#888]"> sub</span> — septimal-flat (e.g. s3 ≈ 7/6)</div>
-              <div><span className="text-[#9a8a5a] font-bold w-5 inline-block">m</span><span className="text-[#888]"> minor</span> — Pythagorean (3-limit)</div>
-              <div><span className="text-[#a07050] font-bold w-5 inline-block">Cm</span><span className="text-[#888]"> classic minor</span> — 5-limit (6/5)</div>
-              <div><span className="text-[#caac5a] font-bold w-5 inline-block">u</span><span className="text-[#888]"> supraminor</span> — between minor + neutral</div>
-              <div><span className="text-[#9a66c0] font-bold w-5 inline-block">n / N</span><span className="text-[#888]"> neutral</span> — 11-limit (e.g. 11/9)</div>
-              <div><span className="text-[#cc6a8a] font-bold w-5 inline-block">C</span><span className="text-[#888]"> classic major</span> — 5-limit (5/4)</div>
-              <div><span className="text-[#6a9aca] font-bold w-5 inline-block">M</span><span className="text-[#888]"> major</span> — Pythagorean (81/64)</div>
-              <div><span className="text-[#cc8a4a] font-bold w-5 inline-block">S</span><span className="text-[#888]"> super</span> — septimal-sharp (e.g. S3 ≈ 9/7)</div>
-            </div>
-          </div>
-
-          <div>
-            <p className="text-[10px] text-[#666] uppercase tracking-widest mb-1">Accidentals</p>
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
-              <div><span className="font-bold w-5 inline-block text-white">#</span><span className="text-[#888]"> sharp (raise one chromatic step)</span></div>
-              <div><span className="font-bold w-5 inline-block text-white">b</span><span className="text-[#888]"> flat (lower one chromatic step)</span></div>
-              <div><span className="font-bold w-5 inline-block text-white">##</span><span className="text-[#888]"> double-sharp / aug</span></div>
-              <div><span className="font-bold w-5 inline-block text-white">bb</span><span className="text-[#888]"> double-flat / dim</span></div>
-              <div><span className="font-bold w-5 inline-block text-white">𝄲</span><span className="text-[#888]"> half-sharp (31-EDO only)</span></div>
-              <div><span className="font-bold w-5 inline-block text-white">𝄳</span><span className="text-[#888]"> half-flat (31-EDO only)</span></div>
-            </div>
-          </div>
-
-          <div>
-            <p className="text-[10px] text-[#666] uppercase tracking-widest mb-1">Diatonic prefix</p>
-            <p className="text-[11px] text-[#888] leading-snug">
-              <b className="text-white">Diatonic</b> = the scale preserves the diatonic backbone:
-              <b className="text-white"> M2</b> (9/8), <b className="text-white">P4</b> (4/3),
-              <b className="text-white"> P5</b> (3/2).  The named flavour (Major / Subminor /
-              Neutral / etc.) lives in the 3rd, 6th, and 7th degrees only.
-            </p>
-          </div>
-
-          <div>
-            <p className="text-[10px] text-[#666] uppercase tracking-widest mb-1">Examples</p>
-            <ul className="text-[11px] text-[#888] space-y-0.5 leading-snug">
-              <li><b className="text-white">Subminor Phrygian m7</b> — phrygian mode with sub-3rd + Pyth-minor 7th</li>
-              <li><b className="text-white">Dorian N2 bb5 N6</b> — dorian-shape with neutral 2nd, dim 5th, neutral 6th</li>
-              <li><b className="text-white">Supermajor Lydian M2 b5</b> — lydian shape with super-3rd, Pyth-major 2nd, flat 5th</li>
-              <li><b className="text-white">Diatonic Major</b> (41 / 53-EDO) — pure 5-limit JI major scale (M2/P4/P5 + 5/4 third)</li>
-            </ul>
-          </div>
-
-          <p className="text-[10px] text-[#555] leading-snug pt-1 border-t border-[#1a1a1a]">
-            JI prime-limit prefix subscripts (e.g. <b>₁₃</b>I, <b>JI</b>iv) appear on 41 / 53-EDO chord
-            roman numerals to disambiguate which limit's tuning the chord uses.  3 = Pythagorean,
-            JI = 5-limit, 7 = septimal, 11 = neutral, 13 = tridecimal.
-          </p>
+        <div className="absolute left-0 mt-1 w-[280px] bg-[#0d0d0d] border border-[#2a2a2a] rounded-lg shadow-2xl z-50 p-3">
+          <ul className="text-[12px] text-[#aaa] space-y-1 leading-snug">
+            <li><b className="text-white">s</b> = subminor</li>
+            <li><b className="text-white">m</b> = minor</li>
+            <li><b className="text-white">Cm</b> = classic minor</li>
+            <li><b className="text-white">u</b> = supraminor</li>
+            <li><b className="text-white">n / N</b> = neutral</li>
+            <li><b className="text-white">C</b> = classic major</li>
+            <li><b className="text-white">M</b> = major</li>
+            <li><b className="text-white">S</b> = supermajor</li>
+            <li><b className="text-white">Diatonic</b> = M2 / P4 / P5 backbone</li>
+          </ul>
         </div>
       )}
     </div>
