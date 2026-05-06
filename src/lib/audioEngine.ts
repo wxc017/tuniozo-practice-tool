@@ -115,32 +115,26 @@ interface InstrumentSample {
   loopEnd: number;
 }
 
-/** Constants for buffer pre-processing. */
-const DRONE_TARGET_PEAK = 0.9;       // normalize each sample to this peak
-const DRONE_LOOP_XFADE_SEC = 0.12;   // seam-crossfade window — long enough
-                                      // to mask the loop wrap, short enough
-                                      // to not noticeably shorten the loop
+/** Peak normalization target — every drone sample ends up with this
+ *  peak amplitude in its loop region, so all instruments are
+ *  perceptually equal-loudness regardless of how the source was
+ *  recorded.  User reported "the volume for all the instruments are
+ *  not consistent" (2026-05-05). */
+const DRONE_TARGET_PEAK = 0.9;
 
 /** Pre-process a freshly-decoded sample buffer for drone use:
- *  1) Peak-normalize so all instruments land at the same loudness
- *     (different sources had wildly different recorded levels — user
- *     reported "the volume for all the instruments are not consistent"
- *     2026-05-05).
- *  2) Apply a seamless-loop crossfade at the seam so when the
- *     BufferSource loops from loopEnd back to loopStart the audio is
- *     continuous (user reported "tampura sounds like it doing a hard
- *     reset", "needs to sound like a continuous drone not on and off"
- *     2026-05-05).
+ *  peak-normalize the loop region and report loopStart / loopEnd so
+ *  the dual-voice scheduler in spawnSampleLoop knows where the
+ *  steady-state region of the recording is.
  *
- *  Loop-crossfade algorithm: replace the LAST xfadeSamp samples of the
- *  loop region with an equal-power blend between (a) the original
- *  audio at that position and (b) audio from JUST BEFORE the loop
- *  start.  When the BufferSource wraps from loopEnd to loopStart, the
- *  audio at loopEnd-1 has been blended toward old[loopStart-1] — i.e.
- *  the recording's natural lead-in to loopStart — so the wrap to
- *  old[loopStart] is continuous because old[loopStart-1] → old[loopStart]
- *  is continuous in the source recording. */
-function preprocessDroneBuffer(ctx: AudioContext, original: AudioBuffer): {
+ *  We DON'T attempt seam-crossfade in the buffer itself — that
+ *  approach blends in audio from JUST BEFORE the loop start, which
+ *  in our trimmed sources is part of the attack transient, so the
+ *  blend introduces audible static / "cutting in and out" exactly at
+ *  the wrap point (user feedback 2026-05-05).  Instead, the playback
+ *  side runs two overlapping voices and crossfades between them — see
+ *  spawnSampleLoop. */
+function preprocessDroneBuffer(_ctx: AudioContext, original: AudioBuffer): {
   buffer: AudioBuffer; loopStart: number; loopEnd: number;
 } {
   const sampleRate = original.sampleRate;
@@ -148,20 +142,14 @@ function preprocessDroneBuffer(ctx: AudioContext, original: AudioBuffer): {
   const channels = original.numberOfChannels;
   const bufDur = original.duration;
 
-  // Trim attack + release.  Same heuristic as the previous looper:
-  // ≥1 s buffer trims 15% / 10%; very short buffers trim less.
+  // Trim attack + release: ≥1 s buffer trims 15% / 10%; very short
+  // buffers trim less so we don't run out of usable material.
   const trimAttackSec = bufDur >= 1.0 ? Math.min(0.4, bufDur * 0.15) : 0.05;
   const trimReleaseSec = bufDur >= 1.0 ? Math.min(0.4, bufDur * 0.1) : 0;
   const loopStartSamp = Math.floor(trimAttackSec * sampleRate);
   const loopEndSamp = Math.floor((bufDur - trimReleaseSec) * sampleRate);
-  const xfadeSamp = Math.min(
-    Math.floor(DRONE_LOOP_XFADE_SEC * sampleRate),
-    loopStartSamp,                                  // need PRE region available
-    Math.floor((loopEndSamp - loopStartSamp) / 2),  // can't exceed half the loop
-  );
-  const canCrossfade = xfadeSamp >= sampleRate * 0.02; // ≥ 20 ms or skip
 
-  // 1) Find peak amplitude across all channels in the loop region.
+  // Peak amplitude across all channels in the loop region.
   let peak = 0;
   for (let ch = 0; ch < channels; ch++) {
     const data = original.getChannelData(ch);
@@ -172,26 +160,21 @@ function preprocessDroneBuffer(ctx: AudioContext, original: AudioBuffer): {
   }
   const normGain = peak > 0 ? DRONE_TARGET_PEAK / peak : 1.0;
 
-  // 2) Build the new buffer with normalization + (optional) seam crossfade.
-  const newBuffer = ctx.createBuffer(channels, totalSamples, sampleRate);
-  for (let ch = 0; ch < channels; ch++) {
-    const oldData = original.getChannelData(ch);
-    const newData = newBuffer.getChannelData(ch);
-    for (let i = 0; i < totalSamples; i++) newData[i] = oldData[i] * normGain;
-    if (canCrossfade) {
-      // Equal-power crossfade between (last xfade of loop region) and
-      // (audio just before loop start).  Cosine / sine pair so the
-      // summed energy stays constant through the blend.
-      for (let i = 0; i < xfadeSamp; i++) {
-        const t = i / xfadeSamp;
-        const fadeOut = Math.cos(t * Math.PI / 2);  // 1 → 0
-        const fadeIn = Math.sin(t * Math.PI / 2);   // 0 → 1
-        const oldVal = oldData[loopEndSamp - xfadeSamp + i] * normGain;
-        const preVal = oldData[loopStartSamp - xfadeSamp + i] * normGain;
-        newData[loopEndSamp - xfadeSamp + i] = oldVal * fadeOut + preVal * fadeIn;
-      }
-    }
-  }
+  // Build a normalized copy.  We leave the seam region untouched —
+  // playback handles the loop transition via voice overlap, not via
+  // in-buffer crossfade.
+  const newBuffer = original.numberOfChannels === channels && normGain === 1.0
+    ? original
+    : (() => {
+        const buf = original; // need a fresh AudioBuffer to keep `original` clean
+        const out = new AudioBuffer({ length: totalSamples, numberOfChannels: channels, sampleRate });
+        for (let ch = 0; ch < channels; ch++) {
+          const inD = buf.getChannelData(ch);
+          const outD = out.getChannelData(ch);
+          for (let i = 0; i < totalSamples; i++) outD[i] = inD[i] * normGain;
+        }
+        return out;
+      })();
 
   return {
     buffer: newBuffer,
@@ -795,28 +778,97 @@ export class AudioEngine {
     }
   }
 
-  /** Sample-based drone playback.
+  /** Sample-based drone playback via overlapping voices.
    *
-   *  These are practice drones — the user holds them while improvising,
-   *  tuning, or running scales.  The buffer has been pre-processed by
-   *  preprocessDroneBuffer at load time: peak-normalized for level
-   *  consistency across instruments AND with a seamless-loop crossfade
-   *  baked into the seam region, so when src.loop wraps from loopEnd
-   *  to loopStart the audio is continuous (no "hard reset" / on-and-
-   *  off feel).  All we do here is point the BufferSource at the
-   *  pre-baked loop region. */
+   *  Per direct user direction (2026-05-05): "what if you just play
+   *  the loop multiple times like overlapping like if the loop is 3
+   *  seconds you start another one at 1.5 seconds. this may be a
+   *  better option / but have it fade in for this sequence".
+   *
+   *  Each "voice" plays the buffer's loop region exactly ONCE with
+   *  an equal-power fade-in / fade-out envelope spanning the entire
+   *  voice duration (no flat sustain).  A new voice fires every
+   *  loopDur/2 seconds, so any moment has TWO voices summed: voice N
+   *  fading out as voice N+1 fades in, exactly mirrored.  Because
+   *  cos²(t·π/2) + sin²(t·π/2) = 1 for all t, the energy sum stays
+   *  constant — no audible "cutting in and out" at the transitions.
+   *
+   *  No internal loop seam exists: each voice is a fresh playback of
+   *  the same buffer, so we never re-articulate the loop wrap.  The
+   *  setTimeout chain re-fires voices forever; stopDrone() cancels
+   *  the timers via this.droneLoopTimers and disconnects all
+   *  BufferSources via this.droneSamples. */
   private spawnSampleLoop(ctx: AudioContext, sample: InstrumentSample, rate: number, noteGain: GainNode) {
-    const src = ctx.createBufferSource();
-    src.buffer = sample.buffer;
-    src.loop = true;
-    src.loopStart = sample.loopStart;
-    src.loopEnd = sample.loopEnd;
-    src.playbackRate.value = rate;
-    src.connect(noteGain);
-    // Start playback inside the loop region so the user hears steady
-    // sustain immediately (not the recorded attack).
-    src.start(0, sample.loopStart);
-    this.droneSamples.push(src);
+    const loopDurSrc = sample.loopEnd - sample.loopStart;             // seconds in source
+    const loopDur = loopDurSrc / rate;                                 // wall-clock seconds when pitched
+    if (loopDur < 0.4) {
+      // Too short for the dual-voice approach — fall back to plain
+      // src.loop=true (the seam click is the lesser evil here).
+      const src = ctx.createBufferSource();
+      src.buffer = sample.buffer;
+      src.loop = true;
+      src.loopStart = sample.loopStart;
+      src.loopEnd = sample.loopEnd;
+      src.playbackRate.value = rate;
+      src.connect(noteGain);
+      src.start(0, sample.loopStart);
+      this.droneSamples.push(src);
+      return;
+    }
+
+    const halfDur = loopDur / 2;
+    // Equal-power fade curves precomputed once — cos for fade-out,
+    // sin for fade-in.  64 points is plenty for a smooth curve.
+    const curveLen = 64;
+    const fadeIn = new Float32Array(curveLen);
+    const fadeOut = new Float32Array(curveLen);
+    for (let i = 0; i < curveLen; i++) {
+      const x = i / (curveLen - 1);
+      fadeIn[i] = Math.sin(x * Math.PI / 2);
+      fadeOut[i] = Math.cos(x * Math.PI / 2);
+    }
+
+    const fireVoice = (startTime: number) => {
+      const src = ctx.createBufferSource();
+      src.buffer = sample.buffer;
+      src.playbackRate.value = rate;
+      const g = ctx.createGain();
+      src.connect(g).connect(noteGain);
+
+      // Voice envelope: fade in over first half, fade out over second
+      // half.  No flat sustain — the voice is always either ramping
+      // in or out, and the next voice picks up the energy via its
+      // own ramp shifted by halfDur.
+      g.gain.setValueAtTime(0, startTime);
+      g.gain.setValueCurveAtTime(fadeIn, startTime, halfDur);
+      g.gain.setValueCurveAtTime(fadeOut, startTime + halfDur, halfDur);
+
+      // Play just the steady-state region of the buffer, in source-time.
+      src.start(startTime, sample.loopStart, loopDurSrc);
+      // src ends naturally when its slice runs out; stop scheduled
+      // slightly past the envelope's end as a safety so it can be
+      // disconnected in stopDrone() if still alive.
+      src.stop(startTime + loopDur + 0.05);
+      this.droneSamples.push(src);
+    };
+
+    // Fire voice 1 immediately; voice 2 starts halfway through voice 1
+    // (so they overlap by halfDur, which is the entire voice life span).
+    let nextStart = ctx.currentTime + 0.02;
+    fireVoice(nextStart);
+    nextStart += halfDur;
+    fireVoice(nextStart);
+
+    // Re-fire every halfDur seconds.  The setTimeout chain stays alive
+    // until stopDrone() cancels via droneLoopTimers.
+    const scheduleNext = () => {
+      nextStart += halfDur;
+      fireVoice(nextStart);
+      const t = setTimeout(scheduleNext, halfDur * 1000);
+      this.droneLoopTimers.push(t);
+    };
+    const t0 = setTimeout(scheduleNext, halfDur * 1000);
+    this.droneLoopTimers.push(t0);
   }
 
   /** Attach a slow ~4.5 Hz LFO to an oscillator's detune param so the
