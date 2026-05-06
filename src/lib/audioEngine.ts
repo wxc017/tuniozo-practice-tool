@@ -115,12 +115,22 @@ interface InstrumentSample {
   loopEnd: number;
 }
 
-/** Peak normalization target — every drone sample ends up with this
- *  peak amplitude in its loop region, so all instruments are
- *  perceptually equal-loudness regardless of how the source was
- *  recorded.  User reported "the volume for all the instruments are
- *  not consistent" (2026-05-05). */
-const DRONE_TARGET_PEAK = 0.9;
+/** Drone normalization targets — every loaded drone sample is RMS-
+ *  normalized over its loop region so different recordings sound
+ *  perceptually equal-loud regardless of their inherent recorded
+ *  level.  RMS tracks perceived loudness for sustained tones much
+ *  better than peak (peak only catches transients). */
+const DRONE_TARGET_RMS = 0.18;
+const DRONE_PEAK_CAP   = 0.95;
+
+/** Perceptual-parity calibration between the drone path and the play
+ *  path.  Play notes go through scheduleNote with a 0.7-0.8 gain factor
+ *  before reaching the volume slider; drone voices have noteGain=1.0.
+ *  Without this multiplier drones come out ~40% louder than play at
+ *  the same slider %.  Tuned to address "Drone volume and Play volume
+ *  should be 1 to 1 synced" (2026-05-05); applied at noteGain so it
+ *  affects drone output uniformly across instruments. */
+const DRONE_PATH_GAIN = 0.7;
 
 /** Pre-process a freshly-decoded sample buffer for drone use:
  *  peak-normalize the loop region and report loopStart / loopEnd so
@@ -149,16 +159,27 @@ function preprocessDroneBuffer(_ctx: AudioContext, original: AudioBuffer): {
   const loopStartSamp = Math.floor(trimAttackSec * sampleRate);
   const loopEndSamp = Math.floor((bufDur - trimReleaseSec) * sampleRate);
 
-  // Peak amplitude across all channels in the loop region.
+  // RMS + peak across all channels in the loop region.  RMS drives
+  // the normalization gain (perceptual loudness); peak caps the final
+  // gain to prevent clipping if RMS-target gain pushes peaks too high.
+  let sumSq = 0;
+  let count = 0;
   let peak = 0;
   for (let ch = 0; ch < channels; ch++) {
     const data = original.getChannelData(ch);
     for (let i = loopStartSamp; i < loopEndSamp; i++) {
       const a = Math.abs(data[i]);
+      sumSq += data[i] * data[i];
+      count++;
       if (a > peak) peak = a;
     }
   }
-  const normGain = peak > 0 ? DRONE_TARGET_PEAK / peak : 1.0;
+  const rms = count > 0 ? Math.sqrt(sumSq / count) : 0;
+  let normGain = rms > 0 ? DRONE_TARGET_RMS / rms : 1.0;
+  // Peak cap so post-normalization peak doesn't exceed DRONE_PEAK_CAP.
+  if (peak > 0 && peak * normGain > DRONE_PEAK_CAP) {
+    normGain = DRONE_PEAK_CAP / peak;
+  }
 
   // Build a normalized copy.  We leave the seam region untouched —
   // playback handles the loop transition via voice overlap, not via
@@ -225,16 +246,12 @@ function noteLabelToMidi(label: string): number {
  *  drone target lands within a small pitch-shift of an actual recorded
  *  pitch (close enough that the loop region doesn't audibly chipmunk).
  *
- *  trimGain (default 1.0) is a per-instrument loudness-normalisation
- *  multiplier applied at sample-spawn time.  Different recordings have
- *  wildly different recorded peaks — the Freesound tanpura is much
- *  quieter than Philharmonia cello — so we bake a static boost into
- *  the source config rather than asking the user to ride the slider
- *  on every instrument switch. */
+ *  Per-instrument loudness consistency is handled automatically by
+ *  preprocessDroneBuffer's RMS normalization — no per-source trim
+ *  needed.  (The earlier trimGain field has been removed.) */
 interface SourceConfig {
   url: (note: string) => string;
   notes: readonly string[];
-  trimGain?: number;
 }
 
 const INSTRUMENT_SOURCES: Record<DroneInstrument, SourceConfig> = {
@@ -249,7 +266,6 @@ const INSTRUMENT_SOURCES: Record<DroneInstrument, SourceConfig> = {
     // boost ×4 to bring it up to roughly Philharmonia / tonejs
     // levels.  Limiter on the play path will clip any over-the-top
     // peaks gracefully.
-    trimGain: 4.0,
   },
   // Philharmonia: pro-recorded chromatic cello.  `_15_` = 1.5-second
   // sustain (longer than the default 1s) — gives the crossfade looper
@@ -262,7 +278,6 @@ const INSTRUMENT_SOURCES: Record<DroneInstrument, SourceConfig> = {
   cello: {
     url: () => FREESOUND_CELLO_URL,
     notes: ["G2"],
-    trimGain: 1.3,
   },
   // tonejs-instruments harmonium: nearly-chromatic C2-G4.  The Indian
   // sruti-box / harmonium is a canonical drone — sustained bellows-
@@ -287,7 +302,6 @@ const INSTRUMENT_SOURCES: Record<DroneInstrument, SourceConfig> = {
     // Freesound 622929, 3:00 of sustained Highland-pipe drone at C.
     url: () => FREESOUND_BAGPIPE_URL,
     notes: ["C3"],
-    trimGain: 1.5,
   },
   choir_aahs: {
     // Freesound 763910, ~5 s of multi-voice sustained "aah" at F.
@@ -295,14 +309,12 @@ const INSTRUMENT_SOURCES: Record<DroneInstrument, SourceConfig> = {
     // and the only CC0 multi-voice source we found.
     url: () => FREESOUND_CHOIR_URL,
     notes: ["F3"],
-    trimGain: 2.0,
   },
   voice_oohs: {
     // Freesound 110423 (Mafon2, CC-BY 4.0), 6.16 s steady E4 with
     // audible partials.
     url: () => FREESOUND_VOICE_URL,
     notes: ["E4"],
-    trimGain: 1.5,
   },
 };
 
@@ -726,11 +738,10 @@ export class AudioEngine {
     // Always create the PeriodicWave so spawnDroneVoice has a fallback
     // even if pickClosestSample returns null mid-flight.
     const wave = ctx.createPeriodicWave(CELLO_REAL, CELLO_IMAG, { disableNormalization: false });
-    const trim = INSTRUMENT_SOURCES[this.currentInstrument]?.trimGain ?? 1.0;
 
     for (let i = 0; i < notes.length; i++) {
       const noteGain = ctx.createGain();
-      noteGain.gain.value = (perNoteGains?.[i] ?? 1.0) * trim;
+      noteGain.gain.value = (perNoteGains?.[i] ?? 1.0) * DRONE_PATH_GAIN;
       noteGain.connect(this.droneGainNode);
 
       const freq = this.absToFreq(notes[i], edo);
@@ -828,6 +839,7 @@ export class AudioEngine {
       fadeOut[i] = Math.cos(x * Math.PI / 2);
     }
 
+    /** Spawn one voice with the standard fade-in / fade-out envelope. */
     const fireVoice = (startTime: number) => {
       const src = ctx.createBufferSource();
       src.buffer = sample.buffer;
@@ -835,25 +847,22 @@ export class AudioEngine {
       const g = ctx.createGain();
       src.connect(g).connect(noteGain);
 
-      // Voice envelope: fade in over first half, fade out over second
-      // half.  No flat sustain — the voice is always either ramping
-      // in or out, and the next voice picks up the energy via its
-      // own ramp shifted by halfDur.
+      // Standard envelope: equal-power fade-in over the first halfDur,
+      // fade-out over the second halfDur.  No flat sustain — the next
+      // voice picks up via its own ramp shifted by halfDur.
       g.gain.setValueAtTime(0, startTime);
       g.gain.setValueCurveAtTime(fadeIn, startTime, halfDur);
       g.gain.setValueCurveAtTime(fadeOut, startTime + halfDur, halfDur);
 
-      // Play just the steady-state region of the buffer, in source-time.
       src.start(startTime, sample.loopStart, loopDurSrc);
-      // src ends naturally when its slice runs out; stop scheduled
-      // slightly past the envelope's end as a safety so it can be
-      // disconnected in stopDrone() if still alive.
       src.stop(startTime + loopDur + 0.05);
       this.droneSamples.push(src);
     };
 
-    // Fire voice 1 immediately; voice 2 starts halfway through voice 1
-    // (so they overlap by halfDur, which is the entire voice life span).
+    // Voice 1 starts immediately, Voice 2 at halfDur, voice 3 at
+    // 2*halfDur, ... — every voice fades in / fades out over its own
+    // halfDur halves; consecutive voices overlap by exactly halfDur,
+    // so the equal-power crossfade keeps the sum constant.
     let nextStart = ctx.currentTime + 0.02;
     fireVoice(nextStart);
     nextStart += halfDur;
@@ -1051,11 +1060,10 @@ export class AudioEngine {
     // Always create the wave fallback so spawnDroneVoice can fall
     // through if pickClosestSample races.
     const wave = ctx.createPeriodicWave(CELLO_REAL, CELLO_IMAG, { disableNormalization: false });
-    const trim = INSTRUMENT_SOURCES[this.currentInstrument]?.trimGain ?? 1.0;
 
     for (let i = 0; i < ratios.length; i++) {
       const noteGain = ctx.createGain();
-      noteGain.gain.value = (perNoteGains?.[i] ?? 1.0) * trim;
+      noteGain.gain.value = (perNoteGains?.[i] ?? 1.0) * DRONE_PATH_GAIN;
       noteGain.connect(this.droneGainNode);
 
       this.spawnDroneVoice(ctx, freq * ratios[i], noteGain, useSamples, wave);

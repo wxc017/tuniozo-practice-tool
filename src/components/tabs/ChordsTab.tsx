@@ -402,21 +402,23 @@ export default function ChordsTab({
     fhFramesRef.current = null;
     setPinnedChordIdxs(new Set());
     setTonalitySet(prev => {
-      const stripJiNames = !(edo === 41 || edo === 53);
-      const filtered = [...prev].filter(t => {
-        // Drop tonalities that don't have a bank in the new EDO.
-        if (!banksByName[t]) return false;
-        // Defensive (per user direction 2026-05-05): when switching
-        // to an EDO that isn't 41 or 53, also drop any tonality
-        // whose name starts with "Diatonic " — those are JI scale
-        // names registered only for 41 / 53 in jiScaleData.ts and
-        // should never persist into other EDO pickers.  Without
-        // this, a "Diatonic Major" picked in 41-EDO would remain
-        // selected (and potentially listed) when the user flips to
-        // 31-EDO.
-        if (stripJiNames && t.startsWith("Diatonic ")) return false;
-        return true;
-      });
+      // Compute the set of tonality names that actually appear in
+      // the current EDO's picker (intersection of every section's
+      // families × banks).  Anything in tonalitySet that's not
+      // visible here is stale — left over from a previous EDO — and
+      // would silently leak chords into the roman-numeral display
+      // even though the picker shows nothing selected for it (per
+      // direct user feedback 2026-05-05: "i only have this tonality
+      // selected but im see more then in the roman numerals").
+      const visible = new Set<string>();
+      for (const section of tonalitySectionsForEdo(edo)) {
+        for (const fam of section.families) {
+          for (const t of fam.tonalities) {
+            if (banksByName[t]) visible.add(t);
+          }
+        }
+      }
+      const filtered = [...prev].filter(t => visible.has(t));
       if (filtered.length === prev.size) return prev;
       return new Set(filtered);
     });
