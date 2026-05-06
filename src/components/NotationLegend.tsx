@@ -32,10 +32,10 @@ export default function NotationLegend() {
               <ul className="text-[13px] text-[#aaa] space-y-1.5 leading-snug">
                 <li><b className="text-white">s</b> = subminor</li>
                 <li><b className="text-white">m</b> = minor</li>
-                <li><b className="text-white">Cm</b> = classic minor</li>
+                <li><b className="text-white">Clm</b> = classic minor</li>
                 <li><b className="text-white">u</b> = supraminor</li>
                 <li><b className="text-white">n</b> = neutral</li>
-                <li><b className="text-white">C</b> = classic major</li>
+                <li><b className="text-white">Cl</b> = classic major</li>
                 <li><b className="text-white">M</b> = major</li>
                 <li><b className="text-white">S</b> = supermajor</li>
                 <li><b className="text-white">Diatonic</b> = M2 / P4 / P5 backbone</li>

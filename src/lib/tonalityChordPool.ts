@@ -35,11 +35,11 @@ export const TONALITY_FAMILIES: { key: string; label: string; color: string; ton
   { key: "subminor",   label: "SUBMINOR DIATONIC",   color: "#7aaa6a",
     tonalities: ["Subminor Diatonic","Locrian s2 s5 s6","Supermajor Ionian","Dorian s3 bb4 s7","Subminor Phrygian m7","Supermajor Lydian M2 b5","Supermajor Mixolydian ##5 m7"] },
   { key: "neutral",    label: "NEUTRAL DIATONIC",    color: "#9a66c0",
-    tonalities: ["Neutral Diatonic","Dorian N2 bb5 N6","Neutral Ionian","Ionian N3 ##4 N7","Neutral Dorian m7","Neutral Ionian M2 ##4","Neutral Dorian bb5 m7"] },
+    tonalities: ["Neutral Diatonic","Dorian n2 bb5 n6","Neutral Ionian","Ionian n3 ##4 n7","Neutral Dorian m7","Neutral Ionian M2 ##4","Neutral Dorian bb5 m7"] },
   { key: "supermajor", label: "SUPERMAJOR DIATONIC", color: "#cc6a8a",
     tonalities: ["Supermajor Diatonic","Dorian S2 ##5 S6","Subminor Phrygian","Lydian S3 b5 S7","Supermajor Mixolydian m7","Subminor Aeolian M2 bb4","Subminor Locrian m7"] },
   { key: "subharmonic",label: "SUBHARMONIC DIATONIC M7",color: "#4a9ac7",
-    tonalities: ["Subharmonic Diatonic M7","Locrian s2 s5 N6","Supermajor Ionian #5","Dorian s3 ##4 s7","Phrygian s2 N3 s6","Supermajor Lydian #2 b5","Neutral Dorian b4 bb5 bb7"] },
+    tonalities: ["Subharmonic Diatonic M7","Locrian s2 s5 n6","Supermajor Ionian #5","Dorian s3 ##4 s7","Phrygian s2 n3 s6","Supermajor Lydian #2 b5","Neutral Dorian b4 bb5 bb7"] },
   // ── Double Harmonic family (12-EDO native, available in all EDOs) ─────
   { key: "doubleharmonic", label: "DOUBLE HARMONIC", color: "#e08040",
     tonalities: ["Double Harmonic Major","Lydian #2 #6","Ultraphrygian","Double Harmonic Minor","Oriental","Ionian #2 #5","Locrian bb3 bb7"] },

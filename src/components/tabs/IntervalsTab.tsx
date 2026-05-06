@@ -39,11 +39,11 @@ const MEANTONE_LIMIT_SECTIONS: IntervalsTonalitySection[] = [
     { key: "supermajor", label: "SUPERMAJOR DIATONIC", scaleFamily: "Supermajor Diatonic Family",
       tonalities: ["Supermajor Diatonic","Dorian S2 ##5 S6","Subminor Phrygian","Lydian S3 b5 S7","Supermajor Mixolydian m7","Subminor Aeolian M2 bb4","Subminor Locrian m7"] },
     { key: "subharmonic",label: "SUBHARMONIC DIATONIC M7", scaleFamily: "Subharmonic Diatonic Family",
-      tonalities: ["Subharmonic Diatonic M7","Locrian s2 s5 N6","Supermajor Ionian #5","Dorian s3 ##4 s7","Phrygian s2 N3 s6","Supermajor Lydian #2 b5","Neutral Dorian b4 bb5 bb7"] },
+      tonalities: ["Subharmonic Diatonic M7","Locrian s2 s5 n6","Supermajor Ionian #5","Dorian s3 ##4 s7","Phrygian s2 n3 s6","Supermajor Lydian #2 b5","Neutral Dorian b4 bb5 bb7"] },
   ] },
   { key: "lim11", label: "11-LIMIT (NEUTRAL)", color: "#9a66c0", families: [
     { key: "neutral", label: "NEUTRAL DIATONIC", scaleFamily: "Neutral Diatonic Family",
-      tonalities: ["Neutral Diatonic","Dorian N2 bb5 N6","Neutral Ionian","Ionian N3 ##4 N7","Neutral Dorian m7","Neutral Ionian M2 ##4","Neutral Dorian bb5 m7"] },
+      tonalities: ["Neutral Diatonic","Dorian n2 bb5 n6","Neutral Ionian","Ionian n3 ##4 n7","Neutral Dorian m7","Neutral Ionian M2 ##4","Neutral Dorian bb5 m7"] },
   ] },
 ];
 

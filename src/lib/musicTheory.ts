@@ -2096,9 +2096,9 @@ export const PATTERN_SCALE_FAMILIES: Record<string, string[]> = {
   ],
   "Neutral Diatonic Family": [
     "Neutral Diatonic",
-    "Dorian N2 bb5 N6",
+    "Dorian n2 bb5 n6",
     "Neutral Ionian",
-    "Ionian N3 ##4 N7",
+    "Ionian n3 ##4 n7",
     "Neutral Dorian m7",
     "Neutral Ionian M2 ##4",
     "Neutral Dorian bb5 m7",
@@ -2114,10 +2114,10 @@ export const PATTERN_SCALE_FAMILIES: Record<string, string[]> = {
   ],
   "Subharmonic Diatonic Family": [
     "Subharmonic Diatonic M7",
-    "Locrian s2 s5 N6",
+    "Locrian s2 s5 n6",
     "Supermajor Ionian #5",
     "Dorian s3 ##4 s7",
-    "Phrygian s2 N3 s6",
+    "Phrygian s2 n3 s6",
     "Supermajor Lydian #2 b5",
     "Neutral Dorian b4 bb5 bb7",
   ],
@@ -2234,12 +2234,12 @@ function absoluteIntervalLabel31(step: number): string {
     case 0:  return "1";
     case 2:  return "s2";
     case 3:  return "m2";
-    case 4:  return "N2";
+    case 4:  return "n2";
     case 5:  return "2";
     case 6:  return "S2";
     case 7:  return "s3";
     case 8:  return "m3";
-    case 9:  return "N3";
+    case 9:  return "n3";
     case 10: return "3";
     case 11: return "S3";
     case 13: return "4";
@@ -2251,12 +2251,12 @@ function absoluteIntervalLabel31(step: number): string {
     case 19: return "##5";
     case 20: return "s6";
     case 21: return "m6";
-    case 22: return "N6";
+    case 22: return "n6";
     case 23: return "6";
     case 24: return "S6";
     case 25: return "s7";
     case 26: return "m7";
-    case 27: return "N7";
+    case 27: return "n7";
     case 28: return "7";
     case 29: return "S7";
     default: return `step${step}`;

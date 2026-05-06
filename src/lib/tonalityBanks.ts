@@ -575,9 +575,9 @@ function buildXenFamilyBanks(edo: number, showSevenths: boolean): TonalityBank[]
   ];
   const NEUTRAL_MODES = [
     "Neutral Diatonic",
-    "Dorian N2 bb5 N6",
+    "Dorian n2 bb5 n6",
     "Neutral Ionian",
-    "Ionian N3 ##4 N7",
+    "Ionian n3 ##4 n7",
     "Neutral Dorian m7",
     "Neutral Ionian M2 ##4",
     "Neutral Dorian bb5 m7",
@@ -593,10 +593,10 @@ function buildXenFamilyBanks(edo: number, showSevenths: boolean): TonalityBank[]
   ];
   const SUBHARMONIC_MODES = [
     "Subharmonic Diatonic M7",
-    "Locrian s2 s5 N6",
+    "Locrian s2 s5 n6",
     "Supermajor Ionian #5",
     "Dorian s3 ##4 s7",
-    "Phrygian s2 N3 s6",
+    "Phrygian s2 n3 s6",
     "Supermajor Lydian #2 b5",
     "Neutral Dorian b4 bb5 bb7",
   ];
@@ -762,11 +762,11 @@ function buildOneXenMode(parent: number[], rotIdx: number, modeName: string, edo
     else if (q5 === "hA") supParts.push("##5"); // half-sharp 5
     else if (q5 === "subP") { supParts.push("no5"); supParts.push("#4"); }
     // (q3 === "sub" handled by the ₛ-prefix above; no s3 suffix.)
-    if (q3 === "neu") supParts.push("N3");
+    if (q3 === "neu") supParts.push("n3");
     else if (q3 === "sup") supParts.push("S3");
     if (showSevenths) {
       if (q7 === "sub") supParts.push("s7");
-      else if (q7 === "neu") supParts.push("N7");
+      else if (q7 === "neu") supParts.push("n7");
       else if (q7 === "m" && upper) supParts.push("7");        // dom7
       else if (q7 === "M" && upper) supParts.push("M7");       // maj7
       else if (q7 === "M" && !upper) supParts.push("mM7");     // m-Maj7

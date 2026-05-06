@@ -119,7 +119,7 @@ describe("Xen tonality families — degree labels", () => {
     expect(getModeDegreeMap(EDO, "Subminor Diatonic Family", "Subminor Diatonic"))
       .toEqual({ "1": 0, "2": 5, "s3": 7, "4": 13, "5": 18, "s6": 20, "s7": 25 });
     expect(getModeDegreeMap(EDO, "Neutral Diatonic Family", "Neutral Diatonic"))
-      .toEqual({ "1": 0, "2": 5, "N3": 9, "4": 13, "5": 18, "N6": 22, "N7": 27 });
+      .toEqual({ "1": 0, "2": 5, "n3": 9, "4": 13, "5": 18, "n6": 22, "n7": 27 });
     expect(getModeDegreeMap(EDO, "Supermajor Diatonic Family", "Supermajor Diatonic"))
       .toEqual({ "1": 0, "2": 5, "S3": 11, "4": 13, "5": 18, "S6": 24, "S7": 29 });
     expect(getModeDegreeMap(EDO, "Subharmonic Diatonic Family", "Subharmonic Diatonic M7"))
@@ -237,10 +237,10 @@ describe("Xen tonality banks — Roman-numeral labels", () => {
     expect(supTonic.startsWith("I")).toBe(true);
     expect(supTonic).toContain("S3");
     expect(supTonic).toContain("S7");
-    // Neutral Diatonic — N3 + N7
+    // Neutral Diatonic — n3 + n7
     const neuTonic = tonicLabel("Neutral Diatonic");
-    expect(neuTonic).toContain("N3");
-    expect(neuTonic).toContain("N7");
+    expect(neuTonic).toContain("n3");
+    expect(neuTonic).toContain("n7");
     // Subharmonic Diatonic M7 — ₛi prefix (subminor 3rd) + mM7 (major 7th)
     const shTonic = tonicLabel("Subharmonic Diatonic M7");
     expect(shTonic.startsWith("ₛi")).toBe(true);
@@ -259,6 +259,6 @@ describe("Xen tonality banks — Roman-numeral labels", () => {
     // marks the chord as subminor; no s7 / m7 / 7 / Maj7 should appear.
     const subTonic = tonicLabel("Subminor Diatonic");
     expect(subTonic.startsWith("ₛi")).toBe(true);
-    expect(subTonic).not.toMatch(/s7|m7|N7|S7|M7/);
+    expect(subTonic).not.toMatch(/s7|m7|n7|S7|M7/);
   });
 });

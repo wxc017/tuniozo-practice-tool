@@ -165,15 +165,15 @@ function triadQualityName(third: ClassifiedInterval, fifth: ClassifiedInterval):
   if (thirdBucket === "m3" && fifthBucket === "P5") return "Minor";
   if (thirdBucket === "m3" && fifthBucket === "d5") return "Diminished";
   if (thirdBucket === "M3" && fifthBucket === "A5") return "Augmented";
-  if (thirdBucket === "N3") return fifthBucket === "P5" ? "Neutral" : `Neutral (${fifth.name})`;
+  if (thirdBucket === "n3") return fifthBucket === "P5" ? "Neutral" : `Neutral (${fifth.name})`;
   if (thirdBucket === "sub3") return fifthBucket === "P5" ? "Subminor" : `Subminor (${fifth.name})`;
   if (thirdBucket === "sup3") return fifthBucket === "P5" ? "Supermajor" : `Supermajor (${fifth.name})`;
   return `${third.name} / ${fifth.name}`;
 }
-function bucketThird(c: number): "sub3" | "m3" | "N3" | "M3" | "sup3" | "?" {
+function bucketThird(c: number): "sub3" | "m3" | "n3" | "M3" | "sup3" | "?" {
   if (c < 280) return "sub3";
   if (c < 332) return "m3";
-  if (c < 372) return "N3";
+  if (c < 372) return "n3";
   if (c < 422) return "M3";
   if (c < 460) return "sup3";
   return "?";
@@ -308,7 +308,7 @@ export function adaptiveTriadFor(
   if (tb === "m3" && fb === "P5") return wrap([0, 315.6, 702.0]);   // 10:12:15 minor
   if (tb === "m3" && fb === "d5") return wrap([0, 315.6, 609.8]);   // diminished (5-limit)
   if (tb === "M3" && fb === "A5") return wrap([0, 386.3, 772.6]);   // augmented (5/4 + 5/4)
-  if (tb === "N3" && fb === "P5") return wrap([0, 347.4, 702.0]);   // 11-limit neutral triad
+  if (tb === "n3" && fb === "P5") return wrap([0, 347.4, 702.0]);   // 11-limit neutral triad
   if (tb === "sub3" && fb === "P5") return wrap([0, 266.9, 702.0]); // 6:7:9 subminor
   if (tb === "sup3" && fb === "P5") return wrap([0, 435.1, 702.0]); // 14:18:21 supermajor (9/7 + ~)
   return null;

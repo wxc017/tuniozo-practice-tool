@@ -200,13 +200,13 @@ const INTERVAL_NAMES_31 = [
 // 41-EDO ≈ 29.27¢, so ↑ = +1 step, ↓ = −1 step (stackable).
 //
 // Letter prefixes encode the third / sixth / seventh quality varieties:
-//   s = subminor       (e.g. s3 = 7/6)
-//   m = minor          (Pythagorean, e.g. m3 = 32/27)
-//   Cm = classic minor (5-limit JI, e.g. Cm3 = 6/5)
-//   n = neutral        (11-limit, e.g. n3 = 11/9)
-//   C = classic major  (5-limit JI, e.g. C3 = 5/4)
-//   M = major          (Pythagorean, e.g. M3 = 81/64)
-//   S = supermajor     (e.g. S3 = 9/7)
+//   s   = subminor       (e.g. s3 = 7/6)
+//   m   = minor          (Pythagorean, e.g. m3 = 32/27)
+//   Clm = classic minor  (5-limit JI, e.g. Clm3 = 6/5)
+//   n   = neutral        (11-limit, e.g. n3 = 11/9)
+//   Cl  = classic major  (5-limit JI, e.g. Cl3 = 5/4)
+//   M   = major          (Pythagorean, e.g. M3 = 81/64)
+//   S   = supermajor     (e.g. S3 = 9/7)
 //
 // Per direct user direction (revision 2026-05-05): the unison /
 // fourth / fifth / octave region uses # and b accidentals (stackable
@@ -221,16 +221,16 @@ const INTERVAL_NAMES_41 = [
   "#1",                                                      // 1
   "s2",                                                      // 2
   "m2",                                                      // 3
-  "Cm2",                                                     // 4
+  "Clm2",                                                     // 4
   "n2",                                                      // 5
-  "C2",                                                      // 6
+  "Cl2",                                                      // 6
   "M2",                                                      // 7
   "S2",                                                      // 8
   "s3",                                                      // 9
   "m3",                                                      // 10
-  "Cm3",                                                     // 11
+  "Clm3",                                                     // 11
   "n3",                                                      // 12
-  "C3",                                                      // 13
+  "Cl3",                                                      // 13
   "M3",                                                      // 14
   "S3",                                                      // 15
   "b4",                                                      // 16
@@ -245,16 +245,16 @@ const INTERVAL_NAMES_41 = [
   "#5",                                                      // 25
   "s6",                                                      // 26
   "m6",                                                      // 27
-  "Cm6",                                                     // 28
+  "Clm6",                                                     // 28
   "n6",                                                      // 29
-  "C6",                                                      // 30
+  "Cl6",                                                      // 30
   "M6",                                                      // 31
   "S6",                                                      // 32
   "s7",                                                      // 33
   "m7",                                                      // 34
-  "Cm7",                                                     // 35
+  "Clm7",                                                     // 35
   "n7",                                                      // 36
-  "C7",                                                      // 37
+  "Cl7",                                                      // 37
   "M7",                                                      // 38
   "S7",                                                      // 39
   "b8",                                                      // 40
@@ -269,14 +269,14 @@ const INTERVAL_NAMES_41 = [
 // those collide visually with s (sub) or S (super).
 //
 // Quality codes for 2 / 3 / 6 / 7:
-//   s  = subminor       (e.g. s3 = 7/6)
-//   m  = minor          (Pythagorean, e.g. m3 = 32/27)
-//   Cm = classic minor  (5-limit JI, e.g. Cm3 = 6/5)
-//   u  = supraminor     (e.g. u3 ≈ 340¢ — 17/14 / 39/32 region; NEW in 53-EDO)
-//   n  = neutral        (11-limit, e.g. n3 = 11/9 / 16/13)
-//   C  = classic major  (5-limit JI, e.g. C3 = 5/4)
-//   M  = major          (Pythagorean, e.g. M3 = 81/64)
-//   S  = supermajor     (e.g. S3 = 9/7)
+//   s   = subminor       (e.g. s3 = 7/6)
+//   m   = minor          (Pythagorean, e.g. m3 = 32/27)
+//   Clm = classic minor  (5-limit JI, e.g. Clm3 = 6/5)
+//   u   = supraminor     (e.g. u3 ≈ 340¢ — 17/14 / 39/32 region; NEW in 53-EDO)
+//   n   = neutral        (11-limit, e.g. n3 = 11/9 / 16/13)
+//   Cl  = classic major  (5-limit JI, e.g. Cl3 = 5/4)
+//   M   = major          (Pythagorean, e.g. M3 = 81/64)
+//   S   = supermajor     (e.g. S3 = 9/7)
 //
 // 1 / 4 / 5 / 8 region uses bare degree numbers + # / b accidentals
 // (each = ±1 step ≈22.64¢; stackable: ##, ###, bb, bbb…).  Steps
@@ -288,19 +288,19 @@ const INTERVAL_NAMES_53 = [
   "##1",                                                     //  2
   "s2",                                                      //  3 (~68¢, 28/27 / 25/24)
   "m2",                                                      //  4 (~91¢, Pyth 256/243)
-  "Cm2",                                                     //  5 (~113¢, 5-limit 16/15)
+  "Clm2",                                                     //  5 (~113¢, 5-limit 16/15)
   "u2",                                                     //  6 (~136¢, 13/12)
   "n2",                                                      //  7 (~158¢, 12/11 / 11/10)
-  "C2",                                                      //  8 (~181¢, 5-limit 10/9)
+  "Cl2",                                                      //  8 (~181¢, 5-limit 10/9)
   "M2",                                                      //  9 (~204¢, Pyth 9/8)
   "S2",                                                      // 10 (~227¢, 8/7)
   "S2↑",                                                     // 11 (~249¢, transitional)
   "s3",                                                      // 12 (~272¢, 7/6)
   "m3",                                                      // 13 (~294¢, Pyth 32/27)
-  "Cm3",                                                     // 14 (~317¢, 5-limit 6/5)
+  "Clm3",                                                     // 14 (~317¢, 5-limit 6/5)
   "u3",                                                     // 15 (~340¢, 17/14 / supraminor)
   "n3",                                                      // 16 (~362¢, 11/9 / 16/13)
-  "C3",                                                      // 17 (~385¢, 5-limit 5/4)
+  "Cl3",                                                      // 17 (~385¢, 5-limit 5/4)
   "M3",                                                      // 18 (~408¢, Pyth 81/64)
   "S3",                                                      // 19 (~430¢, 9/7)
   "bb4",                                                     // 20 (~453¢, 2 below P4)
@@ -319,19 +319,19 @@ const INTERVAL_NAMES_53 = [
   "##5",                                                     // 33 (~747¢)
   "s6",                                                      // 34 (~770¢, 14/9)
   "m6",                                                      // 35 (~792¢, Pyth 128/81)
-  "Cm6",                                                     // 36 (~815¢, 5-limit 8/5)
+  "Clm6",                                                     // 36 (~815¢, 5-limit 8/5)
   "u6",                                                     // 37 (~838¢, 13/8 / supraminor 6)
   "n6",                                                      // 38 (~860¢, 18/11)
-  "C6",                                                      // 39 (~883¢, 5-limit 5/3)
+  "Cl6",                                                      // 39 (~883¢, 5-limit 5/3)
   "M6",                                                      // 40 (~906¢, Pyth 27/16)
   "S6",                                                      // 41 (~928¢, 12/7)
   "S6↑",                                                     // 42 (~951¢, transitional)
   "s7",                                                      // 43 (~974¢, 7/4)
   "m7",                                                      // 44 (~996¢, Pyth 16/9)
-  "Cm7",                                                     // 45 (~1019¢, 5-limit 9/5)
+  "Clm7",                                                     // 45 (~1019¢, 5-limit 9/5)
   "u7",                                                     // 46 (~1042¢, supraminor 7)
   "n7",                                                      // 47 (~1064¢, 11/6)
-  "C7",                                                      // 48 (~1087¢, 5-limit 15/8)
+  "Cl7",                                                      // 48 (~1087¢, 5-limit 15/8)
   "M7",                                                      // 49 (~1109¢, Pyth 243/128)
   "S7",                                                      // 50 (~1132¢, 27/14 / 49/27)
   "bb8",                                                     // 51 (~1155¢)
@@ -609,14 +609,14 @@ export function getEdoChordTypes(edo: number): EdoChordType[] {
     S("min_m7",    "Minor Min7",     "Min m7", [0,8,18,26], 8);
     S("min_h7",    "Minor Harm7",    "Min H7", [0,8,18,25], 8);
     // Neutral 7ths — 9+18=27, so Neutral Neutral7 is fifth-paired
-    S("neu_n7",    "Neutral Neutral7","Neu N7", [0,9,18,27], 9);
+    S("neu_n7",    "Neutral Neutral7","Neu n7", [0,9,18,27], 9);
     S("neu_h7",    "Neutral Harm7",  "Neu H7", [0,9,18,25], 9);
     S("neu_m7",    "Neutral Min7",   "Neu m7", [0,9,18,26], 9);
     S("neu_M7",    "Neutral Maj7",   "Neu M7", [0,9,18,28], 9);
     // Major 7ths — 10+18=28, so Major Maj7 is fifth-paired (= standard maj7)
     S("maj_M7",    "Major Maj7",     "Maj M7", [0,10,18,28], 10);
     S("harm7",     "Harmonic 7th",   "H7",     [0,10,18,25], 10);
-    S("maj_n7",    "Major Neutral7", "Maj N7", [0,10,18,27], 10);
+    S("maj_n7",    "Major Neutral7", "Maj n7", [0,10,18,27], 10);
     // Supermajor 7ths — 11+18=29, so Supermajor Supermaj7 is fifth-paired
     S("sup_sup7",  "Supermajor Supermaj7","Sup SM7", [0,11,18,29], 11);
     S("sup_h7",    "Supermajor Harm7","Sup H7", [0,11,18,25], 11);
@@ -648,20 +648,20 @@ export function getEdoChordTypes(edo: number): EdoChordType[] {
     S("submin_sm7",    "Subminor Submin7",             "Sub sm7",      [0,9,24,33],  9);
     S("submin_maj6",   "Subminor Maj6",               "Sub Maj6",     [0,9,24,31],  9);
     S("submin_clm7",   "Subminor Classic Min7",        "Sub Classic m7", [0,9,24,35],  9);
-    S("submin_n7",     "Subminor Neutral7",            "Sub N7",       [0,9,24,36],  9);
+    S("submin_n7",     "Subminor Neutral7",            "Sub n7",       [0,9,24,36],  9);
     // Minor 7ths — 10+24=34, so Minor Min7 (Pythagorean) is fifth-paired
     S("min_m7",        "Minor Min7",                   "Min m7",       [0,10,24,34], 10);
     S("min_maj6",      "Minor Maj6",                   "Min Maj6",     [0,10,24,31], 10);
     S("min_sm7",       "Minor Submin7",                "Min sm7",      [0,10,24,33], 10);
     S("min_clm7",      "Minor Classic Min7",           "Min Classic m7", [0,10,24,35], 10);
-    S("min_n7",        "Minor Neutral7",               "Min N7",       [0,10,24,36], 10);
+    S("min_n7",        "Minor Neutral7",               "Min n7",       [0,10,24,36], 10);
     // Classic Minor 7ths — 11+24=35, so Classic Min Classic Min7 is fifth-paired
     S("clmin_clm7",    "Classic Minor Classic Min7",    "Classic Min Classic m7",[0,11,24,35], 11);
     S("clmin_maj6",    "Classic Minor Maj6",            "Classic Min Maj6",      [0,11,24,31], 11);
     S("clmin_sm7",     "Classic Minor Submin7",         "Classic Min sm7",       [0,11,24,33], 11);
-    S("clmin_n7",      "Classic Minor Neutral7",        "Classic Min N7",        [0,11,24,36], 11);
+    S("clmin_n7",      "Classic Minor Neutral7",        "Classic Min n7",        [0,11,24,36], 11);
     // Neutral 7ths — 12+24=36, so Neutral Neutral7 is fifth-paired
-    S("neu_n7",        "Neutral Neutral7",             "Neu N7",       [0,12,24,36], 12);
+    S("neu_n7",        "Neutral Neutral7",             "Neu n7",       [0,12,24,36], 12);
     S("neu_maj6",      "Neutral Maj6",                 "Neu Maj6",     [0,12,24,31], 12);
     S("neu_sm7",       "Neutral Submin7",              "Neu sm7",      [0,12,24,33], 12);
     S("neu_clm7",      "Neutral Classic Min7",         "Neu Classic m7", [0,12,24,35], 12);
@@ -670,19 +670,19 @@ export function getEdoChordTypes(edo: number): EdoChordType[] {
     S("clmaj_maj6",    "Classic Major Maj6",            "Classic Maj Maj6",      [0,13,24,31], 13);
     S("clmaj_sm7",     "Classic Major Submin7",         "Classic Maj sm7",       [0,13,24,33], 13);
     S("clmaj_clm7",    "Classic Major Classic Min7",    "Classic Maj Classic m7",[0,13,24,35], 13);
-    S("clmaj_n7",      "Classic Major Neutral7",        "Classic Maj N7",        [0,13,24,36], 13);
+    S("clmaj_n7",      "Classic Major Neutral7",        "Classic Maj n7",        [0,13,24,36], 13);
     // Major 7ths — 14+24=38, so Major Maj7 is fifth-paired
     S("maj_M7",        "Major Maj7",                   "Maj M7",       [0,14,24,38], 14);
     S("maj_maj6",      "Major Maj6",                   "Maj Maj6",     [0,14,24,31], 14);
     S("maj_sm7",       "Major Submin7",                "Maj sm7",      [0,14,24,33], 14);
     S("maj_clm7",      "Major Classic Min7",           "Maj Classic m7", [0,14,24,35], 14);
-    S("maj_n7",        "Major Neutral7",               "Maj N7",       [0,14,24,36], 14);
+    S("maj_n7",        "Major Neutral7",               "Maj n7",       [0,14,24,36], 14);
     // Supermajor 7ths — 15+24=39, so Supermajor Supermaj7 is fifth-paired
     S("sup_sup7",      "Supermajor Supermaj7",         "Sup SM7",      [0,15,24,39], 15);
     S("sup_maj6",      "Supermajor Maj6",              "Sup Maj6",     [0,15,24,31], 15);
     S("sup_sm7",       "Supermajor Submin7",           "Sup sm7",      [0,15,24,33], 15);
     S("sup_clm7",      "Supermajor Classic Min7",      "Sup Classic m7", [0,15,24,35], 15);
-    S("sup_n7",        "Supermajor Neutral7",          "Sup N7",       [0,15,24,36], 15);
+    S("sup_n7",        "Supermajor Neutral7",          "Sup n7",       [0,15,24,36], 15);
     // Diminished 7ths
     S("halfdim_lo",    "Half-Dim (low)",               "\u00F87\u2193", [0,11,21,33], 11);
     S("halfdim_hi",    "Half-Dim (high)",              "\u00F87\u2191", [0,11,22,33], 11);
@@ -690,9 +690,9 @@ export function getEdoChordTypes(edo: number): EdoChordType[] {
     S("dim7_hi",       "Dim7 (high)",                  "\u00B07\u2191", [0,11,22,30], 11);
     // Augmented 7ths
     S("aug7_lo",       "Aug Submin7 (low)",            "Aug sm7\u2193",  [0,13,26,33], 13);
-    S("augN7_lo",      "Aug Neutral7 (low)",           "Aug N7\u2193",   [0,13,26,36], 13);
+    S("augN7_lo",      "Aug Neutral7 (low)",           "Aug n7\u2193",   [0,13,26,36], 13);
     S("aug7_hi",       "Aug Submin7 (high)",           "Aug sm7\u2191",  [0,13,27,33], 13);
-    S("augN7_hi",      "Aug Neutral7 (high)",          "Aug N7\u2191",   [0,13,27,36], 13);
+    S("augN7_hi",      "Aug Neutral7 (high)",          "Aug n7\u2191",   [0,13,27,36], 13);
     // Sus4 seventh
     S("dom7sus4",      "Suspended 4th Submin7",        "Sus4 sm7",      [0,17,24,33], 17);
   }

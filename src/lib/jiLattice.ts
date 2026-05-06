@@ -358,10 +358,10 @@ export const VOICING_CATALOG: Record<string, ChordVoicing> = {
 };
 
 /** Bucket a third interval (in cents) into a quality category. */
-function classifyThird(cents: number): "sub3" | "m3" | "N3" | "M3" | "sup3" | "?" {
+function classifyThird(cents: number): "sub3" | "m3" | "n3" | "M3" | "sup3" | "?" {
   if (cents < 280) return "sub3";
   if (cents < 332) return "m3";
-  if (cents < 372) return "N3";
+  if (cents < 372) return "n3";
   if (cents < 422) return "M3";
   if (cents < 460) return "sup3";
   return "?";
@@ -399,7 +399,7 @@ export function chordQualityFromSteps(steps: number[], edo: number): string | nu
     if (t3 === "m3" && t5 === "P5") return "minor";
     if (t3 === "m3" && t5 === "d5") return "dim";
     if (t3 === "M3" && t5 === "A5") return "aug";
-    if (t3 === "N3" && t5 === "P5") return "neutral-triad";
+    if (t3 === "n3" && t5 === "P5") return "neutral-triad";
     if (t3 === "sub3" && t5 === "P5") return "septimal-subminor";
     if (t3 === "sup3" && t5 === "P5") return "septimal-supermajor";
     return null;

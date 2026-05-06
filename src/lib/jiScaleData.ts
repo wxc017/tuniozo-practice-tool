@@ -130,7 +130,7 @@ const JI_SCALES: JiScaleSpec[] = [
     // 7/4 (969¢ harmonic 7).  Bluesy sub-minor flavour.
     steps: [["1",0],["2",203.9],["b3",266.9],["4",498.0],["5",702.0],["b6",764.9],["b7",968.8]] },
   { name: "Diatonic Classic Harmonic Minor M7",
-    // 5-limit harmonic minor: Cm3 → 6/5, Cm6 → 8/5, 7 → 15/8
+    // 5-limit harmonic minor: Clm3 → 6/5, Clm6 → 8/5, 7 → 15/8
     // (raised M7 leading-tone over the natural-minor lower
     // tetrachord).  Renamed from "Harmonic Minor Diatonic" per
     // user direction (2026-05-05) so the M7 class is explicit and
@@ -172,7 +172,7 @@ const JI_SCALES: JiScaleSpec[] = [
   // in every name.
   { name: "Diatonic Neutral",
     // Major-flavoured Mohajira-cousin: M2 instead of b2, n3 at the
-    // 3rd (11/9), C6 / C7 at 6 / 7 (5-limit).  Tonic chord 1-n3-5
+    // 3rd (11/9), Cl6 / Cl7 at 6 / 7 (5-limit).  Tonic chord 1-n3-5
     // is a NEUTRAL triad.
     steps: [["1",0],["2",203.9],["b3",347.4],["4",498.0],["5",702.0],["6",884.4],["7",1088.3]] },
   { name: "Diatonic Harmonic Minor",
@@ -186,7 +186,7 @@ const JI_SCALES: JiScaleSpec[] = [
     steps: [["1",0],["2",203.9],["b3",294.1],["4",498.0],["5",702.0],["b6",792.2],["7",1109.8]] },
   { name: "Diatonic Supraminor",
     // Uses Sm3 (~340¢, 17/14 / 39/32 area, 53-EDO step 15 — the
-    // distinct cell between Cm3 and n3 that 41-EDO collapses).
+    // distinct cell between Clm3 and n3 that 41-EDO collapses).
     // Sm6 = 13/8 (840.5¢), Sm7 ≈ 11/6 (1049¢).  Tonic triad sits
     // between minor and neutral — its own colour entirely.
     steps: [["1",0],["2",203.9],["b3",339.6],["4",498.0],["5",702.0],["b6",840.5],["b7",1041.5]] },
@@ -343,40 +343,40 @@ function letterCodeForDegree(cents: number, position: 2 | 3 | 4 | 5 | 6 | 7): st
     2: [
       [76,  "s2"],   // sub: 28/27 = 63¢
       [101, "m2"],   // Pyth m2: 256/243 = 90¢
-      [125, "Cm2"],  // 5-limit m2: 16/15 = 112¢
+      [125, "Clm2"],  // 5-limit m2: 16/15 = 112¢
       [145, "u2"],   // supraminor: 13/12 = 139¢
       [173, "n2"],   // neutral: 12/11 = 151¢ / 11/10 = 165¢
-      [193, "C2"],   // 5-limit M2: 10/9 = 182¢
+      [193, "Cl2"],   // 5-limit M2: 10/9 = 182¢
       [217, "M2"],   // Pyth M2: 9/8 = 204¢
       [250, "S2"],   // super: 8/7 = 231¢
     ],
     3: [
       [280, "s3"],   // sub: 7/6 = 267¢
       [305, "m3"],   // Pyth: 32/27 = 294¢
-      [327, "Cm3"],  // 5-limit: 6/5 = 316¢
+      [327, "Clm3"],  // 5-limit: 6/5 = 316¢
       [344, "u3"],   // supraminor: 17/14 = 336 / 39/32 = 342¢
       [372, "n3"],   // neutral: 11/9 = 347¢ / 16/13 = 359¢
-      [397, "C3"],   // 5-limit: 5/4 = 386¢
+      [397, "Cl3"],   // 5-limit: 5/4 = 386¢
       [421, "M3"],   // Pyth: 81/64 = 408¢
       [462, "S3"],   // super: 9/7 = 435¢
     ],
     6: [
       [779, "s6"],   // sub: 14/9 = 765¢
       [803, "m6"],   // Pyth: 128/81 = 792¢
-      [827, "Cm6"],  // 5-limit: 8/5 = 814¢
+      [827, "Clm6"],  // 5-limit: 8/5 = 814¢
       [847, "u6"],   // supraminor: 13/8 = 840¢
       [868, "n6"],   // neutral: 18/11 = 853¢
-      [895, "C6"],   // 5-limit: 5/3 = 884¢
+      [895, "Cl6"],   // 5-limit: 5/3 = 884¢
       [920, "M6"],   // Pyth: 27/16 = 906¢
       [950, "S6"],   // super: 12/7 = 933¢
     ],
     7: [
       [982,  "s7"],   // sub: 7/4 = 969¢
       [1007, "m7"],   // Pyth: 16/9 = 996¢
-      [1030, "Cm7"],  // 5-limit: 9/5 = 1018¢
+      [1030, "Clm7"],  // 5-limit: 9/5 = 1018¢
       [1046, "u7"],   // supraminor 7
       [1077, "n7"],   // neutral: 11/6 = 1049¢
-      [1099, "C7"],   // 5-limit: 15/8 = 1088¢
+      [1099, "Cl7"],   // 5-limit: 15/8 = 1088¢
       [1124, "M7"],   // Pyth: 243/128 = 1110¢
       [1175, "S7"],   // super: 27/14 / 49/27 = 1137¢
     ],
@@ -398,7 +398,7 @@ const GREEK_MODE_REFS: Array<{ name: string; cents: number[] }> = [
   { name: "Locrian",    cents: [0, 90,  294, 498, 588, 792, 996] },
 ];
 
-/** Extract the letter prefix from a degree code.  "M3" → "M", "Cm6" →
+/** Extract the letter prefix from a degree code.  "M3" → "M", "Clm6" →
  *  "Cm", "s7" → "s", "##4" → "" (no letter; perfect-position with
  *  accidentals).  Used for flavor inference and template matching. */
 function letterPrefix(code: string): string {

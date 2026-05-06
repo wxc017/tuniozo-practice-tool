@@ -11,7 +11,7 @@ const SPLIT_RE = /([°ø+])/;
  * the proper half-sharp (𝄲) / half-flat (𝄳) Unicode characters.
  *
  * Xen tonality chord labels carry a space-delimited quality suffix
- * (e.g. "iii s3", "I s3 N7").  Anything after the first space is rendered
+ * (e.g. "iii s3", "I s3 n7").  Anything after the first space is rendered
  * inside a single <sup> so the full suffix appears as superscript.
  */
 export function formatRomanNumeral(label: string, edo?: number): React.ReactNode {
