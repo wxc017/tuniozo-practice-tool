@@ -836,7 +836,12 @@ export function buildCylinderLattice(
   for (const t of allTonalities) {
     if (isAnchor(t)) { anchorTonality = t; continue; }
     const alt = altOfTonality(t);
-    const idx = alt === 0 ? 1 : Math.min(alt, ALT_LEVELS - 1);
+    // Floor the alt index to an integer — altOfTonality returns
+    // symdiff/2 which is fractional when scales of different lengths
+    // are compared (e.g. a 6-note vs 7-note scale's symdiff is odd).
+    // Without the floor, arcs[1.5] is undefined and .push crashes
+    // (per user console output 2026-05-05).
+    const idx = alt === 0 ? 1 : Math.min(Math.floor(alt), ALT_LEVELS - 1);
     arcs[idx].push(t);
   }
   // Sort each non-anchor arc by mode brightness (darkest → brightest).
@@ -1006,7 +1011,7 @@ export function buildCylinderLattice(
       for (const t of childTonalities) {
         if (childIsAnchor(t)) { childAnchorTonality = t; continue; }
         const alt = childAltOf(t);
-        const idx = alt === 0 ? 1 : Math.min(alt, ALT_LEVELS - 1);
+        const idx = alt === 0 ? 1 : Math.min(Math.floor(alt), ALT_LEVELS - 1);
         childArcs[idx].push(t);
       }
 

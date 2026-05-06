@@ -51,8 +51,10 @@ function tonalitySectionsForIntervals(edo: number): IntervalsTonalitySection[] {
   if (edo === 41 || edo === 53) {
     // JI tabs use the JI_LIMIT_GROUPS structure with the registered
     // "JI Family" so getModeDegreeMap resolves each scale.
-    return jiLimitGroupsForEdo(edo).map(g => ({
-      key: `limit-${g.limit}`,
+    // Unique key per section — for 41/53-EDO every family is at
+    // limit=5 so bare limit-${g.limit} collides.
+    return jiLimitGroupsForEdo(edo).map((g, i) => ({
+      key: `limit-${g.limit}-${i}-${g.label}`,
       label: g.label,
       color: g.color,
       families: g.families.map(f => ({

@@ -69,14 +69,13 @@ const MUSYNGKITE_BASE   = "https://gleitz.github.io/midi-js-soundfonts/MusyngKit
 // shifts well — the user explicitly requested this trade-off
 // (2026-05-05): "they can stay in one octave as well as drones
 // aren't all over the place for octaves".
-// sankalp's "Tanpura 10" — 132 s of real Hindustani classical tanpura
-// recorded at Tapan music center, jvari engaged.  CC0.  Replaces the
-// earlier 6.1 s luckylittleraven 416605 which the user reported as
-// too short and noisy ("the tanpura has static noise and it doesnt
-// sustain long enough you need to find another sample" 2026-05-05).
-// At >2 min, the loop wrap is rare enough to be effectively
-// imperceptible.  Sa ≈ C — tagged C3 (MIDI 48).
-const FREESOUND_TANPURA_URL = "https://cdn.freesound.org/previews/153/153262_1859932-hq.mp3";
+// Kaczinski's "Tambura_Eb_fat" (Freesound 506312) — 189 s clean studio
+// recording from a custom-tambura builder (volker-kaczinski.de),
+// CC0.  Replaces sankalp 153262 which the user reported as having
+// "voices in the background seems like a video recording" while
+// still sounding tanpura-like (2026-05-05).  Pure Pa-Sa-Sa-Sa cycle,
+// no room ambience, no voices.  Sa ≈ Eb, tagged Ds3 (MIDI 51).
+const FREESOUND_TANPURA_URL = "https://cdn.freesound.org/previews/506/506312_408747-hq.mp3";
 const FREESOUND_BAGPIPE_URL = "https://cdn.freesound.org/previews/622/622929_931745-hq.mp3";
 const FREESOUND_CHOIR_URL   = "https://cdn.freesound.org/previews/763/763910_11744683-hq.mp3";
 // Real cello drone — Freesound 77764, xserra's `cello-G2-up-bow.wav`.
@@ -299,13 +298,11 @@ interface SourceConfig {
 }
 
 const INSTRUMENT_SOURCES: Record<DroneInstrument, SourceConfig> = {
-  // sankalp's "Tanpura 10" (Freesound 153262) — 132 s real acoustic
-  // Hindustani tanpura, CC0, jvari engaged.  Sa ≈ C, tagged C3
-  // (MIDI 48).  RMS-normalized at load like all the others, so no
-  // per-instrument trim needed.
+  // Kaczinski's "Tambura_Eb_fat" (Freesound 506312) — 189 s clean
+  // studio tanpura, CC0, Sa ≈ Eb (tagged Ds3 / MIDI 51).
   tanpura: {
     url: () => FREESOUND_TANPURA_URL,
-    notes: ["C3"],
+    notes: ["Ds3"],
   },
   // Philharmonia: pro-recorded chromatic cello.  `_15_` = 1.5-second
   // sustain (longer than the default 1s) — gives the crossfade looper

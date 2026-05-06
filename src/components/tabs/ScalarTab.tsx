@@ -94,8 +94,11 @@ const MEANTONE_LIMIT_SECTIONS: { key: string; label: string; color: string; fami
 
 function tonalitySectionsForEdo(edo: number): TonalitySection[] {
   if (edo === 41 || edo === 53) {
-    return jiLimitGroupsForEdo(edo).map(g => ({
-      key: `limit-${g.limit}`,
+    // Unique key per section — for 41/53-EDO every family is registered
+    // at limit=5 by familiesAsLimitGroups, so a bare limit-${g.limit}
+    // collides across sections (React duplicate-key warning).
+    return jiLimitGroupsForEdo(edo).map((g, i) => ({
+      key: `limit-${g.limit}-${i}-${g.label}`,
       label: g.label,
       color: g.color,
       families: g.families.map(f => ({ key: f.key, label: f.label, tonalities: f.tonalities })),
