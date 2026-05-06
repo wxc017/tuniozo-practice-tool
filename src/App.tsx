@@ -211,7 +211,7 @@ function ScalarExplorationLayout(props: {
             <ScalarTab tonicPc={tonicPc} lowestPitch={lowestPitch} highestPitch={highestPitch}
               edo={edo} onHighlight={handleHighlight}
               ensureAudio={ensureAudio} playVol={playVol}
-              latticePortalTarget={latticeTarget} />
+              lowerSectionPortalTarget={latticeTarget} />
           </div>
         </div>
       </div>

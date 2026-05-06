@@ -25,13 +25,17 @@ interface Props {
   onHighlight: (pcs: number[]) => void;
   ensureAudio: () => Promise<void>;
   playVol?: number;
-  /** Optional element to portal the 3D mode lattice into.  When
-   *  provided, the lattice renders into that element instead of
-   *  inline at the bottom of the tab — used by App.tsx to render
-   *  the lattice OUTSIDE the sticky-visualizer wrapper so the
-   *  visualizer releases as the user scrolls past the chord stuff
-   *  (per direct user direction 2026-05-05). */
-  latticePortalTarget?: HTMLElement | null;
+  /** Optional element to portal the lower section (tonality picker +
+   *  reverb knob + 3D mode lattice) into.  When provided, those three
+   *  blocks render into that DOM node instead of inline; the upper
+   *  chord-highlight content (tuning families + chord overlay + info
+   *  panel) stays in place.  App.tsx uses this to keep the upper
+   *  content INSIDE the sticky-visualizer wrapper while the lower
+   *  content renders OUTSIDE — so the visualizer releases once the
+   *  user scrolls past the chord-highlight stuff (per direct user
+   *  direction 2026-05-05: "the visualizer should disappear after i
+   *  pass the chords highlight stuff"). */
+  lowerSectionPortalTarget?: HTMLElement | null;
 }
 
 interface TonalityFamilyGroup { key: string; label: string; color: string; tonalities: string[] }
@@ -110,7 +114,7 @@ function tonalitySectionsForEdo(edo: number): TonalitySection[] {
 
 export default function ScalarTab({
   tonicPc, lowestPitch, highestPitch, edo, onHighlight, ensureAudio, playVol = 0.55,
-  latticePortalTarget,
+  lowerSectionPortalTarget,
 }: Props) {
   const [selected, setSelected] = useLS<string>("lt_scalar_tonality", "Major");
   const [activeFamilyColor, setActiveFamilyColor] = useState<string>("#6a9aca");
@@ -749,93 +753,90 @@ export default function ScalarTab({
         </div>
       )}
 
-      {/* ── Tonality picker (large buttons, single-select) — LIMIT >
-          FAMILY > MODES hierarchy mirroring Spatial Audiation. ── */}
-      <div className="bg-[#0e0e0e] border border-[#1a1a1a] rounded p-3 space-y-3">
-        {tonalitySectionsForEdo(edo).map(section => {
-          const usableFamilies = section.families
-            .map(f => ({ ...f, tonalities: f.tonalities.filter(t => banksByName[t]) }))
-            .filter(f => f.tonalities.length > 0);
-          if (usableFamilies.length === 0) return null;
-          return (
-            <div key={section.key} className="space-y-1.5">
-              <p className="text-[10px] font-bold tracking-widest border-b border-[#1a1a1a] pb-0.5"
-                 style={{ color: section.color }}>{section.label}</p>
-              {usableFamilies.map(family => (
-                <div key={family.key} className="ml-2">
-                  <p className="text-[9px] mb-1 font-medium tracking-wider text-[#666]">
-                    {family.label}
-                  </p>
-                  <div className="flex flex-wrap gap-1">
-                    {family.tonalities.map(t => {
-                      const on = selected === t;
-                      return (
-                        <button key={t}
-                          onClick={() => { setSelected(t); setActiveFamilyColor(section.color); }}
-                          className={`px-2 py-1 text-[10px] rounded border transition-colors ${
-                            on ? "text-white" : "bg-[#111] border-[#2a2a2a] text-[#666] hover:text-[#aaa]"
-                          }`}
-                          style={on
-                            ? { backgroundColor: section.color + "30", borderColor: section.color, color: section.color }
-                            : undefined}>
-                          {formatHalfAccidentals(t)}
-                        </button>
-                      );
-                    })}
+      {/* ── Lower section: tonality picker + reverb + 3D mode lattice
+          ────────────────────────────────────────────────────────────
+          When lowerSectionPortalTarget is set, this whole block
+          renders into that DOM node instead of inline.  App.tsx uses
+          that to push the lower section OUTSIDE the sticky-visualizer
+          wrapper, so the visualizer scrolls away once the user has
+          passed the chord-highlight content above (per direct user
+          direction 2026-05-05). */}
+      {(() => {
+        const lowerSection = (
+          <div className="space-y-4">
+            {/* Tonality picker (large buttons, single-select) — LIMIT >
+                FAMILY > MODES hierarchy mirroring Spatial Audiation. */}
+            <div className="bg-[#0e0e0e] border border-[#1a1a1a] rounded p-3 space-y-3">
+              {tonalitySectionsForEdo(edo).map(section => {
+                const usableFamilies = section.families
+                  .map(f => ({ ...f, tonalities: f.tonalities.filter(t => banksByName[t]) }))
+                  .filter(f => f.tonalities.length > 0);
+                if (usableFamilies.length === 0) return null;
+                return (
+                  <div key={section.key} className="space-y-1.5">
+                    <p className="text-[10px] font-bold tracking-widest border-b border-[#1a1a1a] pb-0.5"
+                       style={{ color: section.color }}>{section.label}</p>
+                    {usableFamilies.map(family => (
+                      <div key={family.key} className="ml-2">
+                        <p className="text-[9px] mb-1 font-medium tracking-wider text-[#666]">
+                          {family.label}
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {family.tonalities.map(t => {
+                            const on = selected === t;
+                            return (
+                              <button key={t}
+                                onClick={() => { setSelected(t); setActiveFamilyColor(section.color); }}
+                                className={`px-2 py-1 text-[10px] rounded border transition-colors ${
+                                  on ? "text-white" : "bg-[#111] border-[#2a2a2a] text-[#666] hover:text-[#aaa]"
+                                }`}
+                                style={on
+                                  ? { backgroundColor: section.color + "30", borderColor: section.color, color: section.color }
+                                  : undefined}>
+                                {formatHalfAccidentals(t)}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
-          );
-        })}
-      </div>
 
-      {/* ── Reverb (dry/wet) — sits next to the 3D mode lattice
-          because the wet send is most useful when previewing scale
-          alterations on click; per direct user direction (2026-05-05):
-          "this button should go near the alteration lattice not all
-          the way up here its for the lattice".  audioEngine.setReverbWet(0)
-          is called on unmount so other sections stay dry. */}
-      <div className="bg-[#0e0e0e] border border-[#222] rounded px-3 py-2 flex items-center gap-3">
-        <span className="text-[10px] text-[#888] uppercase tracking-wider">Reverb</span>
-        <span className="text-[10px] text-[#555]">Dry</span>
-        <input
-          type="range" min={0} max={1} step={0.01}
-          value={reverbWet}
-          onChange={e => setReverbWet(Number(e.target.value))}
-          className="w-40 accent-[#7173e6]"
-        />
-        <span className="text-[10px] text-[#555]">Wet</span>
-        <span className="text-[10px] text-[#666] font-mono w-10 text-right">{Math.round(reverbWet * 100)}%</span>
-      </div>
+            {/* Reverb (dry/wet) — sits next to the 3D mode lattice
+                because the wet send is most useful when previewing
+                scale alterations on click. */}
+            <div className="bg-[#0e0e0e] border border-[#222] rounded px-3 py-2 flex items-center gap-3">
+              <span className="text-[10px] text-[#888] uppercase tracking-wider">Reverb</span>
+              <span className="text-[10px] text-[#555]">Dry</span>
+              <input
+                type="range" min={0} max={1} step={0.01}
+                value={reverbWet}
+                onChange={e => setReverbWet(Number(e.target.value))}
+                className="w-40 accent-[#7173e6]"
+              />
+              <span className="text-[10px] text-[#555]">Wet</span>
+              <span className="text-[10px] text-[#666] font-mono w-10 text-right">{Math.round(reverbWet * 100)}%</span>
+            </div>
 
-      {/* ── 3D mode lattice ────────────────────────────────────────
-          All 49 modes arranged by force-directed simulation in X-Z;
-          Y locks to brightness so bright modes float and dark ones
-          sink.  The selected tonality from the picker above acts as
-          the visual anchor.  Click any mode to drone its scale on
-          the user's root pitch.
-          When latticePortalTarget is provided, the lattice renders
-          into that DOM node instead — App.tsx uses this to put the
-          lattice OUTSIDE the sticky-visualizer wrapper, so scrolling
-          past the chord stuff releases the visualizer. ── */}
-      {!latticePortalTarget && (
-        <ModeLattice3D
-          edo={edo}
-          rootPitch={baseTonic}
-          tonicPc={tonicPc}
-          anchorKey={anchorKey}
-          playVol={playVol} />
-      )}
-      {latticePortalTarget && createPortal(
-        <ModeLattice3D
-          edo={edo}
-          rootPitch={baseTonic}
-          tonicPc={tonicPc}
-          anchorKey={anchorKey}
-          playVol={playVol} />,
-        latticePortalTarget,
-      )}
+            {/* 3D mode lattice — all 49 modes arranged by force-directed
+                simulation in X-Z; Y locks to brightness so bright modes
+                float and dark ones sink.  Click any mode to drone its
+                scale on the user's root pitch. */}
+            <ModeLattice3D
+              edo={edo}
+              rootPitch={baseTonic}
+              tonicPc={tonicPc}
+              anchorKey={anchorKey}
+              playVol={playVol} />
+          </div>
+        );
+        return lowerSectionPortalTarget
+          ? createPortal(lowerSection, lowerSectionPortalTarget)
+          : lowerSection;
+      })()}
     </div>
   );
 }
