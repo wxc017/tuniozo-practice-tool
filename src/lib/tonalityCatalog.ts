@@ -123,8 +123,13 @@ function curatedSectionsToTonalitySections(curated: CuratedSection[]): TonalityS
  *  for a given EDO. */
 export function tonalitySectionsForEdo(edo: number): TonalitySection[] {
   if (edo === 41 || edo === 53) {
-    return jiLimitGroupsForEdo(edo).map(g => ({
-      key: `limit-${g.limit}`,
+    // Key must include the parent label too — for 41/53-EDO every
+    // family is registered as 5-limit by familiesAsLimitGroups, so a
+    // bare `limit-${g.limit}` collides across sections (React warned
+    // "Encountered two children with the same key, `limit-5`" per
+    // user console output 2026-05-05).
+    return jiLimitGroupsForEdo(edo).map((g, i) => ({
+      key: `limit-${g.limit}-${i}-${g.label}`,
       label: g.label,
       color: g.color,
       families: g.families.map(f => ({ key: f.key, label: f.label, tonalities: f.tonalities })),

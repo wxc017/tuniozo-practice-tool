@@ -940,7 +940,7 @@ export default function App() {
               </div>
               <div className="flex items-center gap-1.5">
                 <label className="text-xs text-[#666]">Drone Vol</label>
-                <input type="range" min={0} max={1.0} step={0.01} value={droneVol}
+                <input type="range" min={0} max={1.5} step={0.01} value={droneVol}
                   onChange={e => handleDroneVolChange(Number(e.target.value))}
                   className="w-20 accent-[#7173e6]" />
                 <span className="text-xs text-[#555] w-7">{Math.round(droneVol * 100)}%</span>
