@@ -493,6 +493,18 @@ export default function SettingsModal({ onClose, onDataImported, betaPlayRotatio
           </div>)}
 
           {msg && <p className="text-xs text-[#7173e6]">{msg}</p>}
+
+          {/* Sample-credit attribution.  Two of the drone samples are
+              CC-BY 4.0 (require credit); the rest are CC0 (no
+              attribution required) but listed for transparency. */}
+          <div className="border-t border-[#1e1e1e] pt-3 mt-2">
+            <div className="text-[10px] text-[#666] uppercase tracking-widest mb-2">Drone Sample Credits</div>
+            <ul className="text-[10px] text-[#666] space-y-0.5 leading-snug">
+              <li><span className="text-[#888]">Cello</span> — open-string G2 by <a href="https://freesound.org/people/xserra/sounds/77764/" target="_blank" rel="noopener noreferrer" className="text-[#7aaa7a] hover:underline">xserra</a> (CC-BY 4.0)</li>
+              <li><span className="text-[#888]">Voice</span> — sustained E vocal by <a href="https://freesound.org/people/Mafon2/sounds/110423/" target="_blank" rel="noopener noreferrer" className="text-[#7aaa7a] hover:underline">Mafon2</a> (CC-BY 4.0)</li>
+              <li><span className="text-[#555]">Tanpura · Bagpipe · Choir — Freesound (CC0).  Harmonium · Church Organ — tonejs-instruments (MIT).</span></li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>

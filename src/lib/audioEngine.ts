@@ -72,12 +72,20 @@ const MUSYNGKITE_BASE   = "https://gleitz.github.io/midi-js-soundfonts/MusyngKit
 const FREESOUND_TANPURA_URL = "https://cdn.freesound.org/previews/416/416605_2112203-hq.mp3";
 const FREESOUND_BAGPIPE_URL = "https://cdn.freesound.org/previews/622/622929_931745-hq.mp3";
 const FREESOUND_CHOIR_URL   = "https://cdn.freesound.org/previews/763/763910_11744683-hq.mp3";
-// Real human female voice singing a sustained C# vowel (Freesound
-// 555984, owstu's "Female Voice Sing Impro" pack).  CC0, 11.4 s of
-// clean studio recording — replaces the MusyngKite synth voice that
-// the user correctly identified as "definitely not a voice just
-// sounds like a soundwave" (2026-05-05).
-const FREESOUND_VOICE_URL   = "https://cdn.freesound.org/previews/555/555984_1690102-hq.mp3";
+// Real cello drone — Freesound 77764, xserra's `cello-G2-up-bow.wav`.
+// CC-BY 4.0, 12.0 s, real bowed open G string at G2 (MIDI 43) with
+// ZERO cents pitch drift and strong harmonic content (H3 only -1 dB
+// below H1 — perfect for tuning practice).  Replaces the Philharmonia
+// non-vibrato C2_phrase which only had a single low-octave sample;
+// G2 puts most user tonics within ±6 semitones of the source.
+const FREESOUND_CELLO_URL   = "https://cdn.freesound.org/previews/77/77764_43-hq.mp3";
+// Real human voice — Freesound 110423, Mafon2's "FEMALE VOCAL UNISONO
+// E 02".  CC-BY 4.0, 6.16 s, perfectly steady E4 (MIDI 64) with
+// audible partials (H2 essentially equal to H1, H3 -10 dB).
+// Replaces Freesound 555984 (CC0 but H2 was -30 dB below H1, so the
+// user couldn't hear partials — direct feedback 2026-05-05: "voice
+// sample isnt high quality enough can't hear partials well").
+const FREESOUND_VOICE_URL   = "https://cdn.freesound.org/previews/110/110423_14771-hq.mp3";
 
 /** Curated drone instrument list — canonical drones from the world
  *  music traditions per direct user direction (2026-05-05): cello +
@@ -170,9 +178,15 @@ const INSTRUMENT_SOURCES: Record<DroneInstrument, SourceConfig> = {
   // Philharmonia: pro-recorded chromatic cello.  `_15_` = 1.5-second
   // sustain (longer than the default 1s) — gives the crossfade looper
   // a steadier middle to anchor on before the release-tail fade.
+  // Real cello drone (Freesound 77764, xserra, CC-BY 4.0).  Open G
+  // string up-bow, 12 s, zero cents pitch drift, H3 only -1 dB below
+  // H1 — exactly the steady tone with audible partials needed for
+  // tuning / improv / scales practice.  G2 (MIDI 43) keeps most user
+  // tonics within ±6 semitones of the source pitch.
   cello: {
-    url: n => `${PHILHARMONIA_BASE}cello/cello_${n}_15_forte_arco-normal.mp3`,
-    notes: ["C2", "Ds2", "Fs2", "A2", "C3", "Ds3", "Fs3", "A3", "C4", "Ds4", "Fs4", "A4"],
+    url: () => FREESOUND_CELLO_URL,
+    notes: ["G2"],
+    trimGain: 1.3,
   },
   // tonejs-instruments harmonium: nearly-chromatic C2-G4.  The Indian
   // sruti-box / harmonium is a canonical drone — sustained bellows-
@@ -197,6 +211,7 @@ const INSTRUMENT_SOURCES: Record<DroneInstrument, SourceConfig> = {
     // Freesound 622929, 3:00 of sustained Highland-pipe drone at C.
     url: () => FREESOUND_BAGPIPE_URL,
     notes: ["C3"],
+    trimGain: 1.5,
   },
   choir_aahs: {
     // Freesound 763910, ~5 s of multi-voice sustained "aah" at F.
@@ -204,12 +219,14 @@ const INSTRUMENT_SOURCES: Record<DroneInstrument, SourceConfig> = {
     // and the only CC0 multi-voice source we found.
     url: () => FREESOUND_CHOIR_URL,
     notes: ["F3"],
+    trimGain: 2.0,
   },
   voice_oohs: {
-    // Freesound 555984, real female voice on a sustained C# at ~C#4
-    // (MIDI 61).  Owstu's improv pack, CC0, 11.4 s of steady tone.
+    // Freesound 110423 (Mafon2, CC-BY 4.0), 6.16 s steady E4 with
+    // audible partials.
     url: () => FREESOUND_VOICE_URL,
-    notes: ["Cs4"],
+    notes: ["E4"],
+    trimGain: 1.5,
   },
 };
 
